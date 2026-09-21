@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { resolve, sep } from "node:path";
 import type { Json, RpcMessage } from "./server.js";
 import { McpHost } from "./mcp_host.js";
+import { authorizeApproval, type ApprovalRequest } from "./agent_security.js";
 
 type RpcClient = {
   initialize(experimentalApi?: boolean): Promise<Json>;
@@ -23,15 +24,8 @@ export type AgentEvent = {
 };
 
 type ToolBinding = McpBinding & { toolName: string };
-type PendingApproval = {
+type PendingApproval = ApprovalRequest & {
   rpcId: number;
-  ownerId: string;
-  threadId: string;
-  turnId: string;
-  requestId: string;
-  paramsDigest: string;
-  operation: "shell" | "write_file";
-  expiresAt: number;
   timer: NodeJS.Timeout;
 };
 
@@ -183,10 +177,8 @@ export class CodexBridge {
 
   resolveApproval(requestId: string, threadId: string, turnId: string, paramsDigest: string, decision: "accept" | "decline" | "cancel"): void {
     const pending = this.approvals.get(requestId);
-    if (!pending || pending.ownerId !== this.ownerId || pending.threadId !== threadId || pending.turnId !== turnId || pending.paramsDigest !== paramsDigest) {
-      throw new Error("approval binding mismatch");
-    }
-    if (Date.now() >= pending.expiresAt) throw new Error("approval expired");
+    if (!pending) throw new Error("approval binding mismatch");
+    authorizeApproval(pending, { ownerId: this.ownerId, threadId, turnId, requestId, paramsDigest });
     this.approvals.delete(requestId);
     clearTimeout(pending.timer);
     this.client.respond(pending.rpcId, { decision });
@@ -253,7 +245,7 @@ export class CodexBridge {
       this.emit(threadId, turnId, "approval_resolved", { requestId, paramsDigest, decision: "expired" });
     }, 300_000);
     timer.unref();
-    this.approvals.set(requestId, { rpcId: message.id, ownerId: this.ownerId, threadId, turnId, requestId, paramsDigest, operation, expiresAt, timer });
+    this.approvals.set(requestId, { rpcId: message.id, ownerId: this.ownerId, threadId, turnId, requestId, paramsDigest, operation, scope: "turn_sandbox", expiresAt, timer });
     this.emit(threadId, turnId, "approval_request", {
       ownerId: this.ownerId,
       threadId,

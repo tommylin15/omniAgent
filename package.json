@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc -p services/agent-gateway/tsconfig.json",
-    "test": "vitest run tests/agent_gateway.test.ts tests/gemini_provider.test.ts tests/openrouter_provider.test.ts"
+    "test": "vitest run"
   },
   "dependencies": {
     "@modelcontextprotocol/client": "2.0.0",
