@@ -98,7 +98,7 @@ function parseConfigs(raw: string): Map<string, ServerConfig> {
   return result;
 }
 
-async function googleIdentityToken(audience: string, fetcher: typeof fetch): Promise<string> {
+export async function googleIdentityToken(audience: string, fetcher: typeof fetch): Promise<string> {
   const url = "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/identity";
   const response = await fetcher(`${url}?audience=${encodeURIComponent(audience)}&format=full`, {
     headers: { "Metadata-Flavor": "Google" },
