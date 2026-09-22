@@ -9,6 +9,8 @@ export type ThreadInput = { threadId?: string; runtime: "openrouter" | "gemini" 
   model: string; assistantProfile: string; skillProfile?: string; parentThreadId?: string };
 export type ApprovalInput = { ownerId: string; threadId: string; turnId: string; requestId: string;
   operation: "shell" | "write_file"; paramsDigest: string; expiresAt: string };
+export type SkillContent = { prompt: string; required_tools?: string[];
+  workflow?: { tool: string; args?: Record<string, unknown> }[] };
 
 const forbidden = /^(?:api_key|apikey|auth_cache|authcache|authorization|credential|password|raw_provider_error|refresh_token|refreshtoken|secret|token|access_token|accesstoken)$|_(?:api_key|credential|password|secret|access_token|refresh_token)$/i;
 
@@ -27,6 +29,68 @@ function digest(value: unknown): string {
 
 export class ChatStore {
   constructor(private readonly pool: Pool) {}
+
+  async writeSkillRevision(ownerId: string, skillId: string, revision: number,
+                           content: SkillContent, key: string): Promise<Record<string, unknown>> {
+    if (!/^[a-z0-9][a-z0-9-]{0,127}$/.test(skillId) || !Number.isSafeInteger(revision) || revision < 1 ||
+        !key || key.length > 128 || typeof content?.prompt !== "string" ||
+        !content.prompt.trim() || content.prompt.length > 12_000) throw new Error("skill revision is invalid");
+    const clean = safeRecord(content);
+    const json = JSON.stringify(clean);
+    if (Buffer.byteLength(json) > 65_536) throw new Error("skill content is too large");
+    const contentDigest = digest(clean);
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const inserted = (await client.query(
+        `INSERT INTO omni_chat.skill_revisions(owner_id,skill_id,revision,content_digest,content,idempotency_key)
+         VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING RETURNING *`,
+        [ownerId,skillId,revision,contentDigest,json,key])).rows[0];
+      const row = inserted ?? (await client.query(
+        `SELECT * FROM omni_chat.skill_revisions WHERE owner_id=$1 AND idempotency_key=$2`,
+        [ownerId,key])).rows[0];
+      if (!row || row.skill_id !== skillId || row.revision !== revision || row.content_digest !== contentDigest) {
+        throw new ChatConflict("skill revision or idempotency key conflicts");
+      }
+      if (inserted) await client.query(
+        `INSERT INTO omni_chat.skill_state(owner_id,skill_id,current_revision) VALUES ($1,$2,$3)
+         ON CONFLICT (owner_id,skill_id) DO UPDATE SET
+         current_revision=GREATEST(omni_chat.skill_state.current_revision,EXCLUDED.current_revision),updated_at=now()`,
+        [ownerId,skillId,revision]);
+      await client.query("COMMIT");
+      return row;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally { client.release(); }
+  }
+
+  async readSkillRevision(ownerId: string, skillId: string, revision: number): Promise<Record<string, unknown>> {
+    const row = (await this.pool.query(
+      `SELECT * FROM omni_chat.skill_revisions WHERE owner_id=$1 AND skill_id=$2 AND revision=$3`,
+      [ownerId,skillId,revision])).rows[0];
+    if (!row) throw new ChatNotFound("skill revision not found");
+    return row;
+  }
+
+  async skillState(ownerId: string, skillId: string): Promise<Record<string, unknown>> {
+    const row = (await this.pool.query(
+      `SELECT * FROM omni_chat.skill_state WHERE owner_id=$1 AND skill_id=$2`, [ownerId,skillId])).rows[0];
+    if (!row) throw new ChatNotFound("skill state not found");
+    return row;
+  }
+
+  async setSkillState(ownerId: string, skillId: string, enabled: boolean,
+                      revision?: number): Promise<Record<string, unknown>> {
+    if (typeof enabled !== "boolean") throw new Error("skill state is invalid");
+    const selected = revision ?? Number((await this.skillState(ownerId,skillId)).current_revision);
+    await this.readSkillRevision(ownerId,skillId,selected);
+    return (await this.pool.query(
+      `INSERT INTO omni_chat.skill_state(owner_id,skill_id,current_revision,enabled) VALUES ($1,$2,$3,$4)
+       ON CONFLICT (owner_id,skill_id) DO UPDATE SET
+       current_revision=EXCLUDED.current_revision,enabled=EXCLUDED.enabled,updated_at=now() RETURNING *`,
+      [ownerId,skillId,selected,enabled])).rows[0];
+  }
 
   async owner(issuer: string, subject: string): Promise<string> {
     if (issuer !== "https://accounts.google.com" && issuer !== "accounts.google.com") throw new Error("identity issuer is invalid");
@@ -173,7 +237,7 @@ export class ChatStore {
         [ownerId,threadId,turnId,eventId,seq,type,JSON.stringify(safePayload)])).rows[0];
       const status = type === "turn_completed" ? "COMPLETED" : type === "turn_cancelled" ? "CANCELLED" :
         type === "turn_error" ? "ERROR" : "RUNNING";
-      await client.query(`UPDATE omni_chat.turns SET status=$4,completed_at=CASE WHEN $4 IN ('COMPLETED','CANCELLED','ERROR') THEN now() ELSE completed_at END
+      await client.query(`UPDATE omni_chat.turns SET status=$4::varchar,completed_at=CASE WHEN $4::varchar IN ('COMPLETED','CANCELLED','ERROR') THEN now() ELSE completed_at END
         WHERE owner_id=$1 AND thread_id=$2 AND turn_id=$3`, [ownerId,threadId,turnId,status]);
       await client.query("COMMIT");
       return row;
