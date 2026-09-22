@@ -3,15 +3,19 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsc -p services/agent-gateway/tsconfig.json",
+    "build": "tsc -p services/agent-gateway/tsconfig.json && tsc -p services/chat-api/tsconfig.json",
+    "chat:start": "node services/chat-api/dist/services/chat-api/main.js",
     "test": "vitest run"
   },
   "dependencies": {
     "@modelcontextprotocol/client": "2.0.0",
-    "@openai/codex": "0.153.4"
+    "@openai/codex": "0.153.4",
+    "google-auth-library": "^11.1.0",
+    "pg": "^8.23.0"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",
+    "@types/pg": "^8.23.1",
     "typescript": "^5.8.2",
     "vitest": "^3.2.4"
   }

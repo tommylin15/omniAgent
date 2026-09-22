@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "strict": true,
+    "outDir": "dist",
+    "rootDir": "../.."
+  },
+  "include": ["*.ts", "../agent-gateway/agent_security.ts"]
+}

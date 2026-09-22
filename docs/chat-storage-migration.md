@@ -1,0 +1,15 @@
+# Chat ownership and historical data gate
+
+omniAgent now owns the new `omni_chat` schema and Chat API code. The schema in `infra/postgres/migrations/001_chat_ownership.sql` is for an independent omniAgent database; it has not been applied to Janus or a live omniAgent database. Janus remains the live writer and continues to own its applied `016_private_assistant_storage.sql` migration, old conversations, Private Iceberg artifacts, and deletion workflow. No dual write, routing change, or historical copy is active.
+
+The Chat API verifies a Google ID token for `OMNIAGENT_GOOGLE_CLIENT_ID` and keys a new owner by the immutable `(issuer, subject)` pair. Email is never an ownership key. `omni_chat.owners.legacy_janus_user_id` stays null until a verified export ties that same Google subject to Janus `private.users.user_id`. Never infer a mapping from email or an unverified client-supplied UUID. Internal event and approval writes require a separately allowlisted Google service identity. Those credentials and the database connection are deployment decisions, not stored in this repository.
+
+Historical migration is pending. A safe copy requires this sequence:
+
+1. Take a consistent read-only Janus snapshot of `private.users` (subject/user ID), assistant threads, turns, event index, approvals, and skill metadata for each owner. Read event and skill payloads from Janus Private Iceberg through Janus's export/reader path. The current `/api/v1/me/export` includes assistant artifacts but not all PostgreSQL indexes, so it is insufficient by itself.
+2. Produce an owner-scoped manifest with row counts, event sequence ranges, payload digests, missing artifact list, and source snapshot IDs. Keep the export encrypted and access controlled. Do not put token or credential fields into the manifest.
+3. In a separate omniAgent database, verify each `(issuer, subject) ↔ Janus user_id` pair before setting `legacy_janus_user_id`; copy with preserved thread, turn, event, approval IDs and sequence numbers. An import must be idempotent and reject collisions or mismatched digests. Do not overwrite live omniAgent records.
+4. Compare counts and digests per owner/thread/turn, approval status and expiry, event replay order, orphan references, and a bounded sample of rendered conversations. Record zero mismatches or explicit exceptions. Keep Janus data intact throughout.
+5. Only after a real dev runtime test, owner/auth review, rollback test, and a separate cutover decision may routing or write ownership change. Rollback before cutover is to keep Janus as sole live writer; after cutover it requires a verified reverse synchronization plan. No destructive move or delete is part of this checkpoint.
+
+The new API currently stores user messages as queued turns, supports same-owner thread forks and pre-dispatch cancellation of queued turns, and accepts service-authenticated runtime events and approval requests. It does not dispatch queued turns, cancel running turns, or forward approval decisions to a live runtime. That integration and historical copy remain pending; test success here is local contract evidence only.

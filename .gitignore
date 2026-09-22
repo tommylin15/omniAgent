@@ -1,2 +1,3 @@
 node_modules/
 services/agent-gateway/dist/
+services/chat-api/dist/
