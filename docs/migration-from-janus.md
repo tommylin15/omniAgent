@@ -7,3 +7,5 @@ The Dockerfile does not bundle Janus's `services/mcp-fixture`; its tests and rea
 Rollback for this checkpoint is simply to leave the existing Janus runtime untouched. Do not delete this copy to imply a live cutover or delete Janus originals before acceptance.
 
 The new omniAgent Chat API and `omni_chat` migration are an isolated ownership target; they are not deployed or live. Janus still owns all existing chat writes and history. The verified owner mapping, export/copy/compare procedure, runtime dispatch integration, and cutover gate are recorded in [chat-storage-migration.md](chat-storage-migration.md). Janus migration history remains in Janus.
+
+The UI extraction copies only the generic Chat concepts into `apps/agent_app`; it does not move Janus `main.dart` wholesale. Janus source now keeps investment User/Admin screens without ChatPage, disabled AI navigation, or Ask Janus entry. The omniAgent widget tests own chat, provider, approval, and Markdown checks; Janus widget tests keep investment/Admin checks. This is source ownership only: old Janus live UI/API remain in place for rollback, and no OAuth or deployment cutover has occurred.

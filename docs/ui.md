@@ -1,0 +1,9 @@
+# omniAgent Chat UI ownership
+
+omniAgent owns all generic conversational and agent product surfaces: Chat, Threads/Turns/Items, provider/model choice, streaming/replay, cancellation, tool/MCP events, Skills, approval requests, citations, usage, and future context selection. Janus retains only its investment User/Admin UI and exposes domain context through authenticated bounded API/MCP; Janus never calls this client.
+
+`apps/agent_app` is the independent Flutter source. It uses a Google ID token for the configured omniAgent audience and only `/v1/threads` routes. A thread fixes runtime/model; changing them creates a new thread or fork. It renders item/event IDs with sequence-based replay, keeps queued turns distinct from completed turns, offers request-bound approve/deny and queued cancellation, and shows tool/citation/usage events without exposing credentials. The client must not read Janus DB, GCS, Iceberg, or source packages.
+
+Current code is a **UI ownership checkpoint, not live cutover**. The Web client builds locally and widget tests cover route isolation, queued state, approval, pending controls, and Markdown. Runtime dispatch, continuous production streaming, Google OAuth browser acceptance, real Janus bounded context selection, MCP/Skill management HTTP APIs, historical chat/skill copy, mobile packaging, and deployed rollback remain unverified. The Tools/Skills/Data Sources panel says so instead of calling Janus's legacy `/api/v1/me/*` endpoints or showing fabricated data. Janus's existing deployed Chat UI/API remains the rollback path until a separately approved cutover.
+
+The source split does not authorize deployment, IAM/Secret/OAuth changes, or historical data deletion. See [storage migration gate](chat-storage-migration.md) and [Janus connector](janus-connector.md).

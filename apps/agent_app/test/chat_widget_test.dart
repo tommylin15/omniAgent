@@ -1,0 +1,132 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:omniagent_app/chat_api.dart';
+import 'package:omniagent_app/chat_page.dart';
+import 'package:omniagent_app/main.dart';
+
+class FakeChatApi extends ChatApi {
+  FakeChatApi({this.withApproval = false}) : super('test');
+  final bool withApproval;
+  final writes = <Map<String, dynamic>>[];
+
+  @override
+  Future<dynamic> get(String path) async => {
+        'items': [
+          if (withApproval)
+            {
+              'thread_id': 'thread-1',
+              'runtime': 'gemini',
+              'model': 'test-model'
+            }
+        ]
+      };
+
+  @override
+  Future<dynamic> post(String path, Map<String, dynamic> body) async {
+    writes.add({'path': path, ...body});
+    if (path == '/v1/threads' || path.endsWith('/fork')) {
+      return {
+        'thread_id': 'thread-1',
+        'runtime': 'gemini',
+        'model': 'test-model'
+      };
+    }
+    if (path.endsWith('/messages')) {
+      return {
+        'turn': {'turn_id': 'turn-1', 'status': 'QUEUED'}
+      };
+    }
+    return {'status': 'APPROVED'};
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> events(
+          String threadId, int cursor) async =>
+      [
+        if (cursor < 0 && withApproval)
+          {
+            'event_id': 'approval-1',
+            'seq': 0,
+            'event_type': 'approval_request',
+            'turn_id': 'turn-1',
+            'payload': {
+              'request_id': 'request-1',
+              'params_digest': 'sha256:${List.filled(64, 'a').join()}',
+              'operation': 'shell'
+            }
+          },
+        if (cursor < 0 &&
+            !withApproval &&
+            writes.any((write) => '${write['path']}'.endsWith('/messages')))
+          {
+            'event_id': 'message-1',
+            'seq': 0,
+            'event_type': 'item_upsert',
+            'turn_id': 'turn-1',
+            'payload': {'role': 'user', 'content': 'hello'}
+          },
+      ];
+}
+
+void main() {
+  testWidgets('standalone login refuses missing API configuration',
+      (tester) async {
+    await tester.pumpWidget(const OmniAgentApp());
+    expect(find.text('omniAgent'), findsOneWidget);
+    await tester.tap(find.text('使用 Google 登入'));
+    await tester.pump();
+    expect(find.text('登入或 API 尚未設定'), findsOneWidget);
+  });
+
+  testWidgets('threads and queued messages use only omniAgent routes',
+      (tester) async {
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.binding.setSurfaceSize(const Size(1000, 800));
+    final api = FakeChatApi();
+    await tester.pumpWidget(MaterialApp(home: ChatPage(api)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('建立對話'));
+    await tester.pumpAndSettle();
+    expect(api.writes.first['path'], '/v1/threads');
+    expect(api.writes.first['assistantProfile'], 'default');
+    await tester.enterText(find.byType(TextField).last, 'hello');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+    expect(api.writes.last['path'], '/v1/threads/thread-1/messages');
+    expect(find.text('訊息已排隊，等待執行環境接手'), findsOneWidget);
+    expect(find.text('hello'), findsOneWidget);
+    expect(
+        api.writes
+            .any((write) => '${write['path']}'.startsWith('/api/v1/me/chats')),
+        isFalse);
+  });
+
+  testWidgets('request-bound approval and tool panel belong to omniAgent',
+      (tester) async {
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.binding.setSurfaceSize(const Size(1000, 800));
+    final api = FakeChatApi(withApproval: true);
+    await tester.pumpWidget(MaterialApp(home: ChatPage(api)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('gemini · test-model').first);
+    await tester.pumpAndSettle();
+    expect(find.text('需要核准的操作'), findsOneWidget);
+    await tester.tap(find.text('允許'));
+    await tester.pumpAndSettle();
+    expect(api.writes.single['path'],
+        '/v1/threads/thread-1/turns/turn-1/approvals/request-1');
+    expect(api.writes.single['paramsDigest'],
+        'sha256:${List.filled(64, 'a').join()}');
+    await tester.tap(find.byTooltip('工具與技能'));
+    await tester.pumpAndSettle();
+    expect(find.text('管理 API 尚未接線；工具事件仍可在對話中檢視'), findsOneWidget);
+  });
+
+  testWidgets('moved markdown display keeps code as text', (tester) async {
+    await tester.pumpWidget(const MaterialApp(
+        home: Scaffold(
+            body: MarkdownText('# title\n```dart\nfinal answer = 42;\n```'))));
+    expect(find.text('title'), findsOneWidget);
+    expect(find.text('final answer = 42;'), findsOneWidget);
+  });
+}
