@@ -1,4 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { createReadStream } from "node:fs";
+import { stat } from "node:fs/promises";
+import { extname, isAbsolute, relative, resolve } from "node:path";
 import { ChatConflict, ChatNotFound, type ChatStore, type ThreadInput } from "./storage.js";
 
 export type Principal = { issuer: string; subject: string };
@@ -10,6 +13,33 @@ const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const DIGEST = /^sha256:[0-9a-f]{64}$/;
 const TYPES = new Set(["text_delta","item_upsert","tool_request","tool_result","approval_request",
   "approval_resolved","citation","usage","turn_completed","turn_cancelled","turn_error"]);
+const MIME: Record<string, string> = { ".html":"text/html; charset=utf-8", ".js":"text/javascript; charset=utf-8",
+  ".css":"text/css; charset=utf-8", ".json":"application/json", ".wasm":"application/wasm",
+  ".svg":"image/svg+xml", ".png":"image/png", ".jpg":"image/jpeg", ".webp":"image/webp",
+  ".ico":"image/x-icon", ".ttf":"font/ttf", ".otf":"font/otf" };
+
+async function serveWeb(pathname: string, response: ServerResponse): Promise<boolean> {
+  const root = process.env.OMNIAGENT_WEB_ROOT;
+  if (!root || pathname === "/v1" || pathname.startsWith("/v1/") ||
+      pathname === "/internal" || pathname.startsWith("/internal/") || pathname === "/health") return false;
+  let decoded: string;
+  try { decoded = decodeURIComponent(pathname); } catch { return false; }
+  const name = decoded === "/" ? "index.html" : decoded.slice(1);
+  let file = resolve(root,name);
+  const within = relative(resolve(root),file);
+  if (within === ".." || within.startsWith("../") || within.startsWith("..\\") || isAbsolute(within)) return false;
+  try {
+    if (!(await stat(file)).isFile()) return false;
+  } catch {
+    if (extname(name)) return false;
+    file = resolve(root,"index.html");
+    try { if (!(await stat(file)).isFile()) return false; } catch { return false; }
+  }
+  response.writeHead(200,{ "Content-Type":MIME[extname(file)] ?? "application/octet-stream",
+    "Cache-Control":file.endsWith("index.html") ? "no-cache" : "public, max-age=3600" });
+  createReadStream(file).pipe(response);
+  return true;
+}
 
 function send(response: ServerResponse, status: number, body: unknown): void {
   response.writeHead(status, { "Content-Type": "application/json", "Cache-Control": "no-store" });
@@ -58,6 +88,7 @@ export function makeChatServer(store: ChatStore, verifyUser: VerifyUser, verifyS
   return createServer(async (request, response) => {
     const url = new URL(request.url ?? "/", "http://localhost");
     if (request.method === "GET" && url.pathname === "/health") return send(response,200,{ status: "ok" });
+    if (request.method === "GET" && await serveWeb(url.pathname,response)) return;
     try {
       const token = bearer(request);
       if (url.pathname.startsWith("/internal/v1/")) {

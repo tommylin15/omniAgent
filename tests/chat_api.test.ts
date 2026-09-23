@@ -1,5 +1,7 @@
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import type { AddressInfo } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { makeChatServer } from "../services/chat-api/server.js";
 import { safeRecord, type ChatStore } from "../services/chat-api/storage.js";
@@ -34,6 +36,22 @@ async function app() {
 }
 
 describe("omniAgent Chat API ownership boundary", () => {
+  it("serves the same-origin Web app without exposing API routes", async () => {
+    const root = mkdtempSync(join(tmpdir(),"omni-web-"));
+    writeFileSync(join(root,"index.html"),"<title>omniAgent</title>");
+    process.env.OMNIAGENT_WEB_ROOT = root;
+    try {
+      const { base } = await app();
+      const page = await fetch(base + "/");
+      expect(page.headers.get("content-type")).toContain("text/html");
+      expect(await page.text()).toContain("omniAgent");
+      expect((await fetch(base + "/v1/threads")).status).toBe(401);
+    } finally {
+      delete process.env.OMNIAGENT_WEB_ROOT;
+      rmSync(root,{ recursive:true, force:true });
+    }
+  });
+
   it("derives owner from verified identity and persists queued messages and replay", async () => {
     const { base, store } = await app();
     const headers = { Authorization: "Bearer alice", "Idempotency-Key": "key-1", "Content-Type": "application/json" };

@@ -7,7 +7,12 @@ class ChatApi {
 
   final String token;
   final http.Client client;
-  static const base = String.fromEnvironment('OMNIAGENT_API_BASE_URL');
+  static const _configuredBase = String.fromEnvironment('OMNIAGENT_API_BASE_URL');
+  static String get base {
+    if (_configuredBase.isNotEmpty) return _configuredBase;
+    final uri = Uri.base;
+    return uri.scheme == 'http' || uri.scheme == 'https' ? uri.origin : '';
+  }
 
   Future<dynamic> get(String path) => _request('GET', path);
   Future<dynamic> post(String path, Map<String, dynamic> body) =>

@@ -3,7 +3,7 @@ FROM node:22.20.0-bookworm-slim AS build
 WORKDIR /app
 COPY package.json package-lock.json tsconfig.json ./
 COPY services/agent-gateway ./services/agent-gateway
-RUN npm ci && npm run build && npm prune --omit=dev
+RUN npm ci && ./node_modules/.bin/tsc -p services/agent-gateway/tsconfig.json && npm prune --omit=dev
 
 FROM node:22.20.0-bookworm-slim
 
