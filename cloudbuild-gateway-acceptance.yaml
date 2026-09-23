@@ -28,6 +28,7 @@ steps:
           status="$(sign "${body}" "/tmp/${runtime}.json")"
           [[ "${status}" == 200 ]] || { echo "${runtime} status=${status}"; exit 22; }
           RUNTIME="${runtime}" RESULT_FILE="/tmp/${runtime}.json" python3 -c 'import json,os; v=json.load(open(os.environ["RESULT_FILE"])); e=v["events"]; assert e and v["continuation"]["runtime"]==os.environ["RUNTIME"]; assert any(x["type"]=="turn_completed" for x in e); assert any(x["type"]=="text_delta" and x["payload"].get("text") for x in e); assert "api_key" not in json.dumps(e).lower(); print(os.environ["RUNTIME"],"real dispatch passed; events=",len(e))'
+        done
 
 options:
   logging: CLOUD_LOGGING_ONLY
