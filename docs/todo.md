@@ -13,8 +13,10 @@ Phase 0–5 are closed as migration checkpoints. Their completion does **not** c
 
 ## Carry-forward execution gates
 
-- [ ] Phase 6 — Deployment Planning Gate: planning only. Enumerate Cloud Run, Cloud Build, Secret, service account, IAM, OAuth, env, routing, service-to-service auth, rollback, and any new paid resources. Classify each item as existing-dev reuse, config change, new resource, or explicit-approval required. Do not deploy or change security/cost boundaries in this phase.
+- [x] Phase 6 — Deployment Planning Gate: approved plan recorded in [phase-6-deployment-plan.md](phase-6-deployment-plan.md); the later Phase 6B execution is tracked separately.
 - [ ] Phase 6B — Real Dev Deployment / Acceptance: after required approvals, deploy to the real parallel-live dev environment and verify provider/runtime dispatch, Codex managed auth, Gemini/OpenRouter, MCP discovery/call, streaming, cancellation, reconnect, approvals, owner isolation, real omniAgent → Janus bounded API/MCP, and at least one real end-to-end path. ChatGPT → Janus MCP must remain independently functional. Historical owner mapping/export-copy-verify and write-routing cutover are performed here only if required by the approved plan and must remain non-destructive until verified.
+
+Phase 6B 2026-09-23 checkpoint: **partial, not cutover accepted**. Private Gateway and real Gemini/OpenRouter dispatch passed; Chat/UI image built but not deployed, and no Chat writer/routing switch occurred. See [real dev evidence and remaining gates](phase-6b-dev-evidence.md).
 - [ ] Phase 7 — Janus Cleanup: only after Phase 6B live acceptance and explicit cleanup approval. Remove only Janus generic assistant ownership already replaced by omniAgent; preserve KEEP-JANUS domain/data/API/MCP/UI responsibilities and migration history. Run Janus/omniAgent regressions plus stale import/path scans.
 - [ ] Phase 8 — Documentation Migration / Stale-reference Gate: align active README/WBS/spec/TODO/UI/runbooks/service/package docs with the actual ownership, runtime and paths. Preserve archive/history facts; remove stale current-state ownership claims.
 - [ ] Phase 9 — Final Acceptance: re-check both repositories, tests, CI, deployment, live runtime, integration, UI, contracts, storage ownership, documentation, stale references and rollback. Only Phase 9 PASS may be labeled `OMNIAGENT SPLIT COMPLETE`.
