@@ -1,0 +1,5 @@
+.git/
+node_modules/
+services/*/dist/
+apps/agent_app/.dart_tool/
+apps/agent_app/build/
