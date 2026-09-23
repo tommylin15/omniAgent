@@ -73,8 +73,6 @@ void main() {
       (tester) async {
     await tester.pumpWidget(const OmniAgentApp());
     expect(find.text('omniAgent'), findsOneWidget);
-    await tester.tap(find.text('使用 Google 登入'));
-    await tester.pump();
     expect(find.text('登入或 API 尚未設定'), findsOneWidget);
   });
 
