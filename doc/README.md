@@ -41,7 +41,8 @@ These are architecture requirements. Current implementation status is recorded i
 | [spec.md](spec.md) | Product/system specification and requirement/status truth table. |
 | [wbs.md](wbs.md) | Work breakdown through provider credential isolation, data lifecycle and final acceptance. |
 | [todo.md](todo.md) | Prioritized actionable backlog. |
-| [ui.md](ui.md) | Flutter interaction model including future credential selection/management. |
+| [ui.md](ui.md) | Flutter interaction model and Warm Cozy Twin Beast Visual Contract. |
+| [visual-assets.md](visual-assets.md) | Twin Beast / omniAgent visual source registry, Drive source-of-record linkage, production-asset gaps. |
 | [acceptance.md](acceptance.md) | Evidence and security/isolation/storage acceptance gates. |
 
 Supporting architecture/migration records remain under `docs/`, especially `docs/architecture.md`, `docs/chat-storage-migration.md`, deployment plans/evidence, and cutover runbooks.
