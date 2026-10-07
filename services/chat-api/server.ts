@@ -21,7 +21,8 @@ const MIME: Record<string, string> = { ".html":"text/html; charset=utf-8", ".js"
 async function serveWeb(pathname: string, response: ServerResponse): Promise<boolean> {
   const root = process.env.OMNIAGENT_WEB_ROOT;
   if (!root || pathname === "/v1" || pathname.startsWith("/v1/") ||
-      pathname === "/internal" || pathname.startsWith("/internal/") || pathname === "/health") return false;
+      pathname === "/internal" || pathname.startsWith("/internal/") ||
+      pathname === "/health" || pathname === "/ready") return false;
   let decoded: string;
   try { decoded = decodeURIComponent(pathname); } catch { return false; }
   const name = decoded === "/" ? "index.html" : decoded.slice(1);
@@ -88,6 +89,14 @@ export function makeChatServer(store: ChatStore, verifyUser: VerifyUser, verifyS
   return createServer(async (request, response) => {
     const url = new URL(request.url ?? "/", "http://localhost");
     if (request.method === "GET" && url.pathname === "/health") return send(response,200,{ status: "ok" });
+    if (request.method === "GET" && url.pathname === "/ready") {
+      try {
+        await store.ready();
+        return send(response,200,{ status: "ready" });
+      } catch {
+        return send(response,503,{ status: "unavailable" });
+      }
+    }
     if (request.method === "GET" && await serveWeb(url.pathname,response)) return;
     try {
       const token = bearer(request);
