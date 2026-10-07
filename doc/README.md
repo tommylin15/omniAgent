@@ -1,8 +1,8 @@
 # omniAgent current control documents
 
-> Implementation baseline reviewed: `main@75336a248381d935c7b23dd8afab06f5e9c4151a`.
+> Executable baseline validated through `main@d1769491ba41670e86222536ee129b94bbfba04f`; Node Core run `37628904846` PASS. UI source baseline `12a94018debd11f5b389aa2fdf325339782bb9d8`; Flutter run `37625912746` PASS.
 > Architecture/control revision: 2026-10-07.
-> This documentation-only revision does not change executable code, SQL migrations, CI/CD, infrastructure, secrets, or deployed resources.
+> 2026-10-07 ownership cleanup also changed Gateway configuration/headers, Cloud Build wiring and CI. Runtime deployment remains open until GCP preflight and live acceptance pass.
 
 This `doc/` directory is the consolidated **current control set** for omniAgent product scope, architecture, implementation work, UI, and acceptance.
 
@@ -30,7 +30,7 @@ The current target is:
 - `owner_id` = memory/data isolation boundary regardless of which provider key pays/authenticates the request;
 - Codex execution context = owner-isolated even when platform authorization is reused;
 - Agent Gateway provider target = Gemini, OpenRouter, Codex, plus planned direct Groq support;
-- Janus = external bounded domain/tool provider only, never omniAgent's internal storage.
+- external domain systems (including Janus) = bounded API/MCP providers only, never omniAgent's internal storage or deployment source.
 
 These are architecture requirements. Current implementation status is recorded in SPEC/WBS/TODO/acceptance and must not be upgraded merely because the design is approved.
 
