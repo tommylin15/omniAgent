@@ -1,0 +1,136 @@
+name: omniAgent Chat candidate deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: '40-character commit SHA previously built by omniAgent Chat candidate build'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  GCP_PROJECT_ID: gen-lang-client-0593591102
+  GCP_REGION: us-central1
+  OMNIAGENT_GCP_WIF_PROVIDER: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+  OMNIAGENT_GCP_CI_SERVICE_ACCOUNT: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+  OMNIAGENT_ARTIFACT_REPOSITORY: omniagent
+  CHAT_SERVICE: omniagent-chat
+  CHAT_RUNTIME_SA: omniagent-chat@gen-lang-client-0593591102.iam.gserviceaccount.com
+  CHAT_DB_SECRET: omniagent-chat-db
+
+jobs:
+  candidate-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.OMNIAGENT_GCP_WIF_PROVIDER }}
+          service_account: ${{ env.OMNIAGENT_GCP_CI_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Resolve candidate and current non-secret config
+        shell: bash
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          git merge-base --is-ancestor "$CANDIDATE_SHA" origin/main
+          gcloud config set project "$GCP_PROJECT_ID" >/dev/null
+
+          repo="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${OMNIAGENT_ARTIFACT_REPOSITORY}"
+          image="${repo}/omniagent-chat:${CANDIDATE_SHA}"
+          digest="$(gcloud artifacts docker images describe "$image"             --project="$GCP_PROJECT_ID"             --format='value(image_summary.digest)')"
+          test -n "$digest"
+          echo "CANDIDATE_IMAGE=${repo}/omniagent-chat@${digest}" >> "$GITHUB_ENV"
+          echo "CANDIDATE_DIGEST=$digest" >> "$GITHUB_ENV"
+
+          gcloud secrets versions describe latest             --secret="$CHAT_DB_SECRET"             --project="$GCP_PROJECT_ID"             --format='value(state)' | grep -qx ENABLED
+
+          gcloud run services describe "$CHAT_SERVICE"             --region="$GCP_REGION"             --project="$GCP_PROJECT_ID"             --format=json > /tmp/chat.json
+
+          python3 - /tmp/chat.json "$GITHUB_ENV" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1]))
+          c=(d.get("spec",{}).get("template",{}).get("spec",{}).get("containers") or [{}])[0]
+          env={x.get("name"):x.get("value","") for x in c.get("env") or [] if "value" in x}
+          required=["OMNIAGENT_GOOGLE_CLIENT_ID","CHAT_INTERNAL_AUDIENCE","CHAT_INTERNAL_ALLOWED_EMAILS"]
+          for name in required:
+              value=env.get(name,"")
+              if not value:
+                  raise SystemExit(f"missing current {name}")
+          with open(sys.argv[2],"a",encoding="utf-8") as out:
+              for name in required:
+                  out.write(f"{name}={env[name]}\n")
+          PY
+
+      - name: Deploy no-traffic candidate
+        shell: bash
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+        run: |
+          set -euo pipefail
+          tag="candidate-${CANDIDATE_SHA:0:7}"
+          gcloud run deploy "$CHAT_SERVICE"             --region="$GCP_REGION"             --project="$GCP_PROJECT_ID"             --image="$CANDIDATE_IMAGE"             --service-account="$CHAT_RUNTIME_SA"             --no-traffic             --tag="$tag"             --update-env-vars="OMNIAGENT_GOOGLE_CLIENT_ID=${OMNIAGENT_GOOGLE_CLIENT_ID},CHAT_INTERNAL_AUDIENCE=${CHAT_INTERNAL_AUDIENCE},CHAT_INTERNAL_ALLOWED_EMAILS=${CHAT_INTERNAL_ALLOWED_EMAILS}"             --update-secrets="CHAT_DATABASE_URL=${CHAT_DB_SECRET}:latest"             --quiet
+
+          gcloud run services describe "$CHAT_SERVICE"             --region="$GCP_REGION"             --project="$GCP_PROJECT_ID"             --format=json > /tmp/after.json
+
+          python3 - /tmp/after.json "$tag" "$GITHUB_ENV" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1]))
+          tag=sys.argv[2]
+          traffic=d.get("status",{}).get("traffic") or []
+          row=next((x for x in traffic if x.get("tag")==tag),None)
+          if not row or not row.get("revisionName") or not row.get("url"):
+              raise SystemExit("candidate traffic tag missing")
+          with open(sys.argv[3],"a",encoding="utf-8") as out:
+              out.write(f"CANDIDATE_REVISION={row['revisionName']}\n")
+              out.write(f"CANDIDATE_URL={row['url']}\n")
+          print("candidate_revision="+row["revisionName"])
+          print("candidate_url="+row["url"])
+          PY
+
+      - name: Candidate smoke without traffic promotion
+        shell: bash
+        run: |
+          set -euo pipefail
+          check() {
+            local route="$1" expected="$2"
+            local response status
+            response="$(mktemp)"
+            status="$(curl --silent --show-error --max-time 30               -o "$response" -w '%{http_code}' "${CANDIDATE_URL}${route}")"
+            if [[ "$status" == 403 ]]; then
+              token="$(gcloud auth print-identity-token --audiences="$CANDIDATE_URL")"
+              status="$(curl --silent --show-error --max-time 30                 -H "Authorization: Bearer $token"                 -o "$response" -w '%{http_code}' "${CANDIDATE_URL}${route}")"
+            fi
+            [[ "$status" == "$expected" ]] || {
+              echo "${route} status=${status}, expected=${expected}" >&2
+              exit 22
+            }
+            if [[ "$route" == /health ]]; then
+              python3 - "$response" <<'PY'
+          import json,sys
+          assert json.load(open(sys.argv[1]))["status"] == "ok"
+          PY
+            fi
+            if [[ "$route" == / ]]; then
+              grep -qi '<html' "$response"
+            fi
+            rm -f "$response"
+            echo "${route} status=${status}"
+          }
+          check /health 200
+          check / 200
+          check /v1/threads 401
+          echo "candidate_digest=$CANDIDATE_DIGEST"
+          echo "candidate_revision=$CANDIDATE_REVISION"
+          echo "traffic_promoted=false"
