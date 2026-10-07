@@ -31,6 +31,16 @@ These identifiers are fixed in the preflight workflow so GitHub repository-varia
 
 `cloudbuild.yaml` requires an explicit `_IMAGE_REPOSITORY`; no legacy repository name is hard-coded. Build/deploy automation must pass the approved omniAgent Artifact Registry repository.
 
+## Chat database secret and candidate networking
+
+- Provider credentials stay in `omniagent-provider-bundle`; database credentials must not be added to that bundle.
+- The current live Chat revision still references the historical `omniagent-bundle` for `CHAT_DATABASE_URL`. Do not update that Secret's `latest` value as part of candidate preparation because a restarted live instance could observe the new value before acceptance.
+- The new database contract uses the dedicated omniAgent Secret `omniagent-chat-db`, whose payload is a PostgreSQL DSN for role `omniagent_chat_app` and database `omniagent_chat`.
+- Candidate deployment binds `CHAT_DATABASE_URL=omniagent-chat-db:latest` only on a no-traffic candidate revision.
+- Current live Chat has no VPC egress configuration. A private PostgreSQL endpoint therefore requires Direct VPC egress on the candidate revision before database readiness can pass.
+- `/health` remains process liveness; `/ready` is the database-backed readiness gate and must return 200 before candidate acceptance.
+- P0 candidate images are built directly on the GitHub runner and pushed to the omniAgent Artifact Registry. Do not recreate or rely on the default Cloud Build source-staging bucket for this path.
+
 ## Chat deployment prerequisites
 
 Before deploying or promoting `omniagent-chat`:
