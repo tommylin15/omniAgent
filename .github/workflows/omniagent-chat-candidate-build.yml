@@ -8,8 +8,7 @@ on:
       - 'services/chat-api/**'
       - 'tests/**'
       - 'apps/agent_app/**'
-      - 'infra/postgres/**'
-      - 'package.json'
+            - 'package.json'
       - 'package-lock.json'
       - 'tsconfig.json'
       - 'cloudbuild.yaml'
@@ -85,27 +84,20 @@ jobs:
           test -n "$client_id"
           echo "OMNIAGENT_GOOGLE_CLIENT_ID=$client_id" >> "$GITHUB_ENV"
 
-      - name: Build immutable PostgreSQL and Chat candidates
+      - name: Build immutable Chat candidate
         shell: bash
         run: |
           set -euo pipefail
           registry="${GCP_REGION}-docker.pkg.dev"
           repo="${registry}/${GCP_PROJECT_ID}/${OMNIAGENT_ARTIFACT_REPOSITORY}"
           chat_image="${repo}/omniagent-chat:${GITHUB_SHA}"
-          postgres_image="${repo}/omniagent-postgres:${GITHUB_SHA}"
 
           gcloud auth configure-docker "$registry" --quiet
 
           docker build             --file=services/chat-api/Dockerfile             --build-arg="OMNIAGENT_GOOGLE_CLIENT_ID=${OMNIAGENT_GOOGLE_CLIENT_ID}"             --tag="$chat_image" .
           docker push "$chat_image"
 
-          docker build             --file=infra/postgres/Dockerfile             --tag="$postgres_image" infra/postgres
-          docker push "$postgres_image"
-
           chat_digest="$(gcloud artifacts docker images describe "$chat_image"             --project="$GCP_PROJECT_ID"             --format='value(image_summary.digest)')"
-          postgres_digest="$(gcloud artifacts docker images describe "$postgres_image"             --project="$GCP_PROJECT_ID"             --format='value(image_summary.digest)')"
           test -n "$chat_digest"
-          test -n "$postgres_digest"
           echo "candidate_sha=$GITHUB_SHA"
           echo "chat_candidate_image=${repo}/omniagent-chat@${chat_digest}"
-          echo "postgres_candidate_image=${repo}/omniagent-postgres@${postgres_digest}"
