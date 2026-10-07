@@ -1,119 +1,514 @@
-# omniAgent UI specification
+# omniAgent UI Visual Contract
 
-> Implementation baseline reviewed: `main@75336a248381d935c7b23dd8afab06f5e9c4151a`.
+> Repository head reviewed: `main@59ef8015064c16144b58d3424dc80d6f3201e939`.
 > Current implementation path: `apps/agent_app/`.
-> Architecture revision: 2026-10-07.
+> Contract revision: 2026-10-07.
+> This document is the implementation contract for the first visual redesign. It does not change backend/API ownership, provider readiness, storage semantics, or completion status.
 
-## 1. UI ownership
+## 1. Product UI objective
 
-omniAgent owns the generic conversational UI. External domain systems such as Janus remain behind bounded APIs/MCP.
+omniAgent owns the generic conversational and agent UI. The first visual redesign must make the product feel **warm, cute, calm, companion-like, and trustworthy** while preserving the existing engineering truth and runtime boundaries.
 
-The UI must never receive or display raw provider secrets after submission.
+The target tone is:
 
-## 2. Current source checkpoint
+- warm-cozy rather than cold enterprise tooling;
+- rounded and friendly rather than childish;
+- light fantasy / companion feeling rather than game HUD;
+- Chat-first rather than control-panel-first;
+- advanced controls progressively disclosed rather than permanently occupying the main surface;
+- explicit unavailable / partial states rather than fabricated capability.
 
-Current source includes:
+External systems such as Janus remain behind bounded authenticated API/MCP contracts. The UI must never read Janus storage directly and must never imply that an unavailable backend feature is ready.
 
-- Google ID-token sign-in integration;
-- responsive thread navigation;
-- new thread runtime/model selection for Gemini / OpenRouter / Codex;
-- event replay/cursor status;
-- composer/send;
-- queued cancellation;
-- generic event, approval, citation, usage and terminal-state rendering.
+## 2. Non-negotiable implementation boundary for UI v1
 
-Current event behavior at the reviewed source checkpoint is cursor replay + approximately two-second polling, not accepted continuous streaming.
+UI v1 is a **visual and information-architecture refactor of the existing Flutter client**.
 
-Direct Groq selection and credential-profile management are not current implementation evidence.
+Codex MUST preserve the current core behavior and API contract unless a separate approved backend task changes them.
 
-## 3. Target provider and credential UX
+Do not change in this UI task:
 
-For each supported provider/runtime, the owner should be able to see an explicit credential source:
+- `ChatApi` route ownership or base URL behavior;
+- `/v1/threads` create/list/fork semantics;
+- `/v1/threads/{thread}/messages` message submission semantics;
+- event cursor/replay semantics;
+- approval request binding or approval payload fields;
+- queued-turn cancellation semantics;
+- runtime/model request fields;
+- `assistantProfile: default`;
+- owner/authentication contract;
+- `packages/contracts/agent.v1.json`;
+- backend/provider/storage implementation;
+- Janus integration boundaries.
 
-- **Personal / BYOK** — owner-managed credential/profile;
-- **Platform** — visible/selectable only when the authenticated owner has platform-credential entitlement.
+Current event delivery remains persisted cursor replay plus polling at the reviewed checkpoint. UI v1 may redesign how connection state is presented, but it must not claim continuous production streaming has been accepted.
 
-The UI may show:
+## 3. Brand character: the novel Twin Beasts
+
+The omniAgent mascot is the user's **novel Twin Beasts（雙生獸）**.
+
+Current canon-safe visual baseline for product use:
+
+- one twin is **gray-black**;
+- one twin is **silver-white**;
+- they are a paired visual identity and should feel mutually responsive;
+- all anatomy, markings, eye color, materials, names, powers, lore, or personality details not already canonized in the novel MUST NOT be invented by the product implementation.
+
+The mascot is not a provider avatar. Gemini, OpenRouter, Codex, Groq, or any future provider must never replace the Twin Beasts as omniAgent's product identity.
+
+### 3.1 Product-role mapping
+
+The twins may visually support a loose functional duality:
+
+- **observe / think / remember / plan**;
+- **act / execute / coordinate / use tools**.
+
+This is UI symbolism only. It must not redefine the novel's canon or assign new lore.
+
+### 3.2 Mascot usage rules
+
+Use the Twin Beasts sparingly and intentionally:
+
+- sign-in / welcome surface;
+- empty conversation state;
+- new-thread onboarding;
+- waiting / thinking / working micro-state;
+- approval-required state;
+- success / empty / recoverable error state;
+- compact brand mark in navigation.
+
+Do not place large mascot artwork beside every message. The conversation content remains primary.
+
+### 3.3 Asset rule for UI v1
+
+No approved Twin Beast image asset exists in the current `apps/agent_app` tree.
+
+Therefore:
+
+- do not invent permanent character artwork in code;
+- do not substitute unrelated animals or stock mascots;
+- create the layout with a replaceable mascot slot/component;
+- until canonical assets are supplied, use a restrained non-character placeholder treatment such as paired abstract circles/silhouettes labeled as temporary development assets;
+- temporary placeholders must be structurally easy to replace without changing page layout or behavior.
+
+## 4. Visual direction
+
+### 4.1 Core style
+
+Working design language:
+
+**Warm Cozy / 奶油杏桃 / rounded but not childish / Twin Beast companion / Chat-first / progressive disclosure**
+
+The interface should feel comfortable enough for long sessions while still clearly being a capable agent workspace.
+
+### 4.2 Base palette
+
+Initial visual tokens:
+
+| Token | Value | Intended use |
+| --- | --- | --- |
+| Warm canvas | `#FFF8F0` | main page background |
+| Soft surface | `#FFFDFC` | cards, conversation panels |
+| Apricot primary | `#F3A683` | primary actions and selected accents |
+| Sage secondary | `#AFC8A8` | calm status/supporting accents |
+| Milk-tea neutral | `#EADBC8` | borders, muted surfaces, chips |
+| Cocoa text | `#443A36` | primary text |
+| Muted cocoa | `#756964` | secondary text |
+| Error foreground | use accessible Material semantic error role | destructive/error state |
+| Success foreground | use accessible Material semantic success role where implemented | completed state |
+
+These values establish direction, not permission to sacrifice contrast. Text, controls, disabled states, focus indicators, and status chips must remain readable and accessible.
+
+Provider brand colors should not dominate the shell. Provider identity is metadata, not the product brand.
+
+### 4.3 Shape and spacing
+
+- large shell/card radius: 20–24 px;
+- normal card radius: 16–20 px;
+- input/button radius: 14–18 px;
+- chip radius: pill or 12–16 px;
+- favor 8 / 12 / 16 / 24 / 32 spacing rhythm;
+- shadows must be subtle and low-contrast;
+- prefer surface separation, padding, and border tone over heavy elevation.
+
+### 4.4 Typography
+
+Use the platform/default Flutter text stack for UI v1 unless a separately approved bundled font is introduced later.
+
+Requirements:
+
+- prioritize Traditional Chinese and English readability;
+- titles may be slightly softer/heavier;
+- body copy remains neutral and highly legible;
+- code remains monospace/selectable;
+- do not use playful display fonts for normal chat or settings.
+
+### 4.5 Motion
+
+Motion should communicate state, not decorate continuously.
+
+Target:
+
+- 150–250 ms transitions for drawers, sheets, chips, and state changes;
+- subtle pulse/breathing treatment may be used for waiting/working states;
+- no constant bouncing mascot;
+- honor reduced-motion accessibility settings where practical;
+- no animation may delay approval, cancel, send, or navigation actions.
+
+## 5. Information architecture
+
+Target shell:
+
+```text
+Sign In
+  └─ Chat Shell
+      ├─ Thread Navigation
+      ├─ Conversation
+      │   ├─ user / assistant content
+      │   ├─ status / tool / citation / usage events
+      │   ├─ approval request
+      │   └─ queued / cancel / terminal state
+      └─ Progressive Controls
+          ├─ Runtime / model
+          ├─ Credential source / profile [future API]
+          ├─ Tools / MCP [future management API]
+          ├─ Skills [future management API]
+          └─ Data Sources [bounded integrations]
+```
+
+The primary user journey is always:
+
+**choose/open conversation → talk → see agent state → approve/cancel only when needed.**
+
+Infrastructure controls must not compete visually with the conversation.
+
+## 6. Responsive layout contract
+
+### 6.1 Desktop / wide
+
+For widths at or above the existing wide breakpoint, UI v1 should use:
+
+- left navigation rail/panel for threads;
+- central conversation column;
+- optional advanced-controls surface opened on demand rather than permanently consuming a third column in v1.
+
+The current breakpoint behavior may remain technically simple. Do not introduce a layout rewrite that risks route/API behavior merely to achieve a three-column desktop view.
+
+### 6.2 Mobile / narrow
+
+Mobile is conversation-first:
+
+- thread list in Drawer or equivalent existing navigation;
+- provider/model and advanced controls in modal bottom sheet;
+- composer stays reachable above safe area;
+- approval actions remain easy to tap;
+- status text must wrap without horizontal overflow.
+
+Do not show a permanent right-side settings panel on mobile.
+
+## 7. Screen contracts
+
+### 7.1 Sign-in / unauthenticated screen
+
+Target presentation:
+
+- warm canvas;
+- compact omniAgent wordmark;
+- Twin Beast mascot slot;
+- concise welcome line;
+- existing Google sign-in control;
+- existing explicit "登入或 API 尚未設定" state when configuration is absent.
+
+Do not conceal configuration failure behind a decorative loading state.
+
+### 7.2 Empty / new conversation state
+
+Replace the current form-only center state with a welcoming card.
+
+Suggested hierarchy:
+
+1. mascot slot;
+2. short greeting such as「今天想一起完成什麼？」;
+3. runtime selector;
+4. model field;
+5. primary「建立對話」action;
+6. short helper copy explaining that runtime/model are fixed to the created thread.
+
+UI v1 supports only the currently implemented runtime values:
+
+- Gemini;
+- OpenRouter;
+- Codex.
+
+Groq must remain absent/disabled until backend/provider contract support exists.
+
+### 7.3 Thread navigation
+
+Each thread item should emphasize human-recognizable metadata over raw IDs:
+
+- runtime/model as primary or supporting label;
+- selected state with warm surface/accent;
+- raw `thread_id` may remain available in subdued technical text or future details, but should not dominate the list.
+
+The existing thread selection behavior must remain unchanged.
+
+### 7.4 Conversation header
+
+Show:
+
+- current runtime/model;
+- connection/replay status in human-readable language;
+- fork action;
+- refresh/retry action where applicable;
+- control/settings entry point.
+
+Technical cursor information may remain available as subtle secondary/debug text, but「事件游標 42」should not be the dominant human status.
+
+### 7.5 Conversation content
+
+User and assistant messages should be visually distinct without becoming cartoon speech bubbles.
+
+Recommended:
+
+- user content aligned toward the user side with a soft apricot-neutral surface;
+- assistant content aligned toward the assistant side with warm white/sage-neutral surface;
+- comfortable max-width and readable line length on desktop;
+- selectable Markdown/code behavior preserved;
+- no provider logo used as the assistant avatar.
+
+The Twin Beasts may appear only as a small omniAgent identity marker, not repeated as large artwork per assistant message.
+
+### 7.6 Agent state language
+
+Backend/event truth remains unchanged, but visible wording may become warmer.
+
+Preferred visible mapping:
+
+| Runtime truth | User-facing presentation |
+| --- | --- |
+| queued | 「已排隊，準備開始」 |
+| connecting | 「正在連接工作環境…」 |
+| connected / active | 「正在一起處理」 or neutral active indicator |
+| tool_request | 「正在使用工具」 |
+| tool_result | 「工具已回傳結果」 |
+| approval_request | 「需要你確認一件事」 |
+| approval_resolved | 「確認狀態已更新」 |
+| turn_completed | 「完成」 |
+| turn_cancelled | 「已取消」 |
+| turn_error | 「這次沒有完成」 |
+| disconnected | 「連線暫時中斷，可重新載入」 |
+
+Friendly language must never hide failure, approval scope, expiration, or cancellation semantics.
+
+### 7.7 Approval card
+
+Approval is a safety-critical surface and overrides decorative simplification.
+
+The card must preserve:
+
+- exact operation;
+- params digest;
+- expiry if available;
+- reject action;
+- allow action;
+- locked/submitting state.
+
+Visual treatment may use the Twin Beasts in a small「需要你確認」state, but the technical operation details must stay readable.
+
+### 7.8 Tool / citation / usage events
+
+Keep them compact and collapsible-looking rather than giving them the same visual weight as normal conversation.
+
+- tool request/result: tool icon + concise title;
+- citation: link/source treatment;
+- usage: compact metadata;
+- terminal state: status row/chip.
+
+Do not fabricate tool names or usage values when payload fields are absent.
+
+### 7.9 Composer
+
+The composer is a primary product surface.
+
+Requirements:
+
+- rounded warm surface;
+- clear focus state;
+- multiline 1–5 lines remains supported;
+- send button remains visible and accessible;
+- disabled/busy state is explicit;
+- queued cancel remains a separate user-controlled action;
+- keyboard submit behavior must remain compatible with existing tests/behavior.
+
+## 8. Advanced controls and progressive disclosure
+
+The existing Tools / Skills / Data Sources bottom sheet is retained as the baseline interaction model for UI v1.
+
+It should be visually upgraded but must continue to state implementation truth:
+
+- MCP management API not wired → say so;
+- Skill management API/history not cut over → say so;
+- Janus context only through bounded authenticated API/MCP → say so.
+
+Future credential UI may expose Personal/BYOK and entitled Platform modes only after the matching API exists.
+
+Never create clickable controls that imply a backend action which does not exist.
+
+## 9. Provider and credential UX target
+
+For each supported provider/runtime, future UI should show an explicit credential source:
+
+- **Personal / BYOK**;
+- **Platform** only when entitlement exists.
+
+Allowed non-secret metadata:
 
 - provider;
 - credential source class;
 - masked profile label;
-- configured/not configured/invalid/expired status;
-- last validation time where available;
-- replace/revoke action for owner BYOK.
+- configured / invalid / expired / unavailable state;
+- last validation time;
+- replace/revoke for owner BYOK when the API exists.
 
-The UI MUST NOT show:
+Never display:
 
 - full API keys/tokens after submission;
-- secret references intended only for backend use;
+- backend-only secret references;
 - another owner's credential metadata;
-- platform credentials to non-entitled owners.
+- platform credential options to non-entitled owners.
 
-A user's provider selection and credential source do not change the memory namespace; threads/history remain keyed by the authenticated owner.
+Credential source never changes the memory namespace.
 
-## 4. Codex UX
+## 10. Codex UX target
 
-Codex should expose status such as:
+Codex may eventually expose:
 
 - Personal auth configured / not configured;
 - Platform auth available / unavailable by entitlement;
 - login/re-auth required;
 - active turn/cancel state.
 
-The UI must not imply that a shared platform Codex credential means a shared Codex session. Session/thread/workspace context remains owner-isolated on the backend.
+UI wording must never imply that shared platform Codex authorization means shared session, thread, workspace, tools, or memory.
 
-## 5. Target information architecture
+This UI v1 task does not implement new Codex auth behavior.
 
-```text
-Sign In
-  └─ Chat Shell
-      ├─ Threads
-      ├─ Conversation
-      │   ├─ messages / streamed or replayed events
-      │   ├─ tools / approvals / citations / usage
-      │   └─ turn state / cancel
-      └─ Controls
-          ├─ Runtime / model
-          ├─ Credential source / profile
-          ├─ Tools / MCP
-          ├─ Skills
-          └─ Data Sources
-```
+## 11. Historical conversation UX target
 
-## 6. Provider options
+The user should experience one logical thread regardless of hot/archive storage location.
 
-Target provider list:
+Rules:
 
-- Gemini;
-- OpenRouter;
-- Codex;
-- Groq.
+- Flutter queries authorized Chat APIs only;
+- Flutter never reads GCS/Iceberg directly;
+- archived content restore state must be explicit and recoverable;
+- ordering and owner authorization must be preserved;
+- archive failure must never expose another owner's history.
 
-Groq must remain hidden/disabled or clearly unavailable until backend support exists. UI presence alone must never be used to claim provider readiness.
+This is a target UX contract, not evidence that archive reconstruction is implemented.
 
-## 7. Historical conversation UX
+## 12. Accessibility and trust
 
-The user should experience one logical thread history regardless of whether older payloads have moved to GCS/Iceberg.
+UI v1 must retain:
 
-Target rules:
+- semantic buttons/tooltips where applicable;
+- readable contrast;
+- keyboard operability for core desktop flows;
+- minimum comfortable tap targets on mobile;
+- visible focus/disabled/error states;
+- selectable message/code text;
+- no color-only indication for critical success/error/approval state.
 
-- UI queries authorized Chat APIs, not GCS/Iceberg directly;
-- hot recent state comes from the operational Chat layer;
-- archived historical content may be reconstructed by backend archive readers;
-- loading/restoring archived history must preserve owner/thread ordering and show a clear recoverable state on failure;
-- an archive failure must not make another owner's history visible.
+The warm/cute direction must never make safety-critical information ambiguous.
 
-## 8. Required UI acceptance
+## 13. UI v1 Codex implementation order
 
-- [ ] real browser login on deployed origin;
-- [ ] two-owner thread/event isolation;
-- [ ] real Chat→Gateway provider response;
-- [ ] Personal/BYOK profile add/replace/revoke without secret exposure;
-- [ ] Platform option visible only to entitled owners;
-- [ ] same platform credential used by two owners without memory/session crossover;
-- [ ] Codex owner-isolated session/workspace behavior;
-- [ ] Groq UI only after backend provider support;
-- [ ] reconnect without duplicate/missing events;
-- [ ] approval and cancellation bind to exact owner/turn/request;
-- [ ] archived history reconstructs through authorized backend path;
-- [ ] no raw secret appears in browser logs, rendered events, analytics payloads or crash reports.
+Codex should implement the first pass from the existing `apps/agent_app` source in this order:
+
+1. Introduce centralized visual tokens/theme in Flutter without changing API behavior.
+2. Restyle unauthenticated/sign-in surface.
+3. Restyle new-thread empty state.
+4. Restyle thread navigation and selected state.
+5. Restyle conversation header and connection/status wording.
+6. Restyle message surfaces, event rows, approval card, queued state, and composer.
+7. Restyle the existing Tools / Skills / Data Sources bottom sheet.
+8. Add a replaceable Twin Beast mascot-slot component and temporary paired abstract placeholder only if no approved artwork exists.
+9. Keep existing route/payload behavior unchanged.
+10. Update/add widget tests only as required for visual structure/accessibility while preserving current behavioral assertions.
+11. Run:
+    - `flutter pub get`;
+    - `flutter analyze lib test`;
+    - `flutter test`;
+    - `flutter build web`.
+12. Report exact commit/test evidence separately; passing local source checks is not live acceptance.
+
+## 14. Files expected to change in UI v1
+
+Codex may refactor within `apps/agent_app` as needed, but the expected scope is primarily:
+
+- `apps/agent_app/lib/main.dart`;
+- `apps/agent_app/lib/chat_page.dart`;
+- new presentation-only theme/widget files under `apps/agent_app/lib/` if useful;
+- `apps/agent_app/test/chat_widget_test.dart` or new UI widget tests;
+- `apps/agent_app/pubspec.yaml` only if a presentation-only dependency/asset declaration is truly required.
+
+Avoid touching:
+
+- `services/`;
+- database/migrations;
+- infra/deploy configuration;
+- `packages/contracts/agent.v1.json`;
+- authentication/backend semantics;
+- Janus code/storage.
+
+Any required change outside the presentation layer must stop and be reported as a separate dependency rather than silently expanding scope.
+
+## 15. UI v1 acceptance checklist
+
+### Visual
+
+- [ ] Warm Cozy / 奶油杏桃 visual direction is recognizable.
+- [ ] Twin Beast identity is present through a replaceable mascot slot.
+- [ ] No non-canon permanent Twin Beast details were invented.
+- [ ] Main screen remains Chat-first.
+- [ ] Advanced controls use progressive disclosure.
+- [ ] Desktop and mobile remain usable.
+- [ ] Provider branding does not override omniAgent identity.
+
+### Behavioral regression
+
+- [ ] Google sign-in/config state behavior preserved.
+- [ ] Existing `/v1/threads` route behavior preserved.
+- [ ] thread create/select/fork preserved.
+- [ ] message send preserved.
+- [ ] queued state and cancel preserved.
+- [ ] event cursor/replay merge semantics preserved.
+- [ ] approval exact request/digest behavior preserved.
+- [ ] tool/citation/usage rendering preserved.
+- [ ] Markdown/code selectable rendering preserved.
+- [ ] no Janus legacy route introduced.
+
+### Build/test
+
+- [ ] `flutter analyze lib test` PASS.
+- [ ] `flutter test` PASS.
+- [ ] `flutter build web` PASS.
+- [ ] exact Git commit recorded.
+- [ ] no secret or real endpoint value committed.
+
+## 16. Live acceptance remains separate
+
+A visually complete UI v1 is not production completion.
+
+Still required separately according to SPEC/TODO:
+
+- deployed browser login;
+- two-owner isolation;
+- real Chat→Gateway dispatch;
+- durable dispatcher;
+- credential resolver / entitlement;
+- provider E2E;
+- approval/cancel/reconnect/MCP E2E;
+- archive/storage lifecycle where applicable;
+- final routing/cutover/rollback evidence.
+
+Do not label the system complete merely because this Visual Contract has been implemented.
