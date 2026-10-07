@@ -29,4 +29,7 @@ jobs:
       - name: Validate omniAgent DB setup shell
         run: bash -n setup-omniagent-db-dev.sh
       - name: Validate omniAgent GCP bootstrap shell
-        run: bash -n infra/gcp/bootstrap-omniagent-ci.sh
+        run: |
+          bash -n infra/gcp/bootstrap-omniagent-ci.sh
+          bash -n infra/gcp/bootstrap-omniagent-postgres-access.sh
+          bash -n infra/gcp/bootstrap-omniagent-postgres.sh
