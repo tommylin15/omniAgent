@@ -62,3 +62,5 @@ jobs:
           print("db_port="+str(u.port or 5432))
           print("db_name="+(u.path or "").lstrip("/"))
           PY
+
+# retry: noexec-tmp
