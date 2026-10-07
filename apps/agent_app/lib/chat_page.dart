@@ -741,10 +741,13 @@ class _EventCard extends StatelessWidget {
                     ),
                   ),
                   if (isLocked)
-                    const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                    const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.lock_clock_outlined, size: 18),
+                        SizedBox(width: 4),
+                        Text('處理中'),
+                      ],
                     ),
                 ],
               ),
