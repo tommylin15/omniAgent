@@ -1,0 +1,43 @@
+name: omniAgent Chat candidate VPC probe
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/omniagent-chat-vpc-probe.yml'
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  GCP_PROJECT_ID: gen-lang-client-0593591102
+  GCP_REGION: us-central1
+  OMNIAGENT_GCP_WIF_PROVIDER: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+  OMNIAGENT_GCP_CI_SERVICE_ACCOUNT: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.OMNIAGENT_GCP_WIF_PROVIDER }}
+          service_account: ${{ env.OMNIAGENT_GCP_CI_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Read candidate VPC metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          gcloud run services describe omniagent-chat \
+            --region="$GCP_REGION" --project="$GCP_PROJECT_ID" --format=json >/tmp/chat.json
+          python3 - /tmp/chat.json <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1]))
+          tmpl=d.get("spec",{}).get("template",{})
+          spec=tmpl.get("spec",{})
+          print("spec_vpc="+json.dumps(spec.get("vpcAccess") or {},sort_keys=True))
+          ann=(tmpl.get("metadata") or {}).get("annotations") or {}
+          print("annotations="+json.dumps({k:v for k,v in ann.items() if "vpc" in k.lower() or "network" in k.lower()},sort_keys=True))
+          print("traffic="+json.dumps(d.get("status",{}).get("traffic") or [],sort_keys=True))
+          PY
