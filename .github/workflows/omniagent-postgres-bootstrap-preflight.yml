@@ -1,0 +1,89 @@
+name: omniAgent PostgreSQL bootstrap preflight
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/omniagent-postgres-bootstrap-preflight.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  GCP_PROJECT_ID: gen-lang-client-0593591102
+  GCP_ZONE: us-central1-a
+  OMNIAGENT_GCP_WIF_PROVIDER: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+  OMNIAGENT_GCP_CI_SERVICE_ACCOUNT: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+  POSTGRES_VM: janus-postgres-dev
+  POSTGRES_CONTAINER: janus-postgres
+  POSTGRES_BOOTSTRAP_SECRET: janus-runtime-bundle
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.OMNIAGENT_GCP_WIF_PROVIDER }}
+          service_account: ${{ env.OMNIAGENT_GCP_CI_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Validate bounded PostgreSQL bootstrap path
+        shell: bash
+        run: |
+          set -u
+          gcloud config set project "$GCP_PROJECT_ID" >/dev/null
+          failures=0
+
+          check() {
+            local label="$1"
+            shift
+            if "$@" >/tmp/preflight.out 2>/tmp/preflight.err; then
+              echo "$label=PASS"
+            else
+              echo "$label=FAIL"
+              sed -E 's/(secret|password|token|credential)([^ ]*)/REDACTED/Ig' /tmp/preflight.err | tail -n 12
+              failures=$((failures + 1))
+            fi
+            : > /tmp/preflight.out
+            : > /tmp/preflight.err
+          }
+
+          check secret_access \
+            gcloud secrets versions access latest \
+              --secret="$POSTGRES_BOOTSTRAP_SECRET" \
+              --project="$GCP_PROJECT_ID"
+
+          check compute_describe \
+            gcloud compute instances describe "$POSTGRES_VM" \
+              --zone="$GCP_ZONE" \
+              --project="$GCP_PROJECT_ID"
+
+          check iap_ssh \
+            gcloud compute ssh "$POSTGRES_VM" \
+              --zone="$GCP_ZONE" \
+              --project="$GCP_PROJECT_ID" \
+              --tunnel-through-iap \
+              --quiet \
+              --command=true
+
+          check docker_postgres \
+            gcloud compute ssh "$POSTGRES_VM" \
+              --zone="$GCP_ZONE" \
+              --project="$GCP_PROJECT_ID" \
+              --tunnel-through-iap \
+              --quiet \
+              --command="sudo docker inspect '$POSTGRES_CONTAINER' >/dev/null"
+
+          if (( failures > 0 )); then
+            echo "preflight=FAIL count=$failures"
+            exit 1
+          fi
+
+          echo "preflight=PASS"
+          echo "isolation_target=db:omniagent_chat role:omniagent_chat_app schema:omni_chat"
