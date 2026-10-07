@@ -1,6 +1,6 @@
 # omniAgent SPEC
 
-> Implementation baseline reviewed: `main@75336a248381d935c7b23dd8afab06f5e9c4151a`.
+> Executable baseline validated through `main@d1769491ba41670e86222536ee129b94bbfba04f`; Node Core run `37628904846` PASS. UI source baseline `12a94018debd11f5b389aa2fdf325339782bb9d8`; Flutter run `37625912746` PASS.
 > Architecture revision: 2026-10-07.
 > Status language distinguishes source, target design, real-dev evidence, and live acceptance.
 
@@ -113,9 +113,9 @@ Flutter must provide identity, thread/turn interaction, event rendering, approva
 
 **Status:** source checkpoint `DONE-CODE`; deployed E2E `OPEN`.
 
-### FR-012 Storage migration/cutover
+### FR-012 omniAgent storage activation and optional legacy import
 
-Before writer cutover: independent DB/role, migrations, owner mapping, required historical reconciliation, rollback/reverse-sync, real dev acceptance, explicit routing approval.
+Before Chat write-routing promotion: independent omniAgent DB/role, migrations, owner isolation, real dev acceptance and proven rollback/data consistency. Historical external-data import is optional unless an approved acceptance criterion explicitly requires it, and must use bounded export/import rather than direct external storage access.
 
 **Status:** `OPEN`.
 
@@ -210,4 +210,15 @@ New buckets, BigLake/BigQuery resources, schedulers, archive jobs, secret versio
 
 ## 6. Completion definition
 
-`OMNIAGENT SPLIT COMPLETE` may be declared only after exact-head implementation/CI, real dev deployment, owner isolation, enabled provider/credential modes, durable dispatch, MCP/approval/cancel/reconnect, storage/migration/rollback and documentation gates all pass with explicit evidence. Newly approved design items are not completion evidence.
+omniAgent final acceptance may be declared only after exact-head implementation/CI, real dev deployment, owner isolation, enabled provider/credential modes, durable dispatch, MCP/approval/cancel/reconnect, storage/rollback and documentation gates all pass with explicit evidence. Newly approved design items are not completion evidence.
+
+
+## 7. Deployment credential contract
+
+- Secret bundle: `omniagent-provider-bundle`.
+- Gateway env: `OMNIAGENT_PROVIDER_BUNDLE`.
+- Expected bundle keys: `gemini_api_key`, `openrouter_api_key`, `mcp_owner_signing_key`.
+- `mcp_owner_signing_key` is mapped to runtime `MCP_OWNER_SIGNING_KEY`.
+- Internal HMAC transport uses `X-OmniAgent-Timestamp` and `X-OmniAgent-Signature`.
+- `omniagent-internal-signing-key` is not part of the current architecture and must not be recreated.
+- GitHub deployment identity and Artifact Registry target must be omniAgent-owned/configured; missing values fail closed.
