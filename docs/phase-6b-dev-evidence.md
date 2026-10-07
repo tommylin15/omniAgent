@@ -50,15 +50,17 @@ Candidate build evidence:
 - consolidated candidate run `37640263980`: PASS on `7cc0ac3abda4a37720951569afd0214e91fd401c`;
 - Node and Flutter gates both passed before image publication;
 - Chat candidate digest: `sha256:c5e812db8090490a6223fb317056859656190e343b1a3da499221b3e63aa3d23`;
-- PostgreSQL candidate digest: `sha256:cd55d533a4cbed2d5bace1a0d3a1608a6719ffc6399970275ef9f8bd0e80f963`;
-- both images are in the approved `omniagent` Artifact Registry; this build path does not use the default Cloud Build source-staging bucket.
+- Historical PostgreSQL candidate digest: `sha256:cd55d533a4cbed2d5bace1a0d3a1608a6719ffc6399970275ef9f8bd0e80f963`; this image is now **superseded** and is not used by the active shared-instance design.
+- the accepted Chat image is in the approved `omniagent` Artifact Registry; this build path does not use the default Cloud Build source-staging bucket.
 
 New source/control plane prepared:
 
 - dedicated DB Secret contract: `omniagent-chat-db`; provider credentials remain isolated in `omniagent-provider-bundle`;
-- isolated PostgreSQL container/data directory/port contract with logical database `omniagent_chat` and least-privilege login role `omniagent_chat_app`;
+- approved shared PostgreSQL instance contract: no second database server/container; omniAgent owns logical database `omniagent_chat`, least-privilege login role `omniagent_chat_app`, schema `omni_chat`, migrations and credentials;
 - migrations `001_chat_ownership.sql` and `002_skill_storage.sql` are applied idempotently by `infra/gcp/bootstrap-omniagent-postgres.sh`;
-- PostgreSQL host subnet/CIDR is discovered from runtime metadata and used to generate the DB HBA rule; no subnet CIDR is hard-coded in the repository;
+- capacity/readback run `37701385787` proved the existing host is `e2-micro` with about 966 MiB RAM, about 522 MiB available at probe time, and the existing PostgreSQL container using about 166 MiB; this is why a second PostgreSQL container was rejected;
+- shared-instance probe run `37701709678` proved the existing PostgreSQL listens on private port `5432`, SSL is enabled, and an existing separate logical DB/role pattern already uses the same instance;
+- PostgreSQL host subnet/CIDR is discovered from runtime metadata and used to add only the bounded `omniagent_chat` / `omniagent_chat_app` HBA rule; no subnet CIDR is hard-coded in the repository;
 - `/ready` is a DB-backed readiness endpoint; `/health` remains process liveness;
 - no-traffic candidate deployment uses `omniagent-chat-db` plus Direct VPC egress and requires `/ready=200` before acceptance;
 - P0 candidate images build directly on GitHub runners and push to the `omniagent` Artifact Registry, avoiding the deleted/default Cloud Build source-staging bucket.
@@ -69,7 +71,8 @@ Runtime blocker evidence:
 - fresh probe run `37646016129` reconfirmed `compute.instances.get` is denied; IAP/SSH therefore cannot start. A temporary read of an external bootstrap Secret was also denied and is not part of the target omniAgent DB contract.
 - bounded self-reconcile run `37646421883` then proved `omniagent-ci` cannot grant the missing roles to itself: `gcloud projects add-iam-policy-binding` failed because the CI identity lacks project IAM policy read/write authority.
 - The temporary probe/reconcile workflows were removed immediately after collecting evidence; they are not runtime dependencies and the tracked source remains project-clean.
-- `infra/gcp/bootstrap-omniagent-postgres-access.sh` is the approved one-time administrator bootstrap for the missing Compute Viewer / OS Admin Login / IAP Tunnel access plus the dedicated `omniagent-chat-db` Secret/firewall path. Until an IAM-capable operator applies that bootstrap and the PostgreSQL workflow produces new runtime evidence, the independent Chat DB/role/migrations remain **OPEN**, not PASS.
+- After the operator grant, capacity/shared-instance probes successfully reached the VM over IAP, proving Compute Viewer / OS Admin Login / IAP access is now effective. Run `37700874792` then failed earlier at the old `secretmanager.secrets.get` check before any DB mutation; source has since been corrected so bootstrap only needs Secret version access/add permissions granted on `omniagent-chat-db`.
+- Until the revised shared-instance bootstrap produces new runtime evidence for DB/role/migrations/HBA/Secret, the independent Chat DB remains **OPEN**, not PASS.
 
 ## Still open
 
