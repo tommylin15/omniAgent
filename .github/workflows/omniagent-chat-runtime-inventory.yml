@@ -1,0 +1,86 @@
+name: omniAgent Chat runtime inventory
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/omniagent-chat-runtime-inventory.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  GCP_PROJECT_ID: gen-lang-client-0593591102
+  GCP_REGION: us-central1
+  OMNIAGENT_GCP_WIF_PROVIDER: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+  OMNIAGENT_GCP_CI_SERVICE_ACCOUNT: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.OMNIAGENT_GCP_WIF_PROVIDER }}
+          service_account: ${{ env.OMNIAGENT_GCP_CI_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Read current omniAgent Chat runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          gcloud config set project "$GCP_PROJECT_ID" >/dev/null
+          echo "head_sha=$GITHUB_SHA"
+          gcloud run services describe omniagent-chat             --region="$GCP_REGION"             --project="$GCP_PROJECT_ID"             --format=json > /tmp/chat.json
+
+          python3 - <<'PY'
+          import json
+          d=json.load(open('/tmp/chat.json'))
+          spec=d.get('spec',{}).get('template',{}).get('spec',{})
+          meta=d.get('status',{})
+          c=(spec.get('containers') or [{}])[0]
+          print('service=omniagent-chat')
+          print('url='+str(meta.get('url','')))
+          print('latestReadyRevisionName='+str(meta.get('latestReadyRevisionName','')))
+          print('serviceAccountName='+str(spec.get('serviceAccountName','')))
+          print('image='+str(c.get('image','')))
+          for e in c.get('env') or []:
+              name=e.get('name','')
+              src='literal'
+              ref=''
+              if 'valueFrom' in e:
+                  src='valueFrom'
+                  v=e.get('valueFrom') or {}
+                  sk=v.get('secretKeyRef') or {}
+                  if sk:
+                      src='secretKeyRef'
+                      ref=str(sk.get('name',''))
+              print(f'env:{name}:source={src}:ref={ref}')
+          PY
+
+      - name: Discover approved PostgreSQL target candidates
+        shell: bash
+        run: |
+          set -u
+          echo "::group::Cloud SQL candidates"
+          if ! gcloud sql instances list             --project="$GCP_PROJECT_ID"             --format='table(name,databaseVersion,region,state,connectionName)' 2>&1; then
+            echo "cloud_sql_inventory=NOT_READABLE"
+          fi
+          echo "::endgroup::"
+
+          echo "::group::Compute candidates"
+          if ! gcloud compute instances list             --project="$GCP_PROJECT_ID"             --filter='name~omniagent'             --format='table(name,zone,status)' 2>&1; then
+            echo "compute_inventory=NOT_READABLE"
+          fi
+          echo "::endgroup::"
+
+          echo "::group::Cloud Run jobs"
+          if ! gcloud run jobs list             --project="$GCP_PROJECT_ID"             --region="$GCP_REGION"             --filter='metadata.name~omniagent'             --format='table(metadata.name,status.conditions[0].status)' 2>&1; then
+            echo "run_job_inventory=NOT_READABLE"
+          fi
+          echo "::endgroup::"
