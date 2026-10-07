@@ -34,6 +34,33 @@ The older evidence statement naming `omniagent-internal-signing-key` is invalida
 - Repo-side bootstrap commit `aabd96f879b84a984e54e9987ff28546fad99687`: Project Hygiene run `37633716460` PASS, including bootstrap shell syntax validation.
 - Preflight run `37633716553` attempt 1 failed at Google STS with `invalid_target` before GCP bootstrap. After the dedicated omniAgent WIF/CI/Artifact Registry bootstrap was executed, attempt 2 PASS: tracked identifier validation, `google-github-actions/auth@v2`, `setup-gcloud`, and `Verify GCP identity and omniAgent resources` all completed successfully.
 
+## Chat DB / candidate preparation — 2026-10-07
+
+Runtime readback:
+
+- Chat runtime inventory run `37639174541`: PASS.
+- Current live Chat revision: `omniagent-chat-00004-dzs`.
+- Current runtime service account: `omniagent-chat@gen-lang-client-0593591102.iam.gserviceaccount.com`.
+- Current `CHAT_DATABASE_URL` is sourced from the historical `omniagent-bundle` Secret.
+- Current live Chat revision has no VPC egress configuration (`vpcAccess={}`), so it cannot yet use a private PostgreSQL endpoint.
+- The current live Chat image is still sourced from a legacy non-omniAgent Artifact Registry repository. The P0 candidate build path now targets only the approved `omniagent` repository.
+
+New source/control plane prepared:
+
+- dedicated DB Secret contract: `omniagent-chat-db`; provider credentials remain isolated in `omniagent-provider-bundle`;
+- isolated PostgreSQL container/data directory/port contract with logical database `omniagent_chat` and least-privilege login role `omniagent_chat_app`;
+- migrations `001_chat_ownership.sql` and `002_skill_storage.sql` are applied idempotently by `infra/gcp/bootstrap-omniagent-postgres.sh`;
+- PostgreSQL host subnet/CIDR is discovered from runtime metadata and used to generate the DB HBA rule; no subnet CIDR is hard-coded in the repository;
+- `/ready` is a DB-backed readiness endpoint; `/health` remains process liveness;
+- no-traffic candidate deployment uses `omniagent-chat-db` plus Direct VPC egress and requires `/ready=200` before acceptance;
+- P0 candidate images build directly on GitHub runners and push to the `omniagent` Artifact Registry, avoiding the deleted/default Cloud Build source-staging bucket.
+
+Runtime blocker evidence:
+
+- bounded bootstrap preflight run `37637059612` confirmed the omniAgent CI identity does not currently have `secretmanager.versions.access` and does not have `compute.instances.get` / IAP access to the approved PostgreSQL host path.
+- The temporary cross-project probe workflow used to identify this blocker was removed after the evidence was collected; it is not a runtime dependency.
+- `infra/gcp/bootstrap-omniagent-postgres-access.sh` defines the bounded grant/revoke path. Until that access is applied and the bootstrap workflow produces new runtime evidence, the independent Chat DB/role/migrations remain **OPEN**, not PASS.
+
 ## Still open
 
 - live readback of current Cloud Run revisions and Artifact Registry;
