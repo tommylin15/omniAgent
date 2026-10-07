@@ -6,6 +6,7 @@ on:
     paths:
       - '.github/workflows/omniagent-chat-candidate-build.yml'
       - 'services/chat-api/**'
+      - 'tests/**'
       - 'apps/agent_app/**'
       - 'infra/postgres/**'
       - 'package.json'
@@ -13,6 +14,10 @@ on:
       - 'tsconfig.json'
       - 'cloudbuild.yaml'
   workflow_dispatch:
+
+concurrency:
+  group: omniagent-chat-candidate-main
+  cancel-in-progress: true
 
 permissions:
   contents: read
