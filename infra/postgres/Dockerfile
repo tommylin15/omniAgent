@@ -5,6 +5,5 @@ LABEL org.opencontainers.image.title="omniAgent PostgreSQL" \
       org.opencontainers.image.source="https://github.com/tommylin15/omniAgent"
 
 COPY postgresql.conf /opt/omniagent/postgresql.conf
-COPY pg_hba.conf /opt/omniagent/pg_hba.conf
 COPY migrations /opt/omniagent/migrations
 COPY readiness.sql /opt/omniagent/readiness.sql
