@@ -102,7 +102,7 @@ export class CodexBridge {
       cwd: this.workspace,
       sandbox: sandboxMode(),
       approvalPolicy: "on-request",
-      serviceName: "janus-agent-gateway",
+      serviceName: "omniagent-agent-gateway",
       ...(model ? { model } : {}),
       ...(dynamicTools.length ? { dynamicTools } : {}),
     }, 30_000));
