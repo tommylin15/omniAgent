@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { authorizeApproval, authorizeContextEgress, type ApprovalRequest, type ContextEgress } from "../services/agent-gateway/agent_security.js";
 
 describe("generic Agent security ownership", () => {
-  it("keeps Janus context definitions out of the generic contract", () => {
+  it("keeps external domain definitions out of the generic contract", () => {
     const schema = JSON.parse(readFileSync("packages/contracts/agent.v1.json", "utf8"));
     expect(Object.keys(schema.definitions).sort()).toEqual(["AgentEventV1", "ApprovalRequestV1", "ContextEgressV1", "RuntimeBindingV1"]);
     expect(schema.definitions.ApprovalRequestV1.properties.operation.enum).toEqual(["shell", "write_file"]);
