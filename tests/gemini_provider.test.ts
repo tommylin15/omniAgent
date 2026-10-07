@@ -9,7 +9,7 @@ describe("Gemini REST provider", () => {
   it("sends Google Search grounding and preserves citations and usage", async () => {
     const fetcher = vi.fn().mockResolvedValue(response({
       candidates: [{ content: { parts: [{ text: "Answer" }] }, finishReason: "STOP", groundingMetadata: {
-        webSearchQueries: ["janus"], groundingChunks: [{ web: { uri: "https://example.test", title: "Example" } }],
+        webSearchQueries: ["omniagent"], groundingChunks: [{ web: { uri: "https://example.test", title: "Example" } }],
       } }], usageMetadata: { promptTokenCount: 2, candidatesTokenCount: 3, totalTokenCount: 5 },
     }));
     const provider = new GeminiProvider("secret", "gemini-2.5-flash", fetcher as typeof fetch);
@@ -18,7 +18,7 @@ describe("Gemini REST provider", () => {
     expect(fetcher.mock.calls[0][0]).toContain(":generateContent");
     expect(request.headers).toMatchObject({ "x-goog-api-key": "secret" });
     expect(JSON.parse(String(request.body))).toMatchObject({ tools: [{ google_search: {} }] });
-    expect(result).toMatchObject({ text: "Answer", searchQueries: ["janus"], citations: [{ title: "Example", uri: "https://example.test" }], usage: { totalTokens: 5 } });
+    expect(result).toMatchObject({ text: "Answer", searchQueries: ["omniagent"], citations: [{ title: "Example", uri: "https://example.test" }], usage: { totalTokens: 5 } });
     expect(result.queriedAt).toMatch(/Z$/);
   });
 
