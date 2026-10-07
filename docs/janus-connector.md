@@ -1,7 +1,15 @@
-# Janus connector — authenticated bounded HTTP boundary
+# External Janus connector — bounded integration only
 
-Janus owns the versioned `packages/contracts/janus-context.v1.json` wire description. Its existing owner-authenticated `GET /api/v1/me/ai-sources` and `POST /api/v1/me/chats/{conversation_id}/context-preview` issue a short-lived opaque reference; `POST /internal/v1/assistant/context:resolve` requires a Google service identity on an allowed caller list and checks the supplied owner, thread, and expiry against Janus's stored snapshot. Records are bounded (20 per preview, 32,768 bytes per snapshot), sanitized, and carry as-of/provenance. Janus alone checks source authorization, PIT, publication, and canonical data. The current service token does not itself cryptographically bind the supplied owner; do not claim that stronger boundary without a later reviewed change.
+This file describes one optional external-domain adapter owned by omniAgent. It is **not** a source of truth for omniAgent runtime, credentials, deployment or storage ownership.
 
-`JanusContextClient` now consumes those three endpoints over an HTTPS origin. Source listing and preview take a per-request Janus user ID token, so Janus derives owner scope; the client does not store it. Resolve obtains a Google service ID token for the configured Janus audience from the runtime metadata server. The connector rejects auth failures, mismatched owner/thread/turn, missing provenance/as-of, storage locators, and oversized records/responses. It never imports Janus internals or reads PostgreSQL/GCS/Iceberg. Its local integration tests use a fake HTTP transport; no live Janus request or deployment has occurred.
+`services/agent-gateway/janus_context_client.ts` is the omniAgent-side bounded HTTP client. It must use authenticated, approved API/MCP contracts and must never import Janus internals or read Janus PostgreSQL/GCS/Iceberg directly.
 
-Do not configure the generic MCP Host's global `authTokenEnv` with a user's Janus OAuth token in a multi-owner process. Janus's ChatGPT-facing MCP/OAuth remains independent and Janus-owned. Before real traffic, provision an allowlisted caller identity and approved audience, verify token-to-owner mapping and real dev API/MCP behavior, then establish rollback. The current Janus service token does not cryptographically bind the supplied owner; this checkpoint does not authorize cutover.
+Security requirements:
+
+- each user-scoped request carries only the request-scoped external user credential required by the approved contract;
+- service-to-service calls use an approved omniAgent runtime identity and configured audience;
+- multi-owner processes must not store one user's external token in global MCP configuration;
+- owner/thread/turn binding, expiry, provenance/as-of, payload bounds and storage-locator rejection remain mandatory;
+- live acceptance must be proven from omniAgent runtime requests and responses, not by reading the external repository.
+
+If the external integration is unavailable, omniAgent must expose that state truthfully and continue to keep its own Chat/memory/credential/storage ownership independent.
