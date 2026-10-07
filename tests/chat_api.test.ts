@@ -11,6 +11,7 @@ afterEach(async () => Promise.all(servers.splice(0).map((server) => new Promise<
 
 async function app() {
   const store = {
+    ready: vi.fn(async () => undefined),
     owner: vi.fn(async (_issuer: string, subject: string) => "owner-" + subject),
     createThread: vi.fn(async (ownerId: string, input: unknown) => ({ owner_id: ownerId, thread_id: "thread-1", input })),
     threads: vi.fn(async (ownerId: string) => [{ owner_id: ownerId, thread_id: "thread-1" }]),
@@ -36,6 +37,17 @@ async function app() {
 }
 
 describe("omniAgent Chat API ownership boundary", () => {
+  it("separates liveness from database readiness", async () => {
+    const { base, store } = await app();
+    expect((await fetch(base + "/health")).status).toBe(200);
+    const ready = await fetch(base + "/ready");
+    expect(ready.status).toBe(200);
+    expect(await ready.json()).toEqual({ status:"ready" });
+    expect(store.ready).toHaveBeenCalledTimes(1);
+    store.ready.mockRejectedValueOnce(new Error("database unavailable"));
+    expect((await fetch(base + "/ready")).status).toBe(503);
+  });
+
   it("serves the same-origin Web app without exposing API routes", async () => {
     const root = mkdtempSync(join(tmpdir(),"omni-web-"));
     writeFileSync(join(root,"index.html"),"<title>omniAgent</title>");
