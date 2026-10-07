@@ -2,6 +2,7 @@ import { OAuth2Client } from "google-auth-library";
 import { Pool } from "pg";
 import { makeChatServer } from "./server.js";
 import { ChatStore } from "./storage.js";
+import { chatDatabasePoolConfig } from "./database.js";
 
 const dsn = process.env.CHAT_DATABASE_URL;
 const userAudience = process.env.OMNIAGENT_GOOGLE_CLIENT_ID;
@@ -10,7 +11,7 @@ const callers = new Set((process.env.CHAT_INTERNAL_ALLOWED_EMAILS ?? "").split("
 if (!dsn || !userAudience || !serviceAudience || !callers.size) throw new Error("Chat API authentication or storage is not configured");
 
 const google = new OAuth2Client();
-const pool = new Pool({ connectionString: dsn, max: 5, connectionTimeoutMillis: 5_000 });
+const pool = new Pool(chatDatabasePoolConfig(dsn,process.env.CHAT_DATABASE_TLS_MODE));
 const verify = async (token: string, audience: string) => {
   const payload = (await google.verifyIdToken({ idToken: token, audience })).getPayload();
   if (!payload?.sub || !["https://accounts.google.com", "accounts.google.com"].includes(payload.iss)) {
