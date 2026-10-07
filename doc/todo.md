@@ -31,13 +31,16 @@
 ## P0 — real Phase 6B blockers
 
 - [ ] **Exact-head CI/test for the deploy candidate.**
-  - Node Core run `37628904846` PASS after Gateway/bundle/header/build cleanup; Flutter run `37625912746` PASS for UI source. A single final deploy commit still needs both gates tied together.
+  - DB-readiness source is now covered by Node Core run `37639820179` PASS.
+  - The consolidated candidate workflow runs Node + Flutter gates on one SHA, then builds immutable PostgreSQL and Chat/Flutter images into the omniAgent Artifact Registry. Latest image build evidence must be PASS before this item closes.
 
 - [ ] **Create/verify independent dev Chat DB/role and apply 001/002.**
-  - Real schema/read-write evidence; no direct mutation of external-system storage.
+  - Source-ready: dedicated Secret `omniagent-chat-db`, isolated `omniagent_chat` DB, `omniagent_chat_app` role, dynamic subnet HBA, bounded firewall, idempotent 001/002 bootstrap and read/write probe are defined.
+  - Runtime remains OPEN: omniAgent CI needs the bounded bootstrap Secret/IAP/Compute access before the workflow can create and verify the DB.
 
 - [ ] **Deploy Chat API + Flutter candidate without writer cutover.**
-  - Immutable revision/image, health/UI/protected API smoke.
+  - No-traffic workflow is prepared against the dedicated DB Secret and Direct VPC egress.
+  - Candidate acceptance requires immutable image digest plus `/health=200`, DB-backed `/ready=200`, UI 200, protected API 401, and explicit `traffic_promoted=false`.
 
 - [ ] **Real browser identity + at least two-owner isolation.**
   - Stable issuer+subject mapping; cross-owner thread/event/approval/Skill access rejected.
