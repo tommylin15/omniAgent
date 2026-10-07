@@ -30,6 +30,10 @@ function digest(value: unknown): string {
 export class ChatStore {
   constructor(private readonly pool: Pool) {}
 
+  async ready(): Promise<void> {
+    await this.pool.query("SELECT 1");
+  }
+
   async writeSkillRevision(ownerId: string, skillId: string, revision: number,
                            content: SkillContent, key: string): Promise<Record<string, unknown>> {
     if (!/^[a-z0-9][a-z0-9-]{0,127}$/.test(skillId) || !Number.isSafeInteger(revision) || revision < 1 ||
