@@ -1,3 +1,4 @@
+# Runtime-only inventory; never print secret values.
 name: omniAgent Chat runtime inventory
 
 on:
