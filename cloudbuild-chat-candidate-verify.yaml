@@ -9,10 +9,11 @@ steps:
       - -ceu
       - |
         test -n "${_SERVICE_URL}"
-        for route in /health / /v1/threads; do
+        for route in /health /ready / /v1/threads; do
           status="$(curl --silent --show-error --max-time 30 -o /tmp/response -w '%{http_code}' "${_SERVICE_URL}${route}")"
-          case "${route}:${status}" in /health:200|/:200|/v1/threads:401) ;; *) echo "${route} status=${status}"; exit 22;; esac
+          case "${route}:${status}" in /health:200|/ready:200|/:200|/v1/threads:401) ;; *) echo "${route} status=${status}"; exit 22;; esac
           if [[ "${route}" == /health ]]; then python3 -c 'import json; assert json.load(open("/tmp/response"))["status"] == "ok"'; fi
+          if [[ "${route}" == /ready ]]; then python3 -c 'import json; assert json.load(open("/tmp/response"))["status"] == "ready"'; fi
           if [[ "${route}" == / ]]; then grep -q 'flutter' /tmp/response; fi
           echo "${route} status=${status}"
         done
