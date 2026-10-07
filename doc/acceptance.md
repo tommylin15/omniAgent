@@ -1,6 +1,6 @@
 # omniAgent acceptance matrix
 
-> Implementation baseline reviewed: `main@75336a248381d935c7b23dd8afab06f5e9c4151a`.
+> Executable baseline validated through `main@d1769491ba41670e86222536ee129b94bbfba04f`; Node Core run `37628904846` PASS. UI source baseline `12a94018debd11f5b389aa2fdf325339782bb9d8`; Flutter run `37625912746` PASS.
 > Architecture revision: 2026-10-07.
 > Code/design presence cannot substitute for runtime evidence.
 
@@ -22,7 +22,7 @@ Recorded Phase 6B evidence previously demonstrated a private omniAgent Gateway c
 
 | Area | Required evidence | Current |
 | --- | --- | --- |
-| exact-head quality | Node + Flutter CI/tests tied to deploy commit | OPEN |
+| exact-head quality | Node + Flutter CI/tests tied to deploy commit | PARTIAL — both pass separately; final single commit gate open |
 | Chat DB | independent DB/role + applied migrations + real R/W | OPEN |
 | Chat candidate | deployed revision/image + smoke | OPEN |
 | OAuth/owner | real browser + stable issuer/subject | OPEN |
@@ -82,8 +82,8 @@ Before the historical lakehouse is relied on for retention/scale:
 ## 7. Security acceptance
 
 - [ ] authenticated owner binding; no client-supplied owner trust;
-- [ ] authenticated internal service calls;
-- [ ] no direct omniAgent access to Janus DB/GCS/Iceberg;
+- [ ] authenticated internal service calls using omniAgent-owned identity and `X-OmniAgent-*` HMAC headers;
+- [ ] no direct omniAgent access to any external system's DB/GCS/Iceberg;
 - [ ] approval binding includes owner/thread/turn/request/digest/expiry;
 - [ ] MCP sessions cannot cross owners;
 - [ ] provider secrets never become Chat memory or analytics data;
@@ -104,4 +104,16 @@ Before the historical lakehouse is relied on for retention/scale:
 
 Active README/SPEC/WBS/TODO/UI/acceptance/storage/architecture docs must match actual runtime. Point-in-time evidence remains traceable.
 
-The phrase `OMNIAGENT SPLIT COMPLETE` is prohibited until explicit Phase 9 PASS with exact source, CI, deployment, provider/credential isolation, storage lifecycle, rollback and documentation evidence.
+The project must not be called final-accepted or production-complete until explicit Phase 9 PASS with exact source, CI, deployment, provider/credential isolation, storage lifecycle, rollback and documentation evidence.
+
+
+## 10. omniAgent credential/deployment wiring gate
+
+- [x] Gateway reads `OMNIAGENT_PROVIDER_BUNDLE`.
+- [x] provider bundle contract includes `mcp_owner_signing_key` → `MCP_OWNER_SIGNING_KEY`.
+- [x] no active config depends on `omniagent-internal-signing-key`.
+- [x] Node Core run `37628904846` PASS after the ownership cleanup.
+- [ ] `OMNIAGENT_GCP_WIF_PROVIDER` configured and preflight PASS.
+- [ ] `OMNIAGENT_GCP_CI_SERVICE_ACCOUNT` configured and proven least-privilege.
+- [ ] `OMNIAGENT_ARTIFACT_REPOSITORY` configured and readable/writable by the approved build/deploy identity.
+- [ ] live Cloud Run configuration proves the provider bundle is injected without exposing its value.
