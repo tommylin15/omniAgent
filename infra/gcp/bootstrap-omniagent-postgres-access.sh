@@ -42,7 +42,7 @@ test -n "$subnet_cidr"
 
 if [[ "$action" == "grant" ]]; then
   if ! gcloud secrets describe "$DB_SECRET" --project="$PROJECT_ID" >/dev/null 2>&1; then
-    gcloud secrets create "$DB_SECRET"       --replication-policy=automatic       --project="$PROJECT_ID"
+    gcloud secrets create "$DB_SECRET"       --replication-policy=user-managed       --locations="$REGION"       --project="$PROJECT_ID"
   fi
 
   gcloud secrets add-iam-policy-binding "$DB_SECRET"     --project="$PROJECT_ID"     --member="$runtime_member"     --role=roles/secretmanager.secretAccessor >/dev/null
