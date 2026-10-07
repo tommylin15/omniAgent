@@ -29,7 +29,7 @@ describe("agent gateway cloud runtime POC", () => {
     const mcp = new McpHost();
     vi.spyOn(mcp, "discover").mockResolvedValue({ tools: [{ name: "quotes__latest", description: "Latest quote", inputSchema: { type: "object" } }] });
     vi.spyOn(mcp, "call").mockResolvedValue({ requestId: "request-1", toolName: "quotes__latest", result: { price: 100 } });
-    const bridge = new CodexBridge("00000000-0000-4000-8000-000000000001", "/tmp/janus-turn", client, mcp);
+    const bridge = new CodexBridge("00000000-0000-4000-8000-000000000001", "/tmp/omniagent-turn", client, mcp);
 
     await bridge.initialize();
     await bridge.logout();
@@ -39,7 +39,7 @@ describe("agent gateway cloud runtime POC", () => {
     await handler({ method: "turn/started", params: { threadId: "thread-1", turn: { id: "turn-1", status: "inProgress" } } });
     await handler({ method: "item/started", params: { threadId: "thread-1", turnId: "turn-1", item: { id: "item-1", type: "agentMessage" } } });
     const toolResult = await handler({ id: 80, method: "item/tool/call", params: { threadId: "thread-1", turnId: "turn-1", itemId: "item-2", tool: "quotes__latest", arguments: {} } });
-    await handler({ id: 81, method: "item/commandExecution/requestApproval", params: { threadId: "thread-1", turnId: "turn-1", itemId: "item-3", cwd: "/tmp/janus-turn", command: "pwd" } });
+    await handler({ id: 81, method: "item/commandExecution/requestApproval", params: { threadId: "thread-1", turnId: "turn-1", itemId: "item-3", cwd: "/tmp/omniagent-turn", command: "pwd" } });
     const approval = bridge.eventsAfter().events.find((event) => event.type === "approval_request")!;
     expect(() => bridge.resolveApproval(String(approval.payload.requestId), "thread-1", "turn-other", String(approval.payload.paramsDigest), "accept")).toThrow("binding");
     bridge.resolveApproval(String(approval.payload.requestId), "thread-1", "turn-1", String(approval.payload.paramsDigest), "accept");
@@ -65,7 +65,7 @@ describe("agent gateway cloud runtime POC", () => {
   });
 
   it("loads and persists rotated managed auth without logging credentials", async () => {
-    const home = await mkdtemp(join(tmpdir(), "janus-auth-test-"));
+    const home = await mkdtemp(join(tmpdir(), "omniagent-auth-test-"));
     homes.push(home);
     const first = Buffer.from('{"tokens":"old"}').toString("base64");
     const fetcher = vi.fn()
@@ -100,7 +100,7 @@ describe("agent gateway cloud runtime POC", () => {
   });
 
   it("keeps owner auth entries separate inside a shared bundle", async () => {
-    const home = await mkdtemp(join(tmpdir(), "janus-auth-bundle-test-"));
+    const home = await mkdtemp(join(tmpdir(), "omniagent-auth-bundle-test-"));
     homes.push(home);
     const ownerA = "00000000-0000-4000-8000-000000000001";
     const ownerB = "00000000-0000-4000-8000-000000000002";
@@ -150,7 +150,7 @@ describe("agent gateway cloud runtime POC", () => {
   });
 
   it("evicts an owner login session before cleanup", async () => {
-    const root = await mkdtemp(join(tmpdir(), "janus-login-test-"));
+    const root = await mkdtemp(join(tmpdir(), "omniagent-login-test-"));
     homes.push(root);
     const ownerId = "00000000-0000-4000-8000-000000000001";
     const client = { request: vi.fn().mockResolvedValue({}), stop: vi.fn().mockResolvedValue(undefined) };
@@ -170,13 +170,13 @@ describe("agent gateway cloud runtime POC", () => {
       .mockResolvedValueOnce(response({ name: "object" }))
       .mockResolvedValueOnce(response({ access_token: "metadata-token" }))
       .mockResolvedValueOnce(response({ checkpointId: "id", events: [{ seq: 0 }] }));
-    const store = new GcsCheckpointStore("janus-dev-private", fetcher as typeof fetch);
+    const store = new GcsCheckpointStore("omniagent-dev-checkpoints", fetcher as typeof fetch);
     await store.put("id", { checkpointId: "id", events: [{ seq: 0 }] });
     expect(await store.get("id")).toEqual({ checkpointId: "id", events: [{ seq: 0 }] });
   });
 
   it("negotiates JSONL with the pinned Codex App Server", async () => {
-    const home = await mkdtemp(join(tmpdir(), "janus-codex-test-"));
+    const home = await mkdtemp(join(tmpdir(), "omniagent-codex-test-"));
     homes.push(home);
     const cli = resolve(process.platform === "win32"
       ? "node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe"
