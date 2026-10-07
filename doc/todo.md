@@ -1,8 +1,19 @@
 # omniAgent TODO
 
-> Implementation baseline reviewed: `main@75336a248381d935c7b23dd8afab06f5e9c4151a`.
+> Implementation baseline reviewed: `main@f21702f829514a72c41586e30b1665258909e94c`.
 > Architecture revision: 2026-10-07.
 > Code/migration/infra work listed here must be executed through the approved development flow; documentation updates are not implementation.
+
+## UI v1 development kickoff
+
+- [ ] **UI v1 Slice 1 — READY-FOR-CODEX.**
+  - Work order: GitHub Issue #1, kickoff comment ID `6036339623`.
+  - Start from `main@f21702f829514a72c41586e30b1665258909e94c`.
+  - Before source edits, record exact-head Flutter baseline: `flutter pub get`, `flutter analyze lib test`, `flutter test`, `flutter build web`.
+  - First source slice: centralized Warm Cozy theme/tokens, sign-in/config state, new-thread empty state, replaceable Twin Beast mascot slot.
+  - Presentation layer only; existing Chat API routes/payloads/event/approval/cancel semantics and `assistantProfile=default` must remain unchanged.
+  - Exit evidence: exact commit + pre/post command results. Source PASS is not live acceptance.
+  - Status is READY-FOR-CODEX, not implemented; this documentation entry must not be counted as feature completion.
 
 ## P0 — real Phase 6B blockers
 
