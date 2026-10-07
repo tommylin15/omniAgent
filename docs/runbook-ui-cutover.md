@@ -60,4 +60,4 @@ Promote only after all mandatory gates PASS. Rollback must point to a known-good
 
 ## 7. External integrations
 
-External systems such as Janus remain bounded integrations only. Their internal deployment/runbook is outside this runbook and must not be consulted to infer omniAgent current state.
+External systems remain bounded integrations only. Their internal deployment/runbook is outside this runbook and must not be consulted to infer omniAgent current state.
