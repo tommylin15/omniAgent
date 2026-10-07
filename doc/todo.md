@@ -138,3 +138,6 @@ The 2026-10-07 credential/lakehouse decisions are `TARGET-DESIGN`, not completed
 - [x] Node Core CI added and run `37628904846` PASS.
 - [x] Repo-side deployment identifiers and idempotent GCP bootstrap are defined for `OMNIAGENT_GCP_WIF_PROVIDER`, `OMNIAGENT_GCP_CI_SERVICE_ACCOUNT`, and `OMNIAGENT_ARTIFACT_REPOSITORY`.
 - [ ] Execute/read back the omniAgent GCP bootstrap and require a new preflight PASS before marking GitHub→GCP deployment identity configured.
+  - Repo-side bootstrap commit: `aabd96f879b84a984e54e9987ff28546fad99687`.
+  - Project Hygiene `37633716460`: PASS.
+  - GCP preflight `37633716553`: FAIL at WIF token exchange with `invalid_target`; the dedicated WIF target is not yet present/enabled. This is the current deployment blocker.
