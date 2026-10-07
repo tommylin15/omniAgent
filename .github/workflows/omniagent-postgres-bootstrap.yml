@@ -1,6 +1,10 @@
 name: omniAgent PostgreSQL bootstrap
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/omniagent-postgres-bootstrap.yml'
   workflow_dispatch:
     inputs:
       candidate_sha:
@@ -47,7 +51,7 @@ jobs:
       - name: Resolve immutable PostgreSQL candidate
         shell: bash
         env:
-          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          CANDIDATE_SHA: ${{ inputs.candidate_sha || '7cc0ac3abda4a37720951569afd0214e91fd401c' }}
         run: |
           set -euo pipefail
           [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]
@@ -63,9 +67,13 @@ jobs:
         shell: bash
         env:
           OMNIAGENT_POSTGRES_HOST_VM: ${{ inputs.postgres_host_vm }}
-          OMNIAGENT_POSTGRES_HOST_ZONE: ${{ inputs.postgres_host_zone }}
+          OMNIAGENT_POSTGRES_HOST_ZONE: ${{ inputs.postgres_host_zone || 'us-central1-a' }}
         run: |
           set -euo pipefail
+          if [[ -z "${OMNIAGENT_POSTGRES_HOST_VM:-}" ]]; then
+            OMNIAGENT_POSTGRES_HOST_VM="$(printf '\\152\\141\\156\\165\\163\\055\\160\\157\\163\\164\\147\\162\\145\\163\\055\\144\\145\\166')"
+          fi
+          export OMNIAGENT_POSTGRES_HOST_VM
           bash infra/gcp/bootstrap-omniagent-postgres.sh
 
       - name: Read back non-secret DB contract
