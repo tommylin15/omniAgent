@@ -49,7 +49,7 @@ jobs:
           print('url='+str(meta.get('url','')))
           print('latestReadyRevisionName='+str(meta.get('latestReadyRevisionName','')))
           print('serviceAccountName='+str(spec.get('serviceAccountName','')))
-          print('image='+str(c.get('image','')))
+          print('image='+str(c.get('image','')))\n          print('vpcAccess='+json.dumps(spec.get('vpcAccess') or {}, sort_keys=True))
           for e in c.get('env') or []:
               name=e.get('name','')
               src='literal'
