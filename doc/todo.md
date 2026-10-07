@@ -1,6 +1,6 @@
 # omniAgent TODO
 
-> Implementation baseline reviewed: `main@12a94018debd11f5b389aa2fdf325339782bb9d8`.
+> Executable ownership-cleanup baseline validated through `main@d1769491ba41670e86222536ee129b94bbfba04f`; Node Core run `37628904846` PASS. UI source baseline `12a94018debd11f5b389aa2fdf325339782bb9d8`; Flutter run `37625912746` PASS.
 > Architecture revision: 2026-10-07.
 > Code/migration/infra work listed here must be executed through the approved development flow; documentation updates are not implementation.
 
@@ -26,15 +26,15 @@
 - [ ] **UI v1 next gate — DEPLOYED VISUAL ACCEPTANCE / ASSET PIPELINE.**
   - Keep the current replaceable abstract Twin Beast slot until a production asset is explicitly selected/ingested.
   - Next visual evidence should cover real browser/mobile layout, long chats, approval cards, code blocks, keyboard/composer behavior and responsive breakpoints.
-  - Deployment remains a separate decision under the current repo governance.
+  - Deployment is authorized for omniAgent. Current blocker is omniAgent-owned GitHub→GCP configuration; preflight run `37628839968` fails closed because `OMNIAGENT_GCP_WIF_PROVIDER` is not configured.
 
 ## P0 — real Phase 6B blockers
 
 - [ ] **Exact-head CI/test for the deploy candidate.**
-  - Node build/tests + Flutter analyze/tests/build tied to one commit.
+  - Node Core run `37628904846` PASS after Gateway/bundle/header/build cleanup; Flutter run `37625912746` PASS for UI source. A single final deploy commit still needs both gates tied together.
 
 - [ ] **Create/verify independent dev Chat DB/role and apply 001/002.**
-  - Real schema/read-write evidence; no Janus storage mutation.
+  - Real schema/read-write evidence; no direct mutation of external-system storage.
 
 - [ ] **Deploy Chat API + Flutter candidate without writer cutover.**
   - Immutable revision/image, health/UI/protected API smoke.
@@ -107,9 +107,9 @@
 
 ## P2 — migration/cutover/finalization
 
-- [ ] Historical Janus owner mapping/export-copy-verify only if approved/required.
-- [ ] Prove post-cutover rollback/reverse-sync before write switch.
-- [ ] Obtain explicit routing/write-ownership cutover approval.
+- [ ] Optional historical external-data import only if explicitly required; use approved export/copy/verify, never direct external storage access.
+- [ ] Prove omniAgent rollback/data consistency before any write-routing promotion.
+- [ ] Promote omniAgent routing/write ownership only after mandatory acceptance gates pass.
 - [ ] Execute cleanup only after replacement is live-accepted.
 - [ ] Reconcile active docs with runtime and remove stale current-state claims without erasing history.
 - [ ] Phase 9 final acceptance: source + CI + deployment + integration + credential isolation + storage lifecycle + rollback + docs.
@@ -118,7 +118,7 @@
 
 - [x] independent omniAgent repo/build boundary;
 - [x] generic Agent contract/security split;
-- [x] bounded Janus source boundary;
+- [x] bounded external-source boundary (including the optional Janus adapter);
 - [x] target Chat API/`omni_chat` source;
 - [x] generic Flutter Chat source;
 - [x] private Gateway candidate at the recorded checkpoint;
@@ -126,3 +126,14 @@
 - [x] real OpenRouter provider probe at the recorded checkpoint.
 
 The 2026-10-07 credential/lakehouse decisions are `TARGET-DESIGN`, not completed work.
+
+
+## 2026-10-07 ownership / credential cleanup
+
+- [x] Gateway bundle env renamed to `OMNIAGENT_PROVIDER_BUNDLE`.
+- [x] Internal HMAC headers renamed to `X-OmniAgent-Timestamp` / `X-OmniAgent-Signature`.
+- [x] `omniagent-provider-bundle.mcp_owner_signing_key` is the signing-key source.
+- [x] Obsolete `omniagent-internal-signing-key` dependency removed from acceptance config; that Secret must not be recreated.
+- [x] legacy Artifact Registry hard-code removed from `cloudbuild.yaml`; image repository must be supplied explicitly.
+- [x] Node Core CI added and run `37628904846` PASS.
+- [ ] Configure omniAgent-owned GitHub→GCP variables: `OMNIAGENT_GCP_WIF_PROVIDER`, `OMNIAGENT_GCP_CI_SERVICE_ACCOUNT`, `OMNIAGENT_ARTIFACT_REPOSITORY`.
