@@ -10,6 +10,8 @@ on:
       - 'package-lock.json'
       - 'tsconfig.json'
       - 'cloudbuild*.yaml'
+      - 'infra/postgres/migrations/**'
+      - 'setup-omniagent-db-dev.sh'
       - '.github/workflows/node-core.yml'
   pull_request:
     paths:
@@ -19,6 +21,8 @@ on:
       - 'package-lock.json'
       - 'tsconfig.json'
       - 'cloudbuild*.yaml'
+      - 'infra/postgres/migrations/**'
+      - 'setup-omniagent-db-dev.sh'
       - '.github/workflows/node-core.yml'
 
 permissions:
@@ -36,3 +40,5 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm test
+      - name: Validate DB setup script syntax
+        run: bash -n setup-omniagent-db-dev.sh
