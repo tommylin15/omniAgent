@@ -1,6 +1,6 @@
 # omniAgent UI Visual Contract
 
-> Repository head reviewed: `main@59ef8015064c16144b58d3424dc80d6f3201e939`.
+> UI source baseline: `main@12a94018debd11f5b389aa2fdf325339782bb9d8`; Flutter run `37625912746` PASS. Current repo also contains later omniAgent Gateway/deployment ownership cleanup validated by Node Core run `37628904846`.
 > Current implementation path: `apps/agent_app/`.
 > Contract revision: 2026-10-07.
 > This document is the implementation contract for the first visual redesign. It does not change backend/API ownership, provider readiness, storage semantics, or completion status.
@@ -450,9 +450,9 @@ Codex should implement the first pass from the existing `apps/agent_app` source 
     - `flutter build web`.
 12. Report exact commit/test evidence separately; passing local source checks is not live acceptance.
 
-## 14. Files expected to change in UI v1
+## 14. UI v1 implemented source scope
 
-Codex may refactor within `apps/agent_app` as needed, but the expected scope is primarily:
+The implemented source scope is primarily:
 
 - `apps/agent_app/lib/main.dart`;
 - `apps/agent_app/lib/chat_page.dart`;
@@ -475,34 +475,34 @@ Any required change outside the presentation layer must stop and be reported as 
 
 ### Visual
 
-- [ ] Warm Cozy / 奶油杏桃 visual direction is recognizable.
-- [ ] Twin Beast identity is present through a replaceable mascot slot.
-- [ ] No non-canon permanent Twin Beast details were invented.
-- [ ] Main screen remains Chat-first.
-- [ ] Advanced controls use progressive disclosure.
+- [x] Warm Cozy / 奶油杏桃 visual direction is implemented in source.
+- [x] Twin Beast identity is present through a replaceable mascot slot.
+- [x] No non-canon permanent Twin Beast details were invented.
+- [x] Main screen remains Chat-first.
+- [x] Advanced controls use progressive disclosure.
 - [ ] Desktop and mobile remain usable.
-- [ ] Provider branding does not override omniAgent identity.
+- [x] Provider branding does not override omniAgent identity.
 
 ### Behavioral regression
 
-- [ ] Google sign-in/config state behavior preserved.
-- [ ] Existing `/v1/threads` route behavior preserved.
-- [ ] thread create/select/fork preserved.
-- [ ] message send preserved.
-- [ ] queued state and cancel preserved.
-- [ ] event cursor/replay merge semantics preserved.
-- [ ] approval exact request/digest behavior preserved.
-- [ ] tool/citation/usage rendering preserved.
-- [ ] Markdown/code selectable rendering preserved.
-- [ ] no Janus legacy route introduced.
+- [x] Google sign-in/config state behavior preserved by source/tests.
+- [x] Existing `/v1/threads` route behavior preserved.
+- [x] thread create/select/fork preserved.
+- [x] message send preserved.
+- [x] queued state and cancel preserved.
+- [x] event cursor/replay merge semantics preserved.
+- [x] approval exact request/digest behavior preserved.
+- [x] tool/citation/usage rendering preserved.
+- [x] Markdown/code selectable rendering preserved.
+- [x] no external legacy Chat route introduced.
 
 ### Build/test
 
-- [ ] `flutter analyze lib test` PASS.
-- [ ] `flutter test` PASS.
-- [ ] `flutter build web` PASS.
-- [ ] exact Git commit recorded.
-- [ ] no secret or real endpoint value committed.
+- [x] `flutter analyze lib test` PASS — run `37625912746`.
+- [x] `flutter test` PASS — run `37625912746`.
+- [x] `flutter build web` PASS — run `37625912746`.
+- [x] exact UI source commit recorded: `12a94018debd11f5b389aa2fdf325339782bb9d8`.
+- [x] no secret or real endpoint value committed in UI slice.
 
 ## 16. Live acceptance remains separate
 
