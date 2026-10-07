@@ -34,13 +34,14 @@
   - Candidate SHA `7cc0ac3abda4a37720951569afd0214e91fd401c`; consolidated run `37640263980` PASS.
   - Node + Flutter gates passed on that SHA.
   - Immutable Chat image: `omniagent-chat@sha256:c5e812db8090490a6223fb317056859656190e343b1a3da499221b3e63aa3d23`.
-  - Immutable PostgreSQL image: `omniagent-postgres@sha256:cd55d533a4cbed2d5bace1a0d3a1608a6719ffc6399970275ef9f8bd0e80f963`.
-  - Images are in the approved omniAgent Artifact Registry and the build path does not recreate/use the default Cloud Build source-staging bucket.
+  - Historical PostgreSQL image `omniagent-postgres@sha256:cd55d533a4cbed2d5bace1a0d3a1608a6719ffc6399970275ef9f8bd0e80f963` is superseded by the shared-instance decision and is no longer part of the active path.
+  - The Chat image is in the approved omniAgent Artifact Registry and the build path does not recreate/use the default Cloud Build source-staging bucket.
 
 - [ ] **Create/verify independent dev Chat DB/role and apply 001/002.**
-  - Source-ready: dedicated Secret `omniagent-chat-db`, isolated `omniagent_chat` DB, `omniagent_chat_app` role, dynamic subnet HBA, bounded firewall, idempotent 001/002 bootstrap and read/write probe are defined.
-  - Runtime remains OPEN: fresh probe `37646016129` reconfirmed the CI identity lacks Compute/IAP bootstrap access, and self-reconcile run `37646421883` proved it cannot grant those roles to itself because project IAM policy access is denied.
-  - Next gate is a one-time IAM-capable operator execution of `infra/gcp/bootstrap-omniagent-postgres-access.sh grant`; after that, run the official PostgreSQL bootstrap workflow, verify migrations/read-write evidence, then revoke temporary CI bootstrap access.
+  - Source-ready: reuse the approved shared PostgreSQL instance on port `5432`; create only `omniagent_chat` DB, `omniagent_chat_app` role, `omni_chat` schema, dedicated Secret `omniagent-chat-db`, bounded HBA/firewall, idempotent 001/002 bootstrap and read/write probe.
+  - Capacity probe `37701385787` showed the host is `e2-micro` with about 966 MiB RAM, so the second-PostgreSQL-container design is explicitly abandoned.
+  - Shared-instance probe `37701709678` confirmed the existing PostgreSQL endpoint and separate logical-database pattern. Compute/IAP access is now working after the operator grant.
+  - Runtime remains OPEN until the revised bootstrap creates/verifies the omniAgent DB/role/migrations/HBA/Secret and produces a fresh PASS.
 
 - [ ] **Deploy Chat API + Flutter candidate without writer cutover.**
   - No-traffic workflow is prepared against the dedicated DB Secret and Direct VPC egress.
