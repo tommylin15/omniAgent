@@ -4,13 +4,13 @@ set -euo pipefail
 action="${1:-grant}"
 PROJECT_ID="${OMNIAGENT_GCP_PROJECT_ID:-gen-lang-client-0593591102}"
 CI_SERVICE_ACCOUNT="${OMNIAGENT_GCP_CI_SERVICE_ACCOUNT:-omniagent-ci@${PROJECT_ID}.iam.gserviceaccount.com}"
-RUNTIME_SERVICE_ACCOUNT="${OMNIAGENT_CHAT_SERVICE_ACCOUNT:-omniagent-chat@${PROJECT_ID}.iam.gserviceaccount.com}"
-DB_SECRET="${OMNIAGENT_CHAT_DB_SECRET:-omniagent-chat-db-candidate}"
+CHAT_RUNTIME_SERVICE_ACCOUNT="${OMNIAGENT_CHAT_SERVICE_ACCOUNT:-omniagent-chat@${PROJECT_ID}.iam.gserviceaccount.com}"
+DB_SECRET="${OMNIAGENT_CHAT_DB_SECRET:-omniagent-chat-db}"
 : "${OMNIAGENT_POSTGRES_HOST_VM:?OMNIAGENT_POSTGRES_HOST_VM is required}"
 : "${OMNIAGENT_POSTGRES_HOST_ZONE:?OMNIAGENT_POSTGRES_HOST_ZONE is required}"
 
 ci_member="serviceAccount:${CI_SERVICE_ACCOUNT}"
-runtime_member="serviceAccount:${RUNTIME_SERVICE_ACCOUNT}"
+runtime_member="serviceAccount:${CHAT_RUNTIME_SERVICE_ACCOUNT}"
 
 gcloud config set project "$PROJECT_ID" >/dev/null
 
