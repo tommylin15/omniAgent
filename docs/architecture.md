@@ -167,9 +167,9 @@ The event transport must be based on persisted event state and cursor replay. St
 
 A delivery mechanism such as Cloud Tasks may be evaluated as a wake-up mechanism later, but it is not approved or implemented by this document and must not become the source of truth for queue state.
 
-## 9. External domain boundary (Janus adapter included)
+## 9. External domain boundary
 
-External domain systems remain separate from omniAgent. The Janus adapter is one example; omniAgent MAY consume approved external data/tools only through bounded authenticated API/MCP.
+External domain systems remain separate from omniAgent. omniAgent MAY consume approved external data/tools only through bounded authenticated Tool/MCP/Data Source contracts.
 
 omniAgent MUST NOT:
 
@@ -178,7 +178,7 @@ omniAgent MUST NOT:
 - read external GCS/Iceberg directly;
 - treat external storage as omniAgent memory storage.
 
-Janus may therefore be one external domain/tool provider without owning omniAgent's Chat memory, credential plane, deployment plane, or data lakehouse.
+No external domain/tool provider owns omniAgent's Chat memory, credential plane, deployment plane, or data lakehouse.
 
 ## 10. Current implementation truth
 
