@@ -18,7 +18,7 @@ The target tone is:
 - advanced controls progressively disclosed rather than permanently occupying the main surface;
 - explicit unavailable / partial states rather than fabricated capability.
 
-External systems such as Janus remain behind bounded authenticated API/MCP contracts. The UI must never read Janus storage directly and must never imply that an unavailable backend feature is ready.
+External systems remain behind bounded authenticated Tool/MCP/Data Source contracts. The UI must never read external storage directly and must never imply that an unavailable backend feature is ready.
 
 ## 2. Non-negotiable implementation boundary for UI v1
 
@@ -39,7 +39,7 @@ Do not change in this UI task:
 - owner/authentication contract;
 - `packages/contracts/agent.v1.json`;
 - backend/provider/storage implementation;
-- Janus integration boundaries.
+- external Tool/MCP/Data Source integration boundaries.
 
 Current event delivery remains persisted cursor replay plus polling at the reviewed checkpoint. UI v1 may redesign how connection state is presented, but it must not claim continuous production streaming has been accepted.
 
@@ -357,7 +357,7 @@ It should be visually upgraded but must continue to state implementation truth:
 
 - MCP management API not wired → say so;
 - Skill management API/history not cut over → say so;
-- Janus context only through bounded authenticated API/MCP → say so.
+- external context only through bounded authenticated Tool/MCP/Data Source contracts → say so.
 
 Future credential UI may expose Personal/BYOK and entitled Platform modes only after the matching API exists.
 
@@ -467,7 +467,7 @@ Avoid touching:
 - infra/deploy configuration;
 - `packages/contracts/agent.v1.json`;
 - authentication/backend semantics;
-- Janus code/storage.
+- external-system code/storage.
 
 Any required change outside the presentation layer must stop and be reported as a separate dependency rather than silently expanding scope.
 
