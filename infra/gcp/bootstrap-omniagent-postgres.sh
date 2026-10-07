@@ -3,41 +3,53 @@ set -euo pipefail
 umask 077
 
 PROJECT_ID="${OMNIAGENT_GCP_PROJECT_ID:-gen-lang-client-0593591102}"
-REGION="${OMNIAGENT_GCP_REGION:-us-central1}"
-ARTIFACT_REPOSITORY="${OMNIAGENT_ARTIFACT_REPOSITORY:-omniagent}"
 DB_SECRET="${OMNIAGENT_CHAT_DB_SECRET:-omniagent-chat-db}"
 CONTAINER="${OMNIAGENT_POSTGRES_CONTAINER:-omniagent-postgres}"
 HOST_PORT="${OMNIAGENT_POSTGRES_HOST_PORT:-5433}"
 : "${OMNIAGENT_POSTGRES_IMAGE:?OMNIAGENT_POSTGRES_IMAGE must be an immutable @sha256 image}"
-
 : "${OMNIAGENT_POSTGRES_HOST_VM:?OMNIAGENT_POSTGRES_HOST_VM is required}"
 : "${OMNIAGENT_POSTGRES_HOST_ZONE:?OMNIAGENT_POSTGRES_HOST_ZONE is required}"
 
 gcloud config set project "$PROJECT_ID" >/dev/null
 gcloud secrets describe "$DB_SECRET" --project="$PROJECT_ID" >/dev/null
 
-host_ip="$(gcloud compute instances describe "$OMNIAGENT_POSTGRES_HOST_VM"   --zone="$OMNIAGENT_POSTGRES_HOST_ZONE"   --project="$PROJECT_ID"   --format='value(networkInterfaces[0].networkIP)')"
-test -n "$host_ip"
-
+instance_json="$(mktemp)"
 work="$(mktemp -d)"
-trap 'rm -rf "$work"' EXIT
+trap 'rm -f "$instance_json"; rm -rf "$work"' EXIT
+
+gcloud compute instances describe "$OMNIAGENT_POSTGRES_HOST_VM"   --zone="$OMNIAGENT_POSTGRES_HOST_ZONE"   --project="$PROJECT_ID"   --format=json >"$instance_json"
+
+read -r host_ip subnet < <(python3 - "$instance_json" <<'PY'
+import json,sys
+d=json.load(open(sys.argv[1]))
+ni=(d.get("networkInterfaces") or [{}])[0]
+ip=ni.get("networkIP","")
+subnet=ni.get("subnetwork","").rsplit("/",1)[-1]
+if not ip or not subnet:
+    raise SystemExit("PostgreSQL host network metadata is incomplete")
+print(ip,subnet)
+PY
+)
+host_region="${OMNIAGENT_POSTGRES_HOST_ZONE%-*}"
+subnet_cidr="$(gcloud compute networks subnets describe "$subnet"   --region="$host_region"   --project="$PROJECT_ID"   --format='value(ipCidrRange)')"
+test -n "$subnet_cidr"
 
 secret_has_version=false
-if gcloud secrets versions access latest --secret="$DB_SECRET" --project="$PROJECT_ID"     >"$work/existing-dsn" 2>/dev/null; then
+if gcloud secrets versions access latest     --secret="$DB_SECRET"     --project="$PROJECT_ID" >"$work/existing-dsn" 2>/dev/null; then
   secret_has_version=true
   python3 - "$work/existing-dsn" "$host_ip" "$HOST_PORT" "$work/app-password" <<'PY'
 import sys
-from urllib.parse import unquote, urlparse
-raw=open(sys.argv[1], encoding="utf-8").read().strip()
+from urllib.parse import unquote,urlparse
+raw=open(sys.argv[1],encoding="utf-8").read().strip()
 u=urlparse(raw)
 if u.scheme not in ("postgresql","postgres"):
     raise SystemExit("DB secret is not a PostgreSQL URL")
-if u.username != "omniagent_chat_app" or (u.path or "").lstrip("/") != "omniagent_chat":
+if u.username!="omniagent_chat_app" or (u.path or "").lstrip("/")!="omniagent_chat":
     raise SystemExit("DB secret identity mismatch")
-if u.hostname != sys.argv[2] or (u.port or 5432) != int(sys.argv[3]):
+if u.hostname!=sys.argv[2] or (u.port or 5432)!=int(sys.argv[3]):
     raise SystemExit("DB secret endpoint mismatch")
 password=unquote(u.password or "")
-if len(password) != 64 or any(c not in "0123456789abcdef" for c in password):
+if len(password)!=64 or any(c not in "0123456789abcdef" for c in password):
     raise SystemExit("DB secret password contract is invalid")
 open(sys.argv[4],"w",encoding="utf-8").write(password)
 PY
@@ -57,10 +69,12 @@ cat >"$work/remote-bootstrap.sh" <<'REMOTE'
 #!/usr/bin/env bash
 set -euo pipefail
 umask 077
+
 image_ref="$1"
 container="$2"
 host_port="$3"
 secret_has_version="$4"
+subnet_cidr="$5"
 data_dir=/mnt/stateful_partition/omniagent-postgres
 app_password_file=/tmp/omniagent-app-password
 bootstrap_password_file=/tmp/omniagent-bootstrap-password
@@ -70,6 +84,7 @@ app_password="$(<"$app_password_file")"
 bootstrap_password="$(<"$bootstrap_password_file")"
 [[ "$app_password" =~ ^[0-9a-f]{64}$ ]]
 [[ "$bootstrap_password" =~ ^[0-9a-f]{64}$ ]]
+[[ "$subnet_cidr" =~ ^[0-9a-fA-F:.]+/[0-9]{1,3}$ ]]
 
 token="$(curl -fsS -H 'Metadata-Flavor: Google'   'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token'   | sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p')"
 sudo mkdir -p /run/omniagent-docker
@@ -86,10 +101,10 @@ if [[ ! -f "$data_dir/PG_VERSION" ]]; then
   env_file=/run/omniagent-postgres-bootstrap.env
   printf 'POSTGRES_PASSWORD=%s\nPOSTGRES_DB=postgres\nPGDATA=/var/lib/postgresql/data\n' "$bootstrap_password" |
     sudo tee "$env_file" >/dev/null
-  sudo docker run -d --name "$container" --restart=no     --env-file "$env_file" -v "$data_dir:/var/lib/postgresql/data" "$image_ref" >/dev/null
+  sudo docker run -d --name "$container" --restart=no     --env-file "$env_file"     -v "$data_dir:/var/lib/postgresql/data"     "$image_ref" >/dev/null
   sudo rm -f "$env_file"
 else
-  sudo docker run -d --name "$container" --restart=no     -v "$data_dir:/var/lib/postgresql/data" "$image_ref" >/dev/null
+  sudo docker run -d --name "$container" --restart=no     -v "$data_dir:/var/lib/postgresql/data"     "$image_ref" >/dev/null
 fi
 
 for _ in $(seq 1 60); do
@@ -144,8 +159,16 @@ if [[ ! -f "$data_dir/server.key" || ! -f "$data_dir/server.crt" ]]; then
   sudo docker exec -u postgres "$container" chmod 600 /var/lib/postgresql/data/server.key
 fi
 
+cat <<EOF | sudo docker exec -i -u postgres "$container"   tee /var/lib/postgresql/data/pg_hba.omniagent.conf >/dev/null
+local   all             postgres                                peer
+local   all             all                                     scram-sha-256
+hostssl omniagent_chat  omniagent_chat_app  $subnet_cidr        scram-sha-256
+host    all             all                 0.0.0.0/0            reject
+EOF
+sudo docker exec -u postgres "$container" chmod 600 /var/lib/postgresql/data/pg_hba.omniagent.conf
+
 sudo docker rm -f "$container" >/dev/null
-sudo docker run -d --name "$container" --restart=always   -p "${host_port}:5432"   -v "$data_dir:/var/lib/postgresql/data" "$image_ref"   -c config_file=/opt/omniagent/postgresql.conf   -c hba_file=/opt/omniagent/pg_hba.conf >/dev/null
+sudo docker run -d --name "$container" --restart=always   -p "${host_port}:5432"   -v "$data_dir:/var/lib/postgresql/data"   "$image_ref"   -c config_file=/opt/omniagent/postgresql.conf   -c hba_file=/var/lib/postgresql/data/pg_hba.omniagent.conf >/dev/null
 
 for _ in $(seq 1 60); do
   sudo docker exec -u postgres "$container" pg_isready -U postgres -d omniagent_chat >/dev/null 2>&1 && break
@@ -157,9 +180,9 @@ echo "postgres_tables=$table_count"
 REMOTE
 
 chmod 700 "$work/remote-bootstrap.sh"
-gcloud compute scp   "$work/remote-bootstrap.sh" "$work/app-password" "$work/bootstrap-password"   "$OMNIAGENT_POSTGRES_HOST_VM:/tmp/"   --zone="$OMNIAGENT_POSTGRES_HOST_ZONE"   --project="$PROJECT_ID"   --tunnel-through-iap --quiet
+gcloud compute scp   "$work/remote-bootstrap.sh" "$work/app-password" "$work/bootstrap-password"   "$OMNIAGENT_POSTGRES_HOST_VM:/tmp/"   --zone="$OMNIAGENT_POSTGRES_HOST_ZONE"   --project="$PROJECT_ID"   --tunnel-through-iap   --quiet
 
-gcloud compute ssh "$OMNIAGENT_POSTGRES_HOST_VM"   --zone="$OMNIAGENT_POSTGRES_HOST_ZONE"   --project="$PROJECT_ID"   --tunnel-through-iap --quiet   --command   "sudo mv /tmp/remote-bootstrap.sh /tmp/omniagent-remote-bootstrap.sh;    sudo mv /tmp/app-password /tmp/omniagent-app-password;    sudo mv /tmp/bootstrap-password /tmp/omniagent-bootstrap-password;    sudo chmod 600 /tmp/omniagent-app-password /tmp/omniagent-bootstrap-password;    sudo chmod 700 /tmp/omniagent-remote-bootstrap.sh;    sudo /tmp/omniagent-remote-bootstrap.sh '$image_ref' '$CONTAINER' '$HOST_PORT' '$secret_has_version'"
+gcloud compute ssh "$OMNIAGENT_POSTGRES_HOST_VM"   --zone="$OMNIAGENT_POSTGRES_HOST_ZONE"   --project="$PROJECT_ID"   --tunnel-through-iap   --quiet   --command   "sudo mv /tmp/remote-bootstrap.sh /tmp/omniagent-remote-bootstrap.sh;    sudo mv /tmp/app-password /tmp/omniagent-app-password;    sudo mv /tmp/bootstrap-password /tmp/omniagent-bootstrap-password;    sudo chmod 600 /tmp/omniagent-app-password /tmp/omniagent-bootstrap-password;    sudo chmod 700 /tmp/omniagent-remote-bootstrap.sh;    sudo /tmp/omniagent-remote-bootstrap.sh '$image_ref' '$CONTAINER' '$HOST_PORT' '$secret_has_version' '$subnet_cidr'"
 
 if [[ "$secret_has_version" != true ]]; then
   python3 - "$host_ip" "$HOST_PORT" "$work/app-password" "$work/dsn" <<'PY'
@@ -177,5 +200,7 @@ echo "postgres_host=$host_ip"
 echo "postgres_port=$HOST_PORT"
 echo "postgres_database=omniagent_chat"
 echo "postgres_role=omniagent_chat_app"
+echo "postgres_subnet=$subnet"
+echo "postgres_subnet_cidr=$subnet_cidr"
 echo "postgres_image=$image_ref"
 echo "chat_db_secret=$DB_SECRET"
