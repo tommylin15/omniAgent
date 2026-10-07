@@ -6,14 +6,14 @@
 
 ## UI v1 development kickoff
 
-- [ ] **UI v1 Slice 1 — READY-FOR-CODEX.**
+- [ ] **UI v1 Slice 1 — PATCH-READY / NOT IMPLEMENTED.**
   - Work order: GitHub Issue #1, kickoff comment ID `6036339623`.
   - Start from `main@f21702f829514a72c41586e30b1665258909e94c`.
   - Before source edits, record exact-head Flutter baseline: `flutter pub get`, `flutter analyze lib test`, `flutter test`, `flutter build web`.
   - First source slice: centralized Warm Cozy theme/tokens, sign-in/config state, new-thread empty state, replaceable Twin Beast mascot slot.
   - Presentation layer only; existing Chat API routes/payloads/event/approval/cancel semantics and `assistantProfile=default` must remain unchanged.
   - Exit evidence: exact commit + pre/post command results. Source PASS is not live acceptance.
-  - Status is READY-FOR-CODEX, not implemented; this documentation entry must not be counted as feature completion.
+  - Status is PATCH-READY, not implemented; exact patch blueprint is recorded in GitHub Issue #1 comment `6038169430`. This documentation entry must not be counted as feature completion.
 
 ## P0 — real Phase 6B blockers
 
