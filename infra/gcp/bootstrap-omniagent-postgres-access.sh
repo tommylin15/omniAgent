@@ -3,9 +3,14 @@ set -euo pipefail
 
 action="${1:-grant}"
 PROJECT_ID="${OMNIAGENT_GCP_PROJECT_ID:-gen-lang-client-0593591102}"
+REGION="${OMNIAGENT_GCP_REGION:-us-central1}"
 CI_SERVICE_ACCOUNT="${OMNIAGENT_GCP_CI_SERVICE_ACCOUNT:-omniagent-ci@${PROJECT_ID}.iam.gserviceaccount.com}"
 CHAT_RUNTIME_SERVICE_ACCOUNT="${OMNIAGENT_CHAT_SERVICE_ACCOUNT:-omniagent-chat@${PROJECT_ID}.iam.gserviceaccount.com}"
+ARTIFACT_REPOSITORY="${OMNIAGENT_ARTIFACT_REPOSITORY:-omniagent}"
 DB_SECRET="${OMNIAGENT_CHAT_DB_SECRET:-omniagent-chat-db}"
+HOST_PORT="${OMNIAGENT_POSTGRES_HOST_PORT:-5433}"
+FIREWALL_RULE="${OMNIAGENT_POSTGRES_FIREWALL_RULE:-omniagent-postgres-dev}"
+
 : "${OMNIAGENT_POSTGRES_HOST_VM:?OMNIAGENT_POSTGRES_HOST_VM is required}"
 : "${OMNIAGENT_POSTGRES_HOST_ZONE:?OMNIAGENT_POSTGRES_HOST_ZONE is required}"
 
@@ -14,47 +19,81 @@ runtime_member="serviceAccount:${CHAT_RUNTIME_SERVICE_ACCOUNT}"
 
 gcloud config set project "$PROJECT_ID" >/dev/null
 
+instance_json="$(mktemp)"
+trap 'rm -f "$instance_json"' EXIT
+gcloud compute instances describe "$OMNIAGENT_POSTGRES_HOST_VM"   --zone="$OMNIAGENT_POSTGRES_HOST_ZONE"   --project="$PROJECT_ID"   --format=json >"$instance_json"
+
+read -r vm_sa network subnet < <(python3 - "$instance_json" <<'PY'
+import json,sys
+d=json.load(open(sys.argv[1]))
+sa=(d.get("serviceAccounts") or [{}])[0].get("email","")
+ni=(d.get("networkInterfaces") or [{}])[0]
+network=ni.get("network","").rsplit("/",1)[-1]
+subnet=ni.get("subnetwork","").rsplit("/",1)[-1]
+if not sa or not network or not subnet:
+    raise SystemExit("PostgreSQL host IAM/network metadata is incomplete")
+print(sa,network,subnet)
+PY
+)
+host_region="${OMNIAGENT_POSTGRES_HOST_ZONE%-*}"
+subnet_cidr="$(gcloud compute networks subnets describe "$subnet"   --region="$host_region"   --project="$PROJECT_ID"   --format='value(ipCidrRange)')"
+test -n "$subnet_cidr"
+
 if [[ "$action" == "grant" ]]; then
   if ! gcloud secrets describe "$DB_SECRET" --project="$PROJECT_ID" >/dev/null 2>&1; then
-    gcloud secrets create "$DB_SECRET" --replication-policy=automatic --project="$PROJECT_ID"
+    gcloud secrets create "$DB_SECRET"       --replication-policy=automatic       --project="$PROJECT_ID"
   fi
+
+  gcloud secrets add-iam-policy-binding "$DB_SECRET"     --project="$PROJECT_ID"     --member="$runtime_member"     --role=roles/secretmanager.secretAccessor >/dev/null
+
   for role in roles/secretmanager.secretAccessor roles/secretmanager.secretVersionAdder; do
-    gcloud secrets add-iam-policy-binding "$DB_SECRET" --project="$PROJECT_ID" \
-      --member="$ci_member" --role="$role" >/dev/null
+    gcloud secrets add-iam-policy-binding "$DB_SECRET"       --project="$PROJECT_ID"       --member="$ci_member"       --role="$role" >/dev/null
   done
-  gcloud secrets add-iam-policy-binding "$DB_SECRET" --project="$PROJECT_ID" \
-    --member="$runtime_member" --role=roles/secretmanager.secretAccessor >/dev/null
 
   for role in roles/compute.viewer roles/compute.osAdminLogin roles/iap.tunnelResourceAccessor; do
-    gcloud projects add-iam-policy-binding "$PROJECT_ID" \
-      --member="$ci_member" --role="$role" --condition=None >/dev/null
+    gcloud projects add-iam-policy-binding "$PROJECT_ID"       --member="$ci_member"       --role="$role"       --condition=None >/dev/null
   done
 
-  vm_sa="$(gcloud compute instances describe "$OMNIAGENT_POSTGRES_HOST_VM" \
-    --zone="$OMNIAGENT_POSTGRES_HOST_ZONE" --project="$PROJECT_ID" \
-    --format='value(serviceAccounts[0].email)')"
-  if [[ -n "$vm_sa" ]]; then
-    gcloud iam service-accounts add-iam-policy-binding "$vm_sa" --project="$PROJECT_ID" \
-      --member="$ci_member" --role=roles/iam.serviceAccountUser >/dev/null
+  gcloud iam service-accounts add-iam-policy-binding "$vm_sa"     --project="$PROJECT_ID"     --member="$ci_member"     --role=roles/iam.serviceAccountUser >/dev/null
+
+  gcloud artifacts repositories add-iam-policy-binding "$ARTIFACT_REPOSITORY"     --location="$REGION"     --project="$PROJECT_ID"     --member="serviceAccount:$vm_sa"     --role=roles/artifactregistry.reader >/dev/null
+
+  if ! gcloud compute firewall-rules describe "$FIREWALL_RULE"       --project="$PROJECT_ID" >/dev/null 2>&1; then
+    gcloud compute firewall-rules create "$FIREWALL_RULE"       --project="$PROJECT_ID"       --network="$network"       --direction=INGRESS       --priority=1000       --action=ALLOW       --rules="tcp:$HOST_PORT"       --source-ranges="$subnet_cidr"       --target-service-accounts="$vm_sa" >/dev/null
   fi
+
+  gcloud compute firewall-rules describe "$FIREWALL_RULE"     --project="$PROJECT_ID"     --format=json | python3 - "$network" "$subnet_cidr" "$vm_sa" "$HOST_PORT" <<'PY'
+import json,sys
+d=json.load(sys.stdin)
+network,source,sa,port=sys.argv[1:]
+actual_network=str(d.get("network","")).rsplit("/",1)[-1]
+ranges=set(d.get("sourceRanges") or [])
+targets=set(d.get("targetServiceAccounts") or [])
+allowed=d.get("allowed") or []
+ports={p for row in allowed if row.get("IPProtocol")=="tcp" for p in row.get("ports") or []}
+if actual_network!=network or source not in ranges or sa not in targets or port not in ports:
+    raise SystemExit("omniAgent PostgreSQL firewall rule drift detected")
+PY
+
   echo "omniAgent PostgreSQL bootstrap access granted."
+  echo "db_secret=$DB_SECRET"
+  echo "postgres_network=$network"
+  echo "postgres_subnet=$subnet"
+  echo "postgres_subnet_cidr=$subnet_cidr"
+  echo "postgres_firewall=$FIREWALL_RULE"
 elif [[ "$action" == "revoke" ]]; then
   for role in roles/secretmanager.secretAccessor roles/secretmanager.secretVersionAdder; do
-    gcloud secrets remove-iam-policy-binding "$DB_SECRET" --project="$PROJECT_ID" \
-      --member="$ci_member" --role="$role" >/dev/null || true
+    gcloud secrets remove-iam-policy-binding "$DB_SECRET"       --project="$PROJECT_ID"       --member="$ci_member"       --role="$role" >/dev/null || true
   done
+
   for role in roles/compute.viewer roles/compute.osAdminLogin roles/iap.tunnelResourceAccessor; do
-    gcloud projects remove-iam-policy-binding "$PROJECT_ID" \
-      --member="$ci_member" --role="$role" --condition=None >/dev/null || true
+    gcloud projects remove-iam-policy-binding "$PROJECT_ID"       --member="$ci_member"       --role="$role"       --condition=None >/dev/null || true
   done
-  vm_sa="$(gcloud compute instances describe "$OMNIAGENT_POSTGRES_HOST_VM" \
-    --zone="$OMNIAGENT_POSTGRES_HOST_ZONE" --project="$PROJECT_ID" \
-    --format='value(serviceAccounts[0].email)' 2>/dev/null || true)"
-  if [[ -n "$vm_sa" ]]; then
-    gcloud iam service-accounts remove-iam-policy-binding "$vm_sa" --project="$PROJECT_ID" \
-      --member="$ci_member" --role=roles/iam.serviceAccountUser >/dev/null || true
-  fi
-  echo "omniAgent PostgreSQL bootstrap access revoked; runtime secret access retained."
+
+  gcloud iam service-accounts remove-iam-policy-binding "$vm_sa"     --project="$PROJECT_ID"     --member="$ci_member"     --role=roles/iam.serviceAccountUser >/dev/null || true
+
+  echo "omniAgent PostgreSQL temporary bootstrap access revoked."
+  echo "Persistent runtime access retained for the DB Secret, image pull, and bounded DB firewall rule."
 else
   echo "usage: $0 grant|revoke" >&2
   exit 2
