@@ -80,14 +80,27 @@ jobs:
           test -n "$client_id"
           echo "OMNIAGENT_GOOGLE_CLIENT_ID=$client_id" >> "$GITHUB_ENV"
 
-      - name: Build immutable Chat and Flutter candidate
+      - name: Build immutable PostgreSQL and Chat candidates
         shell: bash
         run: |
           set -euo pipefail
-          repo="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${OMNIAGENT_ARTIFACT_REPOSITORY}"
-          image="${repo}/omniagent-chat:${GITHUB_SHA}"
-          gcloud builds submit .             --project="$GCP_PROJECT_ID"             --config=cloudbuild.yaml             --substitutions="_IMAGE_REPOSITORY=${repo},_IMAGE_TAG=${GITHUB_SHA},_OMNIAGENT_GOOGLE_CLIENT_ID=${OMNIAGENT_GOOGLE_CLIENT_ID}"             --quiet
-          digest="$(gcloud artifacts docker images describe "$image"             --project="$GCP_PROJECT_ID"             --format='value(image_summary.digest)')"
-          test -n "$digest"
+          registry="${GCP_REGION}-docker.pkg.dev"
+          repo="${registry}/${GCP_PROJECT_ID}/${OMNIAGENT_ARTIFACT_REPOSITORY}"
+          chat_image="${repo}/omniagent-chat:${GITHUB_SHA}"
+          postgres_image="${repo}/omniagent-postgres:${GITHUB_SHA}"
+
+          gcloud auth configure-docker "$registry" --quiet
+
+          docker build             --file=services/chat-api/Dockerfile             --build-arg="OMNIAGENT_GOOGLE_CLIENT_ID=${OMNIAGENT_GOOGLE_CLIENT_ID}"             --tag="$chat_image" .
+          docker push "$chat_image"
+
+          docker build             --file=infra/postgres/Dockerfile             --tag="$postgres_image" infra/postgres
+          docker push "$postgres_image"
+
+          chat_digest="$(gcloud artifacts docker images describe "$chat_image"             --project="$GCP_PROJECT_ID"             --format='value(image_summary.digest)')"
+          postgres_digest="$(gcloud artifacts docker images describe "$postgres_image"             --project="$GCP_PROJECT_ID"             --format='value(image_summary.digest)')"
+          test -n "$chat_digest"
+          test -n "$postgres_digest"
           echo "candidate_sha=$GITHUB_SHA"
-          echo "candidate_image=${repo}/omniagent-chat@${digest}"
+          echo "chat_candidate_image=${repo}/omniagent-chat@${chat_digest}"
+          echo "postgres_candidate_image=${repo}/omniagent-postgres@${postgres_digest}"
