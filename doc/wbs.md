@@ -1,6 +1,6 @@
 # omniAgent WBS
 
-> Implementation baseline reviewed: `main@75336a248381d935c7b23dd8afab06f5e9c4151a`.
+> Executable baseline validated through `main@d1769491ba41670e86222536ee129b94bbfba04f`; Node Core run `37628904846` PASS. UI source baseline `12a94018debd11f5b389aa2fdf325339782bb9d8`; Flutter run `37625912746` PASS.
 > Architecture revision: 2026-10-07.
 > Completion is implementation + test + deployment/integration evidence, never document presence alone.
 
@@ -10,7 +10,7 @@
 | --- | --- | --- | --- |
 | 0.1 | Maintain current ownership/source/runtime truth by exact commit | ONGOING | source + CI + runtime evidence |
 | 0.2 | Do not treat design approval as implementation | ONGOING | status language preserved |
-| 0.3 | Keep direct Janus DB/GCS/Iceberg access forbidden | ONGOING | source/integration scan |
+| 0.3 | Keep direct external-system DB/GCS/Iceberg access forbidden | ONGOING | source/integration scan |
 
 ## 1. Closed split checkpoints
 
@@ -18,7 +18,7 @@
 | --- | --- | --- |
 | 1.1 | independent omniAgent repo/build boundary | DONE |
 | 1.2 | generic contract/security split | DONE |
-| 1.3 | bounded Janus connector boundary | DONE-CHECKPOINT |
+| 1.3 | bounded external connector boundary (Janus adapter included) | DONE-CHECKPOINT |
 | 1.4 | Chat API/storage ownership target | DONE-CHECKPOINT |
 | 1.5 | generic Flutter Chat extraction | DONE-CHECKPOINT |
 
@@ -26,7 +26,7 @@
 
 | WBS | Work item | Status | Exit condition |
 | --- | --- | --- | --- |
-| 2.1 | exact-head CI/test | OPEN | Node + Flutter tied to deploy commit |
+| 2.1 | exact-head CI/test | PARTIAL | Node `37628904846` PASS + Flutter `37625912746` PASS; tie both to final deploy commit |
 | 2.2 | independent Chat DB/role + apply 001/002 | OPEN | real schema/read-write evidence |
 | 2.3 | deploy Chat API + Flutter candidate | OPEN | revision/image/smoke without routing cutover |
 | 2.4 | real browser identity | OPEN | correct audience + stable owner mapping |
@@ -85,4 +85,16 @@
 | 6.3 | Phase 7 cleanup | BLOCKED | replacement proven first |
 | 6.4 | Phase 8 docs/stale-reference reconciliation | IN PROGRESS | active docs match runtime |
 | 6.5 | Phase 9 final acceptance | BLOCKED | all required gates PASS |
-| 6.6 | declare `OMNIAGENT SPLIT COMPLETE` | BLOCKED | explicit Phase 9 PASS only |
+| 6.6 | declare omniAgent final acceptance complete | BLOCKED | explicit Phase 9 PASS only |
+
+
+## 7. Deployment ownership cleanup
+
+| WBS | Work item | Status | Exit condition |
+| --- | --- | --- | --- |
+| 7.1 | omniAgent provider bundle owns provider + HMAC material | DONE-CODE | `OMNIAGENT_PROVIDER_BUNDLE`; `mcp_owner_signing_key` contract |
+| 7.2 | remove obsolete standalone signing Secret dependency | DONE-CODE | no `omniagent-internal-signing-key` use in active config |
+| 7.3 | omniAgent internal signing headers | DONE-CODE | `X-OmniAgent-*` on both verifier and acceptance client |
+| 7.4 | omniAgent Node CI | VERIFIED-CI | run `37628904846` PASS |
+| 7.5 | omniAgent GitHub→GCP identity | BLOCKED | configure three `OMNIAGENT_*` repository variables and preflight PASS |
+| 7.6 | omniAgent Artifact Registry target | BLOCKED | exact approved repository name supplied; no legacy hard-code |
