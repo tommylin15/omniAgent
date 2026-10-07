@@ -1,6 +1,10 @@
 name: omniAgent Chat candidate deploy
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/omniagent-chat-candidate-deploy.yml'
   workflow_dispatch:
     inputs:
       candidate_sha:
@@ -40,7 +44,7 @@ jobs:
       - name: Resolve candidate, database network, and current non-secret config
         shell: bash
         env:
-          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          CANDIDATE_SHA: ${{ inputs.candidate_sha || '27b2809242dcb95687f46c8a30c3fe34f3e4ec47' }}
         run: |
           set -euo pipefail
           [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]
@@ -112,7 +116,7 @@ jobs:
       - name: Deploy no-traffic candidate with Direct VPC egress
         shell: bash
         env:
-          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          CANDIDATE_SHA: ${{ inputs.candidate_sha || '27b2809242dcb95687f46c8a30c3fe34f3e4ec47' }}
         run: |
           set -euo pipefail
           tag="candidate-${CANDIDATE_SHA:0:7}"
