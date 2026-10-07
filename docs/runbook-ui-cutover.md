@@ -1,15 +1,63 @@
-# UI cutover runbook
+# omniAgent UI/runtime deployment runbook
 
-## Current state
+This is the active cutover runbook for omniAgent. It does not depend on another project's deployment state.
 
-Split Phases 0–5 are closed as migration checkpoints. Janus remains the sole live Chat writer. Its canonical API revision is `janus-api-00154-74s` at 100% traffic, image `api@sha256:3be7c05489ab6329632a94372f8c311f7de5a0f4ab485ec012d8340eb2c13d9c`. The image packages the pinned pre-split Web artifact. GCP dev build `d46fd92e-1bcf-482b-b4fd-ee59c4ef8c38`, zero-traffic candidate acceptance `d61ac9ee-616f-4a37-8010-d1b7f6ddab07`, and canonical acceptance `123683e7-6fa8-444e-a00d-e12af07045c8` succeeded. Both acceptance runs checked health, `/app`, `/app/admin`, the legacy Chat route, and User/Admin OAuth client IDs. This does not cut over omniAgent.
+## 1. Source gate
 
-## Carry-forward phases
+- pin one omniAgent commit SHA;
+- Node build/tests PASS;
+- Flutter analyze/tests/build PASS;
+- confirm UI uses only omniAgent `/v1/threads` Chat routes.
 
-- **Phase 6 — Deployment Planning Gate:** planning only. Define Cloud Run/Build, Secret, service account, IAM, OAuth, env, routing, service-to-service auth, rollback, and any paid-resource changes. Do not deploy or change security/cost boundaries.
-- **Phase 6B — Real Dev Deployment / Acceptance:** after approvals, validate omniAgent OAuth/owner isolation, runtime dispatch, providers, Janus bounded context, Skills/MCP, streaming/reconnect/cancel/approval, historical owner mapping/export-copy-verify as required, and at least one real end-to-end dev flow. The standalone client must use only omniAgent `/v1/threads`; never fall back to Janus `/api/v1/me/chats...`.
-- **Phase 7 — Janus Cleanup:** only after Phase 6B acceptance and explicit cleanup approval. Remove only replaced generic assistant ownership; preserve Janus domain/data/API/MCP/UI responsibilities and migration history.
-- **Phase 8 — Documentation / stale-reference gate:** align active docs with actual ownership/runtime/path state while preserving archive/history facts.
-- **Phase 9 — Final Acceptance:** verify both repos, CI/tests, deployment, live runtime, integration, storage ownership, docs, stale references and rollback. Only a Phase 9 PASS may be called `OMNIAGENT SPLIT COMPLETE`.
+## 2. GCP preflight
 
-Keep Janus legacy Chat API and historical data intact until an approved Phase 6B write-routing cutover. The older `usefulness-rollback` image `sha256:058d442f...` was already absent on 2026-09-22; the user accepted that old image rollback is not guaranteed. For an API-only Janus rollback, confirm the desired old revision image still exists before using the Janus [dev deployment runbook](https://github.com/tommylin15/janus-omniforge/blob/main/doc/runbook-dev-deploy.md). After Chat write cutover, rollback requires verified reverse synchronization; no such procedure has been accepted yet.
+Run `.github/workflows/omniagent-dev-preflight.yml`.
+
+Required repository variables:
+
+- `OMNIAGENT_GCP_WIF_PROVIDER`
+- `OMNIAGENT_GCP_CI_SERVICE_ACCOUNT`
+- `OMNIAGENT_ARTIFACT_REPOSITORY`
+
+The workflow must authenticate with an omniAgent-owned deployment identity and read the intended Cloud Run / Artifact Registry resources.
+
+## 3. Runtime configuration
+
+- Secret bundle: `omniagent-provider-bundle`.
+- Gateway env: `OMNIAGENT_PROVIDER_BUNDLE`.
+- Bundle key `mcp_owner_signing_key` supplies `MCP_OWNER_SIGNING_KEY`.
+- Do not create or reference `omniagent-internal-signing-key`.
+- Verify omniAgent OAuth client/origin.
+- Verify Chat database, migrations and Chat runtime environment.
+
+## 4. Candidate deployment
+
+Build immutable images and record digests. Deploy/update candidate services without claiming production acceptance. Confirm:
+
+- `/health` = 200;
+- Flutter root loads;
+- unauthenticated protected Chat routes reject access;
+- Gateway remains private as designed;
+- runtime service accounts are the approved omniAgent identities.
+
+## 5. Live acceptance
+
+Use real browser/mobile evidence for:
+
+- Google login;
+- two distinct owners and cross-owner rejection;
+- create thread, send, queue, dispatch, event replay;
+- Gemini/OpenRouter and any other enabled provider through Chat;
+- approval binding and expiry;
+- queued cancellation;
+- reconnect/cursor behavior;
+- Tools/Skills/Data Sources truthful unavailable/available states;
+- responsive layout, long chat, code, keyboard/composer.
+
+## 6. Promotion and rollback
+
+Promote only after all mandatory gates PASS. Rollback must point to a known-good omniAgent image/revision and preserve omniAgent database consistency. Do not use another project's revision or image as the omniAgent rollback target.
+
+## 7. External integrations
+
+External systems such as Janus remain bounded integrations only. Their internal deployment/runbook is outside this runbook and must not be consulted to infer omniAgent current state.
