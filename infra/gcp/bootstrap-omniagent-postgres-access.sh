@@ -7,8 +7,7 @@ REGION="${OMNIAGENT_GCP_REGION:-us-central1}"
 CI_SERVICE_ACCOUNT="${OMNIAGENT_GCP_CI_SERVICE_ACCOUNT:-omniagent-ci@${PROJECT_ID}.iam.gserviceaccount.com}"
 CHAT_RUNTIME_SERVICE_ACCOUNT="${OMNIAGENT_CHAT_SERVICE_ACCOUNT:-omniagent-chat@${PROJECT_ID}.iam.gserviceaccount.com}"
 DB_SECRET="${OMNIAGENT_CHAT_DB_SECRET:-omniagent-chat-db}"
-HOST_PORT="${OMNIAGENT_POSTGRES_HOST_PORT:-5432}"
-FIREWALL_RULE="${OMNIAGENT_POSTGRES_FIREWALL_RULE:-omniagent-postgres-dev}"
+LEGACY_FIREWALL_RULE="${OMNIAGENT_POSTGRES_LEGACY_FIREWALL_RULE:-omniagent-postgres-dev}"
 
 : "${OMNIAGENT_POSTGRES_HOST_VM:?OMNIAGENT_POSTGRES_HOST_VM is required}"
 : "${OMNIAGENT_POSTGRES_HOST_ZONE:?OMNIAGENT_POSTGRES_HOST_ZONE is required}"
@@ -19,8 +18,7 @@ runtime_member="serviceAccount:${CHAT_RUNTIME_SERVICE_ACCOUNT}"
 gcloud config set project "$PROJECT_ID" >/dev/null
 
 instance_json="$(mktemp)"
-firewall_json="$(mktemp)"
-trap 'rm -f "$instance_json" "$firewall_json"' EXIT
+trap 'rm -f "$instance_json"' EXIT
 gcloud compute instances describe "$OMNIAGENT_POSTGRES_HOST_VM"   --zone="$OMNIAGENT_POSTGRES_HOST_ZONE"   --project="$PROJECT_ID"   --format=json >"$instance_json"
 
 read -r vm_sa network subnet < <(python3 - "$instance_json" <<'PY'
@@ -35,10 +33,6 @@ if not sa or not network or not subnet:
 print(sa,network,subnet)
 PY
 )
-host_region="${OMNIAGENT_POSTGRES_HOST_ZONE%-*}"
-subnet_cidr="$(gcloud compute networks subnets describe "$subnet"   --region="$host_region"   --project="$PROJECT_ID"   --format='value(ipCidrRange)')"
-test -n "$subnet_cidr"
-
 if [[ "$action" == "grant" ]]; then
   if ! gcloud secrets describe "$DB_SECRET" --project="$PROJECT_ID" >/dev/null 2>&1; then
     gcloud secrets create "$DB_SECRET"       --replication-policy=user-managed       --locations="$REGION"       --project="$PROJECT_ID"
@@ -57,44 +51,10 @@ if [[ "$action" == "grant" ]]; then
   gcloud iam service-accounts add-iam-policy-binding "$vm_sa"     --project="$PROJECT_ID"     --member="$ci_member"     --role=roles/iam.serviceAccountUser >/dev/null
 
 
-  if ! gcloud compute firewall-rules describe "$FIREWALL_RULE" --project="$PROJECT_ID" >/dev/null 2>&1; then
-    gcloud compute firewall-rules create "$FIREWALL_RULE" \
-      --project="$PROJECT_ID" \
-      --network="$network" \
-      --direction=INGRESS \
-      --priority=1000 \
-      --action=ALLOW \
-      --rules="tcp:$HOST_PORT" \
-      --source-ranges="$subnet_cidr" \
-      --target-service-accounts="$vm_sa" >/dev/null
-  else
-    gcloud compute firewall-rules update "$FIREWALL_RULE" \
-      --project="$PROJECT_ID" \
-      --rules="tcp:$HOST_PORT" \
-      --source-ranges="$subnet_cidr" \
-      --target-service-accounts="$vm_sa" >/dev/null
-  fi
-
-  gcloud compute firewall-rules describe "$FIREWALL_RULE"     --project="$PROJECT_ID"     --format=json >"$firewall_json"
-  python3 - "$firewall_json" "$network" "$subnet_cidr" "$vm_sa" "$HOST_PORT" <<'PY'
-import json,sys
-d=json.load(open(sys.argv[1]))
-network,source,sa,port=sys.argv[2:]
-actual_network=str(d.get("network","")).rsplit("/",1)[-1]
-ranges=set(d.get("sourceRanges") or [])
-targets=set(d.get("targetServiceAccounts") or [])
-allowed=d.get("allowed") or []
-ports={p for row in allowed if row.get("IPProtocol")=="tcp" for p in row.get("ports") or []}
-if actual_network!=network or source not in ranges or sa not in targets or port not in ports:
-    raise SystemExit("omniAgent PostgreSQL firewall rule drift detected")
-PY
-
   echo "omniAgent PostgreSQL bootstrap access granted."
   echo "db_secret=$DB_SECRET"
   echo "postgres_network=$network"
   echo "postgres_subnet=$subnet"
-  echo "postgres_subnet_cidr=$subnet_cidr"
-  echo "postgres_firewall=$FIREWALL_RULE"
 elif [[ "$action" == "revoke" ]]; then
   for role in roles/secretmanager.secretAccessor roles/secretmanager.secretVersionAdder; do
     gcloud secrets remove-iam-policy-binding "$DB_SECRET"       --project="$PROJECT_ID"       --member="$ci_member"       --role="$role" >/dev/null || true
@@ -107,7 +67,11 @@ elif [[ "$action" == "revoke" ]]; then
   gcloud iam service-accounts remove-iam-policy-binding "$vm_sa"     --project="$PROJECT_ID"     --member="$ci_member"     --role=roles/iam.serviceAccountUser >/dev/null || true
 
   echo "omniAgent PostgreSQL temporary bootstrap access revoked."
-  echo "Persistent runtime access retained for the DB Secret and bounded DB firewall rule."
+  if gcloud compute firewall-rules describe "$LEGACY_FIREWALL_RULE" --project="$PROJECT_ID" >/dev/null 2>&1; then
+    gcloud compute firewall-rules delete "$LEGACY_FIREWALL_RULE" --project="$PROJECT_ID" --quiet >/dev/null || true
+  fi
+
+  echo "Persistent runtime access retained only for the DB Secret runtime reader; shared-host network policy remains external to omniAgent bootstrap."
 else
   echo "usage: $0 grant|revoke" >&2
   exit 2
