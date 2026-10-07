@@ -73,6 +73,7 @@ void main() {
       (tester) async {
     await tester.pumpWidget(const OmniAgentApp());
     expect(find.text('omniAgent'), findsOneWidget);
+    expect(find.byKey(const Key('twin-beast-mascot-slot')), findsOneWidget);
     expect(find.text('登入或 API 尚未設定'), findsOneWidget);
   });
 
@@ -83,6 +84,13 @@ void main() {
     final api = FakeChatApi();
     await tester.pumpWidget(MaterialApp(home: ChatPage(api)));
     await tester.pumpAndSettle();
+    expect(find.byKey(const Key('twin-beast-mascot-slot')), findsOneWidget);
+    expect(find.text('今天想一起完成什麼？'), findsOneWidget);
+    expect(find.textContaining('建立後這個對話會沿用這組設定'), findsOneWidget);
+    expect(find.text('Gemini', skipOffstage: false), findsOneWidget);
+    expect(find.text('OpenRouter', skipOffstage: false), findsOneWidget);
+    expect(find.text('Codex', skipOffstage: false), findsOneWidget);
+    expect(find.text('Groq', skipOffstage: false), findsNothing);
     await tester.tap(find.text('建立對話'));
     await tester.pumpAndSettle();
     expect(api.writes.first['path'], '/v1/threads');

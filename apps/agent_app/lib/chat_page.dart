@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'chat_api.dart';
+import 'twin_beast_mascot.dart';
 
 class ChatPage extends StatefulWidget {
   const ChatPage(this.api, {super.key});
@@ -272,39 +273,81 @@ class _ChatPageState extends State<ChatPage> {
 
   Widget _room() {
     if (thread == null) {
-      return Center(
-          child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 420),
-              child: Column(mainAxisSize: MainAxisSize.min, children: [
-                DropdownButtonFormField<String>(
-                  initialValue: runtime,
-                  decoration: const InputDecoration(labelText: '執行環境'),
-                  items: const [
-                    DropdownMenuItem(value: 'gemini', child: Text('Gemini')),
-                    DropdownMenuItem(
-                        value: 'openrouter', child: Text('OpenRouter')),
-                    DropdownMenuItem(value: 'codex', child: Text('Codex')),
-                  ],
-                  onChanged: (value) {
-                    if (value == null) return;
-                    setState(() {
-                      runtime = value;
-                      modelInput.text = {
-                        'gemini': 'gemini-2.5-flash',
-                        'openrouter': 'openai/gpt-4o-mini',
-                        'codex': 'gpt-5'
-                      }[value]!;
-                    });
-                  },
+      return SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 28),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 460),
+              child: Card(
+                margin: EdgeInsets.zero,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(24),
+                  side: BorderSide(color: Theme.of(context).dividerColor),
                 ),
-                TextField(
-                    controller: modelInput,
-                    decoration: const InputDecoration(labelText: '模型')),
-                const SizedBox(height: 12),
-                FilledButton(
-                    onPressed: busy ? null : createThread,
-                    child: const Text('建立對話')),
-              ])));
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Center(child: TwinBeastMascotSlot(size: 96)),
+                      const SizedBox(height: 18),
+                      Text(
+                        '今天想一起完成什麼？',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        '選擇執行環境與模型，建立後這個對話會沿用這組設定。',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                      const SizedBox(height: 24),
+                      DropdownButtonFormField<String>(
+                        initialValue: runtime,
+                        decoration: const InputDecoration(labelText: '執行環境'),
+                        items: const [
+                          DropdownMenuItem(
+                              value: 'gemini', child: Text('Gemini')),
+                          DropdownMenuItem(
+                              value: 'openrouter', child: Text('OpenRouter')),
+                          DropdownMenuItem(
+                              value: 'codex', child: Text('Codex')),
+                        ],
+                        onChanged: (value) {
+                          if (value == null) return;
+                          setState(() {
+                            runtime = value;
+                            modelInput.text = {
+                              'gemini': 'gemini-2.5-flash',
+                              'openrouter': 'openai/gpt-4o-mini',
+                              'codex': 'gpt-5'
+                            }[value]!;
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 14),
+                      TextField(
+                        controller: modelInput,
+                        decoration: const InputDecoration(labelText: '模型'),
+                      ),
+                      const SizedBox(height: 16),
+                      FilledButton(
+                        onPressed: busy ? null : createThread,
+                        child: const Text('建立對話'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
     }
     final ordered = events.values.toList()
       ..sort((a, b) => (int.tryParse('${a['seq']}') ?? 0)
