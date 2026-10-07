@@ -6,9 +6,8 @@ PROJECT_ID="${OMNIAGENT_GCP_PROJECT_ID:-gen-lang-client-0593591102}"
 REGION="${OMNIAGENT_GCP_REGION:-us-central1}"
 CI_SERVICE_ACCOUNT="${OMNIAGENT_GCP_CI_SERVICE_ACCOUNT:-omniagent-ci@${PROJECT_ID}.iam.gserviceaccount.com}"
 CHAT_RUNTIME_SERVICE_ACCOUNT="${OMNIAGENT_CHAT_SERVICE_ACCOUNT:-omniagent-chat@${PROJECT_ID}.iam.gserviceaccount.com}"
-ARTIFACT_REPOSITORY="${OMNIAGENT_ARTIFACT_REPOSITORY:-omniagent}"
 DB_SECRET="${OMNIAGENT_CHAT_DB_SECRET:-omniagent-chat-db}"
-HOST_PORT="${OMNIAGENT_POSTGRES_HOST_PORT:-5433}"
+HOST_PORT="${OMNIAGENT_POSTGRES_HOST_PORT:-5432}"
 FIREWALL_RULE="${OMNIAGENT_POSTGRES_FIREWALL_RULE:-omniagent-postgres-dev}"
 
 : "${OMNIAGENT_POSTGRES_HOST_VM:?OMNIAGENT_POSTGRES_HOST_VM is required}"
@@ -57,10 +56,23 @@ if [[ "$action" == "grant" ]]; then
 
   gcloud iam service-accounts add-iam-policy-binding "$vm_sa"     --project="$PROJECT_ID"     --member="$ci_member"     --role=roles/iam.serviceAccountUser >/dev/null
 
-  gcloud artifacts repositories add-iam-policy-binding "$ARTIFACT_REPOSITORY"     --location="$REGION"     --project="$PROJECT_ID"     --member="serviceAccount:$vm_sa"     --role=roles/artifactregistry.reader >/dev/null
 
-  if ! gcloud compute firewall-rules describe "$FIREWALL_RULE"       --project="$PROJECT_ID" >/dev/null 2>&1; then
-    gcloud compute firewall-rules create "$FIREWALL_RULE"       --project="$PROJECT_ID"       --network="$network"       --direction=INGRESS       --priority=1000       --action=ALLOW       --rules="tcp:$HOST_PORT"       --source-ranges="$subnet_cidr"       --target-service-accounts="$vm_sa" >/dev/null
+  if ! gcloud compute firewall-rules describe "$FIREWALL_RULE" --project="$PROJECT_ID" >/dev/null 2>&1; then
+    gcloud compute firewall-rules create "$FIREWALL_RULE" \
+      --project="$PROJECT_ID" \
+      --network="$network" \
+      --direction=INGRESS \
+      --priority=1000 \
+      --action=ALLOW \
+      --rules="tcp:$HOST_PORT" \
+      --source-ranges="$subnet_cidr" \
+      --target-service-accounts="$vm_sa" >/dev/null
+  else
+    gcloud compute firewall-rules update "$FIREWALL_RULE" \
+      --project="$PROJECT_ID" \
+      --rules="tcp:$HOST_PORT" \
+      --source-ranges="$subnet_cidr" \
+      --target-service-accounts="$vm_sa" >/dev/null
   fi
 
   gcloud compute firewall-rules describe "$FIREWALL_RULE"     --project="$PROJECT_ID"     --format=json >"$firewall_json"
@@ -95,7 +107,7 @@ elif [[ "$action" == "revoke" ]]; then
   gcloud iam service-accounts remove-iam-policy-binding "$vm_sa"     --project="$PROJECT_ID"     --member="$ci_member"     --role=roles/iam.serviceAccountUser >/dev/null || true
 
   echo "omniAgent PostgreSQL temporary bootstrap access revoked."
-  echo "Persistent runtime access retained for the DB Secret, image pull, and bounded DB firewall rule."
+  echo "Persistent runtime access retained for the DB Secret and bounded DB firewall rule."
 else
   echo "usage: $0 grant|revoke" >&2
   exit 2
