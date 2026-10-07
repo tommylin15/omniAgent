@@ -1,102 +1,66 @@
 # omniAgent UI specification
 
-> Baseline: `main@4a5f74ca60c0859a8727568290b388101cbae6c1`.
+> Implementation baseline reviewed: `main@75336a248381d935c7b23dd8afab06f5e9c4151a`.
 > Current implementation path: `apps/agent_app/`.
+> Architecture revision: 2026-10-07.
 
 ## 1. UI ownership
 
-omniAgent owns the generic conversational UI. Janus keeps investment-domain User/Admin UI and its independently owned bounded MCP/API surfaces.
+omniAgent owns the generic conversational UI. External domain systems such as Janus remain behind bounded APIs/MCP.
 
-The generic UI MUST NOT call legacy Janus generic Chat endpoints directly and MUST NOT fabricate Tool/Skill/Data Source state when corresponding omniAgent management APIs are not available.
+The UI must never receive or display raw provider secrets after submission.
 
-## 2. Current implemented screens and states
+## 2. Current source checkpoint
 
-### 2.1 Sign-in
+Current source includes:
 
-Current source behavior:
+- Google ID-token sign-in integration;
+- responsive thread navigation;
+- new thread runtime/model selection for Gemini / OpenRouter / Codex;
+- event replay/cursor status;
+- composer/send;
+- queued cancellation;
+- generic event, approval, citation, usage and terminal-state rendering.
 
-- app requires `OMNIAGENT_GOOGLE_CLIENT_ID` and Chat API base configuration;
-- Web uses the Google Sign-In web-rendered button;
-- authenticated account state yields a Google ID token;
-- ID token is passed to `ChatApi` and used as `Authorization: Bearer ...`.
+Current event behavior at the reviewed source checkpoint is cursor replay + approximately two-second polling, not accepted continuous streaming.
 
-Current acceptance status: **source implemented, real deployed browser login not yet accepted**.
+Direct Groq selection and credential-profile management are not current implementation evidence.
 
-### 2.2 Thread navigation
+## 3. Target provider and credential UX
 
-Implemented:
+For each supported provider/runtime, the owner should be able to see an explicit credential source:
 
-- responsive layout;
-- wide view: persistent thread list at left;
-- narrow view: thread list in Drawer;
-- create new thread;
-- select existing thread;
-- fork current thread;
-- display runtime + model + thread id.
+- **Personal / BYOK** — owner-managed credential/profile;
+- **Platform** — visible/selectable only when the authenticated owner has platform-credential entitlement.
 
-### 2.3 New thread
+The UI may show:
 
-Implemented controls:
+- provider;
+- credential source class;
+- masked profile label;
+- configured/not configured/invalid/expired status;
+- last validation time where available;
+- replace/revoke action for owner BYOK.
 
-- runtime selector: Gemini / OpenRouter / Codex;
-- editable model field;
-- default model suggestions:
-  - Gemini: `gemini-2.5-flash`
-  - OpenRouter: `openai/gpt-4o-mini`
-  - Codex: `gpt-5`
-- create button.
+The UI MUST NOT show:
 
-Behavioral rule: runtime/model are fixed by thread. Changing runtime/model requires a new thread or fork semantics permitted by the API.
+- full API keys/tokens after submission;
+- secret references intended only for backend use;
+- another owner's credential metadata;
+- platform credentials to non-entitled owners.
 
-### 2.4 Chat room
+A user's provider selection and credential source do not change the memory namespace; threads/history remain keyed by the authenticated owner.
 
-Implemented:
+## 4. Codex UX
 
-- current runtime/model header;
-- event cursor status;
-- manual refresh;
-- message composer;
-- send button;
-- queued-turn status;
-- queued-turn cancellation;
-- event card list.
+Codex should expose status such as:
 
-Current client event behavior:
+- Personal auth configured / not configured;
+- Platform auth available / unavailable by entitlement;
+- login/re-auth required;
+- active turn/cancel state.
 
-1. GET `/v1/threads/{id}/events?cursor=...&limit=200`;
-2. parse SSE-formatted response after the HTTP response completes;
-3. merge by event id / sequence;
-4. repeat approximately every two seconds while a thread is selected.
-
-Therefore current UI should be described as **cursor replay + polling**, not accepted continuous streaming.
-
-## 3. Event rendering
-
-| Event | Current UI |
-| --- | --- |
-| `item_upsert` / message-like payload | rendered as conversation content aligned by role where available |
-| `text_delta` | rendered through generic content handling |
-| `tool_request` | tool call row |
-| `tool_result` | tool result row |
-| `approval_request` | approval card with operation, digest, expiry, Allow/Deny |
-| `approval_resolved` | status row |
-| `citation` | source/citation row |
-| `usage` | token usage row |
-| `turn_completed` | completed status |
-| `turn_cancelled` | cancelled status |
-| `turn_error` | failure status |
-
-No event may display secret/provider credential material.
-
-## 4. Tools / Skills / Data Sources panel
-
-Current panel intentionally shows placeholders:
-
-- Tools (MCP): management API not wired; tool events may still be displayed in Chat.
-- Skills: storage exists; management API and historical cutover are not wired.
-- Data Sources: Janus context may only be selected through authenticated bounded API/MCP.
-
-This is the correct current-state behavior. Placeholder text must not be replaced with fake data or direct reads from Janus internal storage.
+The UI must not imply that a shared platform Codex credential means a shared Codex session. Session/thread/workspace context remains owner-isolated on the backend.
 
 ## 5. Target information architecture
 
@@ -104,93 +68,52 @@ This is the correct current-state behavior. Placeholder text must not be replace
 Sign In
   └─ Chat Shell
       ├─ Threads
-      │   ├─ New Thread
-      │   ├─ Existing Thread
-      │   └─ Fork
       ├─ Conversation
-      │   ├─ Messages / streaming output
-      │   ├─ Tool events
-      │   ├─ Approval requests
-      │   ├─ Citations
-      │   ├─ Usage
-      │   └─ Turn status / cancel
+      │   ├─ messages / streamed or replayed events
+      │   ├─ tools / approvals / citations / usage
+      │   └─ turn state / cancel
       └─ Controls
           ├─ Runtime / model
+          ├─ Credential source / profile
           ├─ Tools / MCP
           ├─ Skills
-          └─ Data Sources / Janus bounded context
+          └─ Data Sources
 ```
 
-## 6. API mapping
+## 6. Provider options
 
-| UI action | API |
-| --- | --- |
-| list threads | `GET /v1/threads` |
-| create thread | `POST /v1/threads` |
-| read thread | `GET /v1/threads/{threadId}` |
-| fork | `POST /v1/threads/{threadId}/fork` |
-| send message | `POST /v1/threads/{threadId}/messages` |
-| replay/events | `GET /v1/threads/{threadId}/events?cursor=...` |
-| queued cancel | `POST /v1/threads/{threadId}/turns/{turnId}/cancel` |
-| approval | `POST /v1/threads/{threadId}/turns/{turnId}/approvals/{requestId}` |
+Target provider list:
 
-Not currently exposed as accepted public APIs:
+- Gemini;
+- OpenRouter;
+- Codex;
+- Groq.
 
-- Tool/MCP management;
-- Skill management;
-- Data Source/context management;
-- runtime login/session controls for Codex;
-- deployment/admin controls.
+Groq must remain hidden/disabled or clearly unavailable until backend support exists. UI presence alone must never be used to claim provider readiness.
 
-## 7. Required UI improvements before live cutover
+## 7. Historical conversation UX
 
-### UI-P0
+The user should experience one logical thread history regardless of whether older payloads have moved to GCS/Iceberg.
 
-- deployed Google login acceptance;
-- real Chat→Gateway E2E response path;
-- runtime-aware cancel/approval;
-- owner isolation across thread/event controls;
-- clear recoverable error states for auth, unavailable API, unavailable runtime, and expired approval;
-- reconnect behavior proven under network interruption.
+Target rules:
 
-### UI-P1
+- UI queries authorized Chat APIs, not GCS/Iceberg directly;
+- hot recent state comes from the operational Chat layer;
+- archived historical content may be reconstructed by backend archive readers;
+- loading/restoring archived history must preserve owner/thread ordering and show a clear recoverable state on failure;
+- an archive failure must not make another owner's history visible.
 
-- replace two-second polling with accepted streaming/reconnect semantics or explicitly approve bounded polling behavior;
-- Tool/MCP management backed by omniAgent APIs;
-- Skill revision/state management backed by omniAgent APIs;
-- bounded Data Source/context selection backed by authorized Janus integration;
-- model metadata/validation so users are not required to know arbitrary model strings;
-- logout/account switch behavior;
-- accessibility and keyboard-flow review.
-
-## 8. UX state model
-
-Thread/turn UI must distinguish at least:
-
-- `idle`: no thread or no active turn;
-- `connecting`: loading/replaying events;
-- `connected`: latest replay successful;
-- `disconnected`: latest replay failed;
-- `queued`: message persisted but runtime has not claimed it;
-- `running`: runtime events received;
-- `approval_required`: blocked on bound user decision;
-- `completed`;
-- `cancelled`;
-- `error`.
-
-The UI must never present `queued` as if the model is already executing.
-
-## 9. UI acceptance checklist
+## 8. Required UI acceptance
 
 - [ ] real browser login on deployed origin;
-- [ ] unauthenticated user cannot read threads;
-- [ ] two owners cannot see or act on each other’s UI-backed data;
-- [ ] create/list/select/fork thread pass against real DB;
-- [ ] send produces real provider output through the full runtime path;
-- [ ] reconnect does not duplicate or skip events;
-- [ ] approval allow/deny bind to exact request;
-- [ ] cancellation behaves correctly before and after runtime claim;
-- [ ] Tool/Skill/Data Source surfaces use real management APIs only;
-- [ ] no secret/credential data appears in UI or browser logs;
-- [ ] narrow and wide layouts pass basic usability checks;
-- [ ] Janus legacy Chat remains available as rollback until cutover is separately approved.
+- [ ] two-owner thread/event isolation;
+- [ ] real Chat→Gateway provider response;
+- [ ] Personal/BYOK profile add/replace/revoke without secret exposure;
+- [ ] Platform option visible only to entitled owners;
+- [ ] same platform credential used by two owners without memory/session crossover;
+- [ ] Codex owner-isolated session/workspace behavior;
+- [ ] Groq UI only after backend provider support;
+- [ ] reconnect without duplicate/missing events;
+- [ ] approval and cancellation bind to exact owner/turn/request;
+- [ ] archived history reconstructs through authorized backend path;
+- [ ] no raw secret appears in browser logs, rendered events, analytics payloads or crash reports.

@@ -1,230 +1,213 @@
 # omniAgent SPEC
 
-> Baseline: `main@4a5f74ca60c0859a8727568290b388101cbae6c1`.
-> Status language in this document distinguishes source implementation from live acceptance.
+> Implementation baseline reviewed: `main@75336a248381d935c7b23dd8afab06f5e9c4151a`.
+> Architecture revision: 2026-10-07.
+> Status language distinguishes source, target design, real-dev evidence, and live acceptance.
 
 ## 1. Product objective
 
-omniAgent is the independent generic Agent/Chat runtime extracted from Janus. It owns generic conversational runtime, Chat storage/API, provider dispatch, tool/MCP orchestration, Skills, approvals, and the generic Flutter Chat surface. Janus retains investment-domain ownership, canonical market/research context, bounded domain API/MCP, investment User/Admin UI, and the currently live legacy Chat path until cutover gates are passed.
+omniAgent is the independent generic Agent/Chat runtime and orchestration platform. It owns generic conversational runtime, Chat storage/API, worker/provider dispatch, tool/MCP orchestration, Skills, approvals, generic Flutter Chat UI, credential-selection policy, and its own historical/audit data lifecycle.
 
-The project must preserve these principles:
+Janus remains a separate domain system and may be integrated only through bounded authenticated API/MCP. omniAgent must not directly read Janus PostgreSQL/GCS/Iceberg or import Janus internals as runtime dependencies.
 
-- no direct omniAgent reads of Janus PostgreSQL, GCS, Iceberg, or Janus internal source packages;
-- no Janus runtime dependency on omniAgent;
-- owner isolation must be explicit and testable;
-- credentials and provider auth material must never be persisted as Chat/event content;
-- partial deployment or partial tests must not be reported as full acceptance;
-- live write ownership and cleanup require independent rollback evidence.
+Core invariants:
+
+- `owner_id` isolation is explicit and testable across runtime state, memory, tools, artifacts and archives;
+- provider credential identity is independent from memory identity;
+- raw credentials never persist in Chat/event/Skill/artifact/lakehouse content;
+- PostgreSQL remains authoritative for live state-machine transitions;
+- Iceberg is for historical/audit/analytics data, not the live queue/state machine;
+- partial code/deployment/tests must never be reported as full acceptance.
 
 ## 2. System boundary
 
-### 2.1 omniAgent-owned components
-
-| Component | Current path | Responsibility |
-| --- | --- | --- |
-| Agent Gateway | `services/agent-gateway/` | Codex bridge, Gemini/OpenRouter provider dispatch, MCP Host, approval/cancel lifecycle, managed Codex auth, internal runtime endpoints. |
-| Chat API | `services/chat-api/` | Google identity verification, owner mapping, threads, turns, events, approvals, cancellation, future durable Chat write ownership. |
-| Chat storage | `infra/postgres/migrations/` + `services/chat-api/storage.ts` | `omni_chat` schema, owner/thread/turn/event/approval/Skill records and idempotent writes. |
-| Flutter UI | `apps/agent_app/` | Google sign-in, thread list/create/fork, message queue, event replay, approval/cancel UI, provider/model selection. |
-| Contracts | `packages/contracts/agent.v1.json` | Generic Agent event/runtime/approval boundary. |
-| Build/test | `package.json`, `tests/`, Flutter tests, Cloud Build configs | Repeatable build and acceptance support. |
-
-### 2.2 Janus-owned responsibilities
-
-Janus continues to own:
-
-- investment authorization and domain policy;
-- PIT/as-of, provenance, sanitization, canonical investment facts and domain context;
-- bounded Janus API/MCP and ChatGPT→Janus MCP path;
-- investment User/Admin UI;
-- live legacy Chat writer/API/UI until an approved omniAgent cutover;
-- existing historical Janus conversation/private data and migration history until verified copy/cutover.
+| Component / plane | Current/target role |
+| --- | --- |
+| Agent Gateway — `services/agent-gateway/` | provider/worker dispatch, Codex bridge, Gemini/OpenRouter adapters, MCP Host, approval/cancel runtime; target direct Groq adapter |
+| Chat API — `services/chat-api/` | identity, owner mapping, threads, turns, events, approvals, cancellation, durable Chat ownership |
+| PostgreSQL / `omni_chat` | authoritative hot state: owners, threads, turns, events, approvals, Skills, idempotency, future dispatch state, summaries and archive pointers |
+| Credential plane — target | owner BYOK + entitled platform credentials resolved server-side |
+| GCS artifact layer — target | large immutable message/tool/worker payloads and exports |
+| Iceberg historical layer — target | long-term conversation/event/worker/tool/usage/audit history |
+| BigLake/BigQuery — target | analytics/query over archived lakehouse data, not live state |
+| Flutter — `apps/agent_app/` | owner Chat surface, runtime/model selection, future credential-profile controls |
+| Contracts — `packages/contracts/agent.v1.json` | generic runtime/event/approval boundary |
 
 ## 3. Functional requirements
 
 ### FR-001 Identity and owner isolation
 
-- User requests MUST be authenticated with a Google ID token for the configured omniAgent client audience.
-- Persistent owner identity MUST be keyed by Google issuer + subject, not email.
-- Internal Chat write/event calls MUST require a separate service audience and allowlisted service identity.
-- Every thread, turn, event, approval, Skill, Codex auth bundle, MCP session, and Janus context request MUST remain owner-bound.
+- Authenticate users with the configured identity contract.
+- Persistent owner identity is issuer + subject, not email.
+- Every thread, turn, event, approval, Skill, MCP session, artifact, memory/retrieval result, archive row, task/workflow record and provider session mapping is owner-bound.
+- Cross-owner access must fail closed.
 
-**Current status:** `DONE-CODE` for Chat API verification/owner mapping; full browser OAuth + multi-owner live acceptance remains `OPEN`.
+**Status:** Chat API identity/owner mapping is `DONE-CODE`; real browser + multi-owner acceptance is `OPEN`.
 
 ### FR-002 Thread lifecycle
 
-The Chat API MUST support:
+Create/list/read/fork threads with idempotency and owner isolation. Runtime/model remain explicit thread properties according to the accepted API contract.
 
-- create/list/read threads;
-- fixed runtime + model per thread;
-- fork while preserving parent runtime/model;
-- idempotent create operations;
-- owner-isolated access.
+**Status:** `DONE-CODE`; live acceptance `OPEN`.
 
-**Current status:** `DONE-CODE`; live deployed acceptance remains `OPEN`.
+### FR-003 Turn lifecycle
 
-### FR-003 Message and turn lifecycle
+A user message creates durable queued work and replayable user/event state. Turns must expose queued/running/approval/terminal states and support retry-safe cancellation semantics.
 
-The Chat API MUST:
+**Status:** `PARTIAL`; queued persistence exists, durable automatic dispatch does not.
 
-- accept a non-empty bounded user message;
-- create a queued turn and user event atomically;
-- expose queued/running/terminal states;
-- allow cancellation before execution and runtime-aware cancellation after dispatch is wired;
-- preserve idempotency and event ordering.
+### FR-004 Event transport
 
-**Current status:** `PARTIAL`. Queue persistence and queued cancellation exist; no source path currently turns the queued Chat API record into a Gateway dispatch automatically.
+Events are monotonically replayable from a cursor. UI reconnect must avoid duplicate/missing events. Persisted event state is the source of truth; SSE/streaming is delivery behavior only.
 
-### FR-004 Event transport and replay
+**Status:** `PARTIAL`; finite SSE-formatted replay + polling exists at the reviewed source checkpoint, accepted continuous/reconnect behavior remains open.
 
-- Events MUST be monotonic per owner/thread and replayable from a cursor.
-- The public UI MUST support reconnect without duplicated events.
-- The accepted live design SHOULD provide continuous or bounded long-lived event delivery rather than relying only on periodic full HTTP reconnects.
+### FR-005 Provider/worker dispatch
 
-**Current status:** `PARTIAL`. Server emits SSE-formatted finite snapshots; Flutter currently fetches/parses the response and polls every two seconds. Continuous streaming/reconnect has not been live accepted.
-
-### FR-005 Provider dispatch
-
-The Gateway MUST support the declared runtimes:
+Target direct runtimes/providers:
 
 - Gemini;
 - OpenRouter;
-- Codex.
+- Codex;
+- Groq.
 
-Provider output MUST be converted to generic Agent events, without leaking credentials or raw secrets.
+Provider output must be normalized to generic Agent events.
 
-**Current status:** Gemini/OpenRouter are `VERIFIED-DEV` at the Phase 6B checkpoint. Codex source exists but managed owner auth/live acceptance is `OPEN` because the required enabled owner auth material was not verified.
+**Status:** Gemini/OpenRouter source + previous real dev probes exist. Codex source exists but owner-auth/live acceptance remains open. Direct Groq support is `TARGET-DESIGN / OPEN`.
 
-### FR-006 Chat→Gateway dispatch
+### FR-006 Durable Chat→Gateway dispatcher
 
-A durable dispatcher/worker MUST:
+A durable dispatcher/worker must safely claim queued turns, preserve owner/runtime/model/credential policy, authenticate to Gateway, append events, and survive retries/crashes/cancellation without duplicate externally visible effects.
 
-1. claim a queued turn exactly once;
-2. load owner/thread/runtime/model context;
-3. call the private Gateway using authenticated service identity plus required request binding;
-4. append runtime events into Chat storage through the internal Chat API contract;
-5. handle retry, terminal error, cancellation, and crash recovery without duplicate effects.
+PostgreSQL is authoritative for claim/turn state. A future wake-up mechanism may be added but must not replace the database as queue/state truth.
 
-**Current status:** `OPEN` and on the critical path. The Chat API currently persists queued work but does not dispatch it.
+**Status:** `OPEN`, critical path.
 
 ### FR-007 Approvals
 
-- Sandbox-sensitive operations MUST bind approval to owner, thread, turn, request, operation, parameter digest, scope, and expiry.
-- UI MUST expose approve/deny exactly for the bound request.
-- Approval events and terminal resolution MUST be auditable.
+Approvals bind owner/thread/turn/request/operation/digest/scope/expiry and are auditable.
 
-**Current status:** `DONE-CODE` across security/storage/UI checkpoints; real end-to-end runtime acceptance remains `OPEN`.
+**Status:** security/storage/UI source exists; real E2E `OPEN`.
 
-### FR-008 MCP tools
+### FR-008 MCP/tools
 
-The Gateway MUST support owner-bound MCP discovery, call, cancellation, and disconnect. Tool execution MUST preserve owner/session isolation and must not embed another owner’s token in global configuration.
+MCP discovery/call/cancel/disconnect must preserve owner/session isolation and never use another owner's token or session.
 
-**Current status:** internal Gateway routes and MCP Host are `DONE-CODE`; real omniAgent MCP discovery/call and UI management are `OPEN`.
+**Status:** internal source exists; real omniAgent E2E/management `OPEN`.
 
-### FR-009 Janus bounded context
+### FR-009 External domain context
 
-omniAgent MAY consume Janus only through approved bounded authenticated API/MCP. It MUST NOT read Janus databases, object stores, Iceberg, or internal packages directly.
+Janus and other domain systems may be consumed only through approved bounded authenticated interfaces. No direct storage access.
 
-Owner mapping and user-specific context authorization MUST be proven with more than one owner before acceptance.
-
-**Current status:** client/source boundary exists, but live turn routing is not wired; `OPEN` for real integration acceptance.
+**Status:** Janus bounded client/source boundary exists; real turn integration `OPEN`.
 
 ### FR-010 Skills
 
-- Skill content MUST be versioned and owner-bound.
-- Skill revisions MUST reject persisted credential fields.
-- Current revision/enabled state MUST be explicit.
-- Public management APIs/UI MUST be provided before Skills are considered user-available.
+Skill revisions/state are versioned and owner-bound. Credential-shaped content is rejected. Public management API/UI is required before user availability is claimed.
 
-**Current status:** storage/migration methods are `DONE-CODE`; public management API/UI and historical migration are `OPEN`.
+**Status:** storage source `DONE-CODE`; public API/UI `OPEN`.
 
 ### FR-011 Generic Chat UI
 
-The Flutter UI MUST provide:
+Flutter must provide identity, thread/turn interaction, event rendering, approval/cancel, runtime/model selection, and explicit unavailable states rather than fabricated data.
 
-- sign-in;
-- thread list/create/select/fork;
-- runtime/model selection on new thread;
-- event rendering for messages, tools, approvals, citations, usage, completion/cancel/error;
-- queued-turn cancellation;
-- responsive desktop/mobile layout;
-- explicit not-yet-wired states for Tools/Skills/Data Sources rather than fabricated data.
+**Status:** source checkpoint `DONE-CODE`; deployed E2E `OPEN`.
 
-**Current status:** `DONE-CODE` as a UI source checkpoint; deployed OAuth/E2E acceptance remains `OPEN`.
+### FR-012 Storage migration/cutover
 
-### FR-012 Storage migration and cutover
+Before writer cutover: independent DB/role, migrations, owner mapping, required historical reconciliation, rollback/reverse-sync, real dev acceptance, explicit routing approval.
 
-Before omniAgent becomes the live writer:
+**Status:** `OPEN`.
 
-- create/validate an independent logical Chat database + role;
-- apply `001_chat_ownership.sql` and `002_skill_storage.sql` through a repeatable migration path;
-- verify owner mapping and any required historical export/copy/verify;
-- prove rollback/reverse-sync for any data written after cutover;
-- switch routing only with explicit approval;
-- keep Janus historical data intact until reconciliation is accepted.
+### FR-013 Credential Resolver: BYOK + platform credentials
 
-**Current status:** migrations and a dev setup script exist in source; application/live data migration and write cutover are `OPEN`.
+The runtime must support credential policy independently from owner memory.
+
+Target modes:
+
+- `OWNER_BYOK`: owner-supplied provider key/token/auth profile;
+- `PLATFORM`: platform-managed credential available only to explicitly entitled owners.
+
+Required behavior:
+
+1. resolve credential source on the server from authenticated owner + provider/runtime + requested profile/mode + entitlement;
+2. never send raw provider credentials back to Flutter;
+3. store only non-secret credential metadata/reference/status in PostgreSQL;
+4. store raw secret material only in an approved secret store;
+5. record non-secret credential-source metadata for audit/experiment reproducibility;
+6. fail closed when an owner requests a platform credential they are not entitled to use;
+7. keep Chat memory/data owner-scoped even when multiple owners use the same platform credential.
+
+Provider credential policy must not use API-key ID, provider billing account, or shared platform account as a memory namespace.
+
+**Status:** `TARGET-DESIGN / OPEN`; generalized resolver/entitlement source was not found at the reviewed baseline.
+
+### FR-014 Codex owner-isolated execution context
+
+Codex BYOK/platform auth must be separated from execution state.
+
+Per owner, isolate the equivalent of Codex auth/session directory, thread mapping, workspace, process environment, MCP/tool session state and cancellation lifecycle. A shared platform Codex credential may authorize the provider call but must never cause owners to share writable session/thread/workspace context.
+
+**Status:** Codex bridge source exists; generalized multi-owner BYOK/platform isolation acceptance is `OPEN`.
+
+### FR-015 Tiered Chat data lifecycle
+
+omniAgent must support scale without making Iceberg the live Chat database.
+
+- PostgreSQL = hot authoritative runtime state and recent operational history.
+- GCS = large immutable bodies/artifacts after verified write/digest.
+- Iceberg = asynchronous immutable historical/audit/analytics archive.
+- BigLake/BigQuery = optional analytical query layer after explicit approval.
+
+Archive must preserve owner/source IDs and be idempotent/reconcilable. Preferred initial partition direction is time transform + bucket/hash(`owner_id`), not one partition per owner. Hot retention, payload threshold, compaction and expiry values remain measurement-driven and unapproved until specified.
+
+**Status:** `TARGET-DESIGN / OPEN`; no implementation is claimed.
 
 ## 4. Non-functional requirements
 
 ### NFR-001 Security
 
-- no credential fields in persisted events/Skills;
-- no secrets in frontend bundles, image layers, build substitutions, request logs, or repository;
-- least-privilege service identities and per-service Secret access;
-- authenticated internal service calls;
-- no trust in user-supplied owner IDs without verified binding.
+- no raw secrets in repository, frontend, Chat/events, Skills, logs, GCS payload metadata, or Iceberg rows;
+- least-privilege access to provider secret versions;
+- explicit platform-credential entitlement;
+- authenticated service-to-service calls;
+- no trust in client-supplied owner ID;
+- Codex and MCP session/context isolation across owners.
 
 ### NFR-002 Reliability
 
-- idempotency keys for retried writes;
-- deterministic event ordering and replay;
-- retry-safe dispatch ownership;
-- explicit terminal turn states;
-- rollback procedures tested before traffic/write ownership changes.
+- idempotent writes and retry-safe dispatch;
+- deterministic event ordering/replay;
+- monotonic terminal states;
+- archive failures cannot corrupt live turn state;
+- archive/delete lifecycle must verify copy/digests before pruning;
+- rollback tested before write-ownership changes.
 
-### NFR-003 Auditability
+### NFR-003 Auditability and experimentation
 
-Every acceptance claim MUST identify:
-
-- source commit;
-- build/test result;
-- deployed service/revision/image when applicable;
-- exact environment;
-- integration path exercised;
-- known skipped/unverified gates.
+Every runtime execution should be reconstructable by owner/thread/turn/provider/model and non-secret credential source/profile, with tool/worker events, terminal state, usage and error metadata as applicable. Secret values must never be needed to reproduce the audit record.
 
 ### NFR-004 Cost governance
 
-No new paid resource, capacity expansion, scanning/analysis feature, trigger, HA/replica, or production resource should be inferred as approved merely because deployment code exists. Cost-impacting actions require explicit approval.
+New buckets, BigLake/BigQuery resources, schedulers, archive jobs, secret versions, capacity, triggers, HA/replicas, paid scans, or provider platform-key budgets require explicit approval. Architecture text is not resource approval.
 
 ## 5. Current implementation truth table
 
-| Capability | Source | Real dev evidence | Live/cutover accepted |
-| --- | --- | --- | --- |
-| Gateway service | Present | Private candidate deployed | No |
-| Gemini dispatch | Present | Passed real provider probe | No overall cutover claim |
-| OpenRouter dispatch | Present | Passed real provider probe | No overall cutover claim |
-| Codex bridge/auth | Present | Managed auth not accepted | No |
-| MCP Host | Present | Janus MCP guard separately checked; omniAgent real MCP path not accepted | No |
-| Janus context client | Present | Not wired into real turn path | No |
-| Chat API | Present | Source/tests only at checkpoint | No |
-| `omni_chat` migrations | Present | DB not evidenced as applied at checkpoint | No |
-| Flutter Chat UI | Present | Image built at checkpoint; latest sign-in source is newer | No |
-| Google ID-token UI integration | Present on latest main | Latest head has no attached CI/status evidence in this review | No |
-| Chat→Gateway worker/dispatcher | Absent as integrated durable path | No | No |
-| Historical copy / reverse-sync rollback | Not complete | No | No |
+| Capability | Reviewed source/evidence | Accepted current status |
+| --- | --- | --- |
+| Chat API + `omni_chat` source | present | source only; live storage/cutover open |
+| durable dispatcher | no integrated accepted path | OPEN |
+| Gemini | source + prior real Gateway probe | VERIFIED-DEV at provider probe scope |
+| OpenRouter | source + prior real Gateway probe | VERIFIED-DEV at provider probe scope |
+| Codex | bridge/auth source | live owner auth/isolation OPEN |
+| Groq direct adapter | not found | TARGET-DESIGN / OPEN |
+| BYOK/platform Credential Resolver | not found | TARGET-DESIGN / OPEN |
+| owner-isolated memory | owner model/source exists | full multi-owner live acceptance OPEN |
+| GCS omniAgent artifact tier | no accepted path evidenced | TARGET-DESIGN / OPEN |
+| Iceberg omniAgent historical lakehouse | no accepted path evidenced | TARGET-DESIGN / OPEN |
+| BigLake/BigQuery analytics layer | no approved implementation evidenced | TARGET-DESIGN / OPEN |
+| event cursor replay | source exists | live reconnect acceptance OPEN |
 
 ## 6. Completion definition
 
-`OMNIAGENT SPLIT COMPLETE` may be declared only after all of the following are true:
-
-1. required source is implemented;
-2. exact-head tests/CI pass;
-3. real dev deployment is verified end to end;
-4. owner isolation, OAuth, provider, MCP, Janus bounded context, approval/cancel/reconnect paths pass;
-5. storage ownership and any historical migration reconcile correctly;
-6. rollback/reverse-sync is proven before writer cutover;
-7. Janus cleanup is performed only after the replacement is proven;
-8. active documentation matches actual runtime ownership;
-9. final Phase 9 acceptance is explicitly recorded as PASS.
+`OMNIAGENT SPLIT COMPLETE` may be declared only after exact-head implementation/CI, real dev deployment, owner isolation, enabled provider/credential modes, durable dispatch, MCP/approval/cancel/reconnect, storage/migration/rollback and documentation gates all pass with explicit evidence. Newly approved design items are not completion evidence.

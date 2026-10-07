@@ -1,28 +1,59 @@
 # omniAgent split execution status
 
+> Updated architecture planning: 2026-10-07.
+> Historical checkpoint statuses remain evidence-based; newly documented architecture items are targets until implemented and accepted.
+
 ## Completed checkpoints
 
-- [x] Phase 0 — Baseline / freeze: repository state and split baseline were established before migration work.
-- [x] Phase 1 — Skeleton / copy-first: omniAgent owns an independent build/test/package boundary for the copied generic Agent runtime.
-- [x] Phase 2 — Contract / security split: generic Agent contracts/security are separated from Janus domain policy and context ownership.
-- [x] Phase 3 — Janus ↔ omniAgent wire boundary: the authenticated bounded Janus context client/contract checkpoint is complete; direct Janus DB/GCS/Iceberg/internal imports are forbidden.
-- [x] Phase 4 — Chat API / storage ownership checkpoint: omniAgent owns the target Chat API, `omni_chat` schema, owner-mapping contract, and Skill storage contract. Historical copy and live write ownership are intentionally deferred to deployment/cutover phases.
-- [x] Phase 5 — UI extraction: generic Chat UI/widget tests live in `apps/agent_app`; Janus User App source owns investment User/Admin UI only. Janus API pins the pre-split User App Web artifact from commit `5d24d0638b2667c6c4e9b68620223adef5c08e8d`; dev revision `janus-api-00154-74s` serves canonical traffic with the legacy Chat UI. [Janus CI](https://github.com/tommylin15/janus-omniforge/actions/runs/35705589439) and [omniAgent CI](https://github.com/tommylin15/omniAgent/actions/runs/35705540272) passed.
+- [x] Phase 0 — Baseline / freeze.
+- [x] Phase 1 — independent omniAgent repository/build/test boundary.
+- [x] Phase 2 — generic Agent contract/security split.
+- [x] Phase 3 — bounded Janus connector/source boundary; direct Janus DB/GCS/Iceberg access is forbidden.
+- [x] Phase 4 — target Chat API/`omni_chat` ownership and Skill storage source checkpoint.
+- [x] Phase 5 — generic Flutter Chat source extraction.
 
-Phase 0–5 are closed as migration checkpoints. Their completion does **not** claim omniAgent live cutover or overall split completion.
+These are migration checkpoints, not proof of live cutover.
 
-## Carry-forward execution gates
+## Phase 6 / 6B
 
-- [x] Phase 6 — Deployment Planning Gate: approved plan recorded in [phase-6-deployment-plan.md](phase-6-deployment-plan.md); the later Phase 6B execution is tracked separately.
-- [ ] Phase 6B — Real Dev Deployment / Acceptance: after required approvals, deploy to the real parallel-live dev environment and verify provider/runtime dispatch, Codex managed auth, Gemini/OpenRouter, MCP discovery/call, streaming, cancellation, reconnect, approvals, owner isolation, real omniAgent → Janus bounded API/MCP, and at least one real end-to-end path. ChatGPT → Janus MCP must remain independently functional. Historical owner mapping/export-copy-verify and write-routing cutover are performed here only if required by the approved plan and must remain non-destructive until verified.
+- [x] Phase 6 deployment planning gate recorded.
+- [ ] Phase 6B full real-dev acceptance.
 
-Phase 6B 2026-09-23 checkpoint: **partial, not cutover accepted**. Private Gateway and real Gemini/OpenRouter dispatch passed; Chat/UI image built but not deployed, and no Chat writer/routing switch occurred. See [real dev evidence and remaining gates](phase-6b-dev-evidence.md).
-- [ ] Phase 7 — Janus Cleanup: only after Phase 6B live acceptance and explicit cleanup approval. Remove only Janus generic assistant ownership already replaced by omniAgent; preserve KEEP-JANUS domain/data/API/MCP/UI responsibilities and migration history. Run Janus/omniAgent regressions plus stale import/path scans.
-- [ ] Phase 8 — Documentation Migration / Stale-reference Gate: align active README/WBS/spec/TODO/UI/runbooks/service/package docs with the actual ownership, runtime and paths. Preserve archive/history facts; remove stale current-state ownership claims.
-- [ ] Phase 9 — Final Acceptance: re-check both repositories, tests, CI, deployment, live runtime, integration, UI, contracts, storage ownership, documentation, stale references and rollback. Only Phase 9 PASS may be labeled `OMNIAGENT SPLIT COMPLETE`.
+Recorded Phase 6B evidence is **partial**: private Gateway + real Gemini/OpenRouter dispatch passed and a Chat/UI image was built, but durable Chat→Gateway dispatch, live Chat/UI acceptance, Codex owner auth, multi-owner E2E, storage cutover and final routing switch remain open.
 
-## Current live state
+## 2026-10-07 architecture decisions to carry forward
 
-Janus remains the sole live Chat writer and keeps its applied migration history and historical conversation/private data intact. The pinned pre-split Janus Web artifact preserves the current legacy Chat path until an approved Phase 6B cutover. omniAgent OAuth, live runtime dispatch, real Janus context integration, Skills/MCP live integration, historical data copy, write-routing cutover and post-cutover rollback are therefore carry-forward work, not unfinished Phase 3–5 checkpoint scope.
+The following are now the target architecture and must be reflected in implementation work without being reported as completed:
 
-See [UI ownership](ui.md), [Janus migration](migration-from-janus.md), [storage gate](chat-storage-migration.md), [Janus connector](janus-connector.md), and [deployment/cutover runbook](runbook-ui-cutover.md).
+- [ ] Keep PostgreSQL/`omni_chat` as authoritative **hot operational state** for owner/thread/turn/event/approval/Skill/dispatch/idempotency/cursor state.
+- [ ] Add an owner-bound GCS artifact/object tier for large immutable message bodies, attachments, tool/worker outputs and exports when lifecycle thresholds are defined.
+- [ ] Add asynchronous GCS + Iceberg historical/audit/analytics archive; do not use Iceberg as the live queue/state machine.
+- [ ] Evaluate/implement BigLake/BigQuery analytics over archived data only after explicit resource/cost approval.
+- [ ] Prefer time partitioning plus bucket/hash on `owner_id`; do not create one physical Iceberg partition per owner by default.
+- [ ] Implement a provider Credential Resolver supporting owner BYOK and entitled platform credentials.
+- [ ] Keep raw secrets in approved secret storage; persist only metadata/reference/status in PostgreSQL.
+- [ ] Enforce owner memory isolation independently from credential source. A shared platform provider key must never merge threads, summaries, tools, artifacts or historical records.
+- [ ] Add direct Groq provider support as an experimental target. Current source has no Groq adapter.
+- [ ] Isolate Codex auth/session/thread/workspace/process context per owner even when a platform Codex credential is reused.
+- [ ] Persist only non-secret credential-source metadata for audit/experiment reproducibility.
+
+## Current critical path
+
+1. exact-head build/test evidence;
+2. independent dev Chat DB/role + migrations;
+3. deploy Chat API + Flutter candidate without taking existing live traffic;
+4. real browser Google sign-in and two-owner isolation;
+5. implement durable Chat→Gateway dispatcher/worker;
+6. implement/accept credential resolution and enabled provider auth modes;
+7. prove Gemini/OpenRouter and, when implemented, Groq/Codex end to end;
+8. prove approval/cancel/reconnect/MCP;
+9. add the historical archive/lifecycle path before relying on it for scale or retention;
+10. perform historical migration/rollback/cutover only with explicit approval.
+
+## Later phases
+
+- [ ] Phase 7 — cleanup only after Phase 6B replacement is proven.
+- [ ] Phase 8 — reconcile active docs and stale references with actual runtime.
+- [ ] Phase 9 — exact-head CI + deployment + live integration + storage + isolation + rollback + docs final acceptance.
+
+Only explicit Phase 9 PASS may be labeled `OMNIAGENT SPLIT COMPLETE`.

@@ -1,143 +1,107 @@
 # omniAgent acceptance matrix
 
-> Baseline: `main@4a5f74ca60c0859a8727568290b388101cbae6c1`.
-> Acceptance is evidence-based. Code presence, document completion, image build, or a partial smoke test cannot substitute for an end-to-end gate.
+> Implementation baseline reviewed: `main@75336a248381d935c7b23dd8afab06f5e9c4151a`.
+> Architecture revision: 2026-10-07.
+> Code/design presence cannot substitute for runtime evidence.
 
 ## 1. Evidence hierarchy
 
-For a feature to be accepted, use the strongest applicable evidence:
+1. live/runtime/deployment evidence;
+2. real environment acceptance;
+3. exact-commit CI/test evidence;
+4. source evidence;
+5. planning/document evidence.
 
-1. **Runtime/live evidence** — deployed revision/image, identity, traffic, real request/response, storage state, integration behavior.
-2. **Environment acceptance** — repeatable dev/staging test against real dependencies and real auth boundaries.
-3. **CI/test evidence** — exact commit, test suite, result, explained skips.
-4. **Source evidence** — implementation exists and matches the requirement.
-5. **Planning/document evidence** — accepted design only; never sufficient for live completion.
+New credential/lakehouse design items in this revision are level 5 until implementation evidence exists.
 
-A higher-level claim must not be inferred from a lower-level artifact.
+## 2. Existing checkpoint summary
 
-## 2. Current evidence snapshot
+Recorded Phase 6B evidence previously demonstrated a private omniAgent Gateway candidate and real Gemini/OpenRouter provider probes. It did not demonstrate full Chat/UI deployment, durable Chat→Gateway dispatch, live Chat DB cutover, Codex owner auth, direct Groq, generalized BYOK/platform credentials, omniAgent Iceberg archive, or final writer cutover.
 
-### Confirmed checkpoint evidence
+## 3. Core Phase 6B gates
 
-The recorded Phase 6B dev checkpoint demonstrates:
+| Area | Required evidence | Current |
+| --- | --- | --- |
+| exact-head quality | Node + Flutter CI/tests tied to deploy commit | OPEN |
+| Chat DB | independent DB/role + applied migrations + real R/W | OPEN |
+| Chat candidate | deployed revision/image + smoke | OPEN |
+| OAuth/owner | real browser + stable issuer/subject | OPEN |
+| multi-owner isolation | positive/negative tests across Chat/resources | OPEN |
+| durable dispatch | Chat→dispatcher→Gateway→events trace | OPEN |
+| Gemini full E2E | UI to terminal provider result | OPEN |
+| OpenRouter full E2E | UI to terminal provider result | OPEN |
+| Codex | owner auth + isolated execution + real turn | OPEN |
+| Groq | adapter + real provider + full Chat E2E | OPEN / NOT IMPLEMENTED |
+| approval/cancel/reconnect | real runtime/network cases | OPEN |
+| MCP/tools | real endpoint + owner/session isolation | OPEN |
+| routing cutover | explicit approval after blockers | BLOCKED |
 
-- private omniAgent Gateway candidate deployed;
-- real Gemini dispatch passed;
-- real OpenRouter dispatch passed;
-- Chat/UI image built;
-- Janus MCP protected-resource/auth metadata and negative guards remained functional;
-- local Node/Flutter checks passed at that checkpoint;
-- Janus remained the live Chat writer;
-- Chat/UI was not deployed;
-- independent `omni_chat` DB/role/migrations were not applied;
-- Chat API had no live dispatch worker;
-- real omniAgent MCP/Janus-context owner-isolated integration was not accepted;
-- Codex managed auth was not accepted;
-- historical copy/reverse-sync/write cutover were not performed.
+## 4. Credential plane acceptance
 
-### Newer source after that checkpoint
+Before BYOK/platform credential support may be called accepted:
 
-Latest reviewed `main` additionally contains:
+- [ ] raw secret is stored only in approved secret storage;
+- [ ] PostgreSQL contains only owner/provider/mode/profile metadata/reference/status, never raw secret;
+- [ ] Flutter never receives the stored raw secret after submission;
+- [ ] logs, events, Skills, GCS artifacts and Iceberg rows contain no raw secret;
+- [ ] Owner A BYOK cannot be selected/read/used by Owner B;
+- [ ] platform credential requires explicit entitlement;
+- [ ] non-entitled owner fails closed when requesting platform mode;
+- [ ] two owners can use the same platform credential while all memory/thread/tool/artifact/archive state remains separate;
+- [ ] audit can identify provider/model and non-secret credential source/profile used for a turn;
+- [ ] credential replace/revoke/rotation behavior is tested.
 
-- Google ID-token web sign-in integration in Flutter;
-- Chat candidate smoke Cloud Build config;
-- dev Chat DB setup script.
+## 5. Codex isolation acceptance
 
-These are **source changes only** for this acceptance review because the reviewed head commit has no attached GitHub workflow/status evidence and no new live deployment evidence was observed.
+For both personal and platform Codex authorization:
 
-## 3. Phase gate matrix
+- [ ] owner-specific auth/session execution boundary;
+- [ ] owner-specific Codex thread/session mapping;
+- [ ] owner-specific workspace/working directory;
+- [ ] owner-specific environment/process/tool/MCP context;
+- [ ] cancellation cannot target another owner's process/turn;
+- [ ] shared platform authorization does not create shared writable session/cache/workspace;
+- [ ] cross-owner negative tests prove no transcript/context bleed.
 
-| Gate | Requirement | Current result | Acceptance needed |
-| --- | --- | --- | --- |
-| Phase 0 | Baseline/freeze | PASS | Historical checkpoint retained. |
-| Phase 1 | Independent repo/build boundary | PASS | Historical checkpoint retained. |
-| Phase 2 | Contract/security split | PASS | Historical checkpoint retained. |
-| Phase 3 | Bounded Janus boundary | PASS-CHECKPOINT | Live context integration still belongs to Phase 6B. |
-| Phase 4 | Chat API/storage target | PASS-CHECKPOINT | Live storage/write ownership still open. |
-| Phase 5 | UI extraction | PASS-CHECKPOINT | Live deployed UI still open. |
-| Phase 6 | Deployment plan | PASS | Plan exists; execution not implied. |
-| Phase 6B | Real dev deployment / acceptance | **PARTIAL / FAIL for full acceptance** | Complete all blocking rows below. |
-| Phase 7 | Janus cleanup | BLOCKED | Phase 6B full acceptance + explicit cleanup approval. |
-| Phase 8 | Documentation/stale-reference migration | IN PROGRESS | Current control docs + both-repo stale reference review. |
-| Phase 9 | Final acceptance | BLOCKED | All previous gates and final runtime/storage/doc reconciliation. |
+## 6. Data lifecycle/lakehouse acceptance
 
-## 4. Phase 6B blocking acceptance matrix
+Before the historical lakehouse is relied on for retention/scale:
 
-| Area | Test | Required evidence | Current |
-| --- | --- | --- | --- |
-| Exact-head quality | Node build/tests + Flutter analyze/tests/build | CI/test tied to deployed commit | OPEN for latest head |
-| Chat DB | independent DB/role + migrations | DB/schema query evidence | OPEN |
-| Chat candidate | deploy Chat API + Flutter Web | revision/image/config + smoke | OPEN |
-| OAuth | real browser Google login | origin/audience/token acceptance + invalid-token rejection | OPEN |
-| Owner identity | stable issuer+subject owner mapping | repeated login + DB identity evidence | OPEN-LIVE |
-| Owner isolation | two-owner positive/negative tests | cross-owner access denied across all resources | OPEN |
-| Chat dispatch | queued turn claimed and executed | Chat→worker→Gateway→event storage trace | OPEN |
-| Gemini E2E | UI message to Gemini response | full trace, terminal event | OPEN (Gateway-only probe already passed) |
-| OpenRouter E2E | UI message to OpenRouter response | full trace, terminal event | OPEN (Gateway-only probe already passed) |
-| Codex E2E | owner auth + session + turn | owner-scoped auth secret and real turn | OPEN |
-| Approval | allow/deny exact request | owner/thread/turn/request/digest/expiry binding | OPEN-LIVE |
-| Cancel | queued and running cancel | correct terminal state + no duplicate effects | OPEN-LIVE |
-| Event replay | cursor replay | no gaps/duplicates | SOURCE DONE / LIVE OPEN |
-| Reconnect | browser/network interruption | resume from cursor without loss/duplication | OPEN |
-| MCP | discover + call + cancel/disconnect | real MCP endpoint, owner/session isolation | OPEN |
-| Janus context | bounded real context call | service auth + user/owner authorization + no direct data access | OPEN |
-| Skills | public management + owner isolation | revision/state API and UI | OPEN |
-| Historical mapping | export/copy/verify if required | counts/digests/reconciliation | OPEN |
-| Rollback | post-cutover reverse-sync | rehearsed recovery/no loss/duplication | OPEN/BLOCKING |
-| Routing cutover | switch live Chat writer | explicit approval after all blocking gates | BLOCKED |
+- [ ] PostgreSQL remains authoritative for live turn state;
+- [ ] large GCS payloads are owner-bound and digest-verified;
+- [ ] archive writer is idempotent and restart-safe;
+- [ ] archive records preserve owner/thread/turn/event/source IDs;
+- [ ] source/archive counts and digests reconcile for sampled and bounded full ranges;
+- [ ] archive failure cannot silently mark a live turn complete or delete hot state;
+- [ ] physical partition strategy is measured; no unbounded one-partition-per-owner design;
+- [ ] compaction/snapshot expiry/retention behavior is tested before scheduled automation;
+- [ ] historical conversation reconstruction preserves order and owner authorization;
+- [ ] hot-data pruning happens only after archive verification and explicit lifecycle approval;
+- [ ] BigLake/BigQuery resources/queries have explicit cost/resource approval and bounded-query evidence.
 
-## 5. Security acceptance
+## 7. Security acceptance
 
-The following are mandatory before any live writer cutover:
-
-- [ ] no credentials persist in event or Skill payloads;
-- [ ] Secret values absent from repository, frontend, image layers, build substitutions, logs;
-- [ ] Chat internal endpoints accept only intended service audience + allowlisted identity;
-- [ ] Gateway internal calls use authenticated service identity/request binding;
-- [ ] no omniAgent direct access to Janus DB/GCS/Iceberg/internal packages;
-- [ ] no global user token used to simulate multi-owner Janus/MCP acceptance;
-- [ ] approval binding includes owner/thread/turn/request/operation/digest/expiry;
-- [ ] Codex owner auth is isolated and lifecycle-tested;
+- [ ] authenticated owner binding; no client-supplied owner trust;
+- [ ] authenticated internal service calls;
+- [ ] no direct omniAgent access to Janus DB/GCS/Iceberg;
+- [ ] approval binding includes owner/thread/turn/request/digest/expiry;
 - [ ] MCP sessions cannot cross owners;
-- [ ] invalid/expired/wrong-audience tokens fail closed.
+- [ ] provider secrets never become Chat memory or analytics data;
+- [ ] wrong-audience/expired/unauthorized credential requests fail closed.
 
-## 6. Reliability acceptance
+## 8. Reliability acceptance
 
-- [ ] queued turn claim is retry-safe;
-- [ ] duplicate dispatch cannot create duplicate externally visible effects;
-- [ ] event IDs and sequence replay are stable under retries;
-- [ ] worker crash between Gateway call and event persistence has a documented recovery path;
-- [ ] reconnect resumes correctly after network interruption;
-- [ ] terminal states are monotonic and auditable;
-- [ ] cancellation races are tested;
-- [ ] rollback path is rehearsed before any live writer switch.
+- [ ] retry-safe queued claim;
+- [ ] duplicate dispatch does not duplicate externally visible effects;
+- [ ] monotonic event sequence and terminal state;
+- [ ] crash between provider call and event persistence has recovery semantics;
+- [ ] reconnect resumes from persisted cursor;
+- [ ] cancellation races tested;
+- [ ] archive retries are independent from live turn correctness;
+- [ ] rollback/reverse-sync is rehearsed before writer switch.
 
-## 7. Data migration acceptance
+## 9. Documentation/final rule
 
-If historical Chat/Skill data must move:
+Active README/SPEC/WBS/TODO/UI/acceptance/storage/architecture docs must match actual runtime. Point-in-time evidence remains traceable.
 
-1. freeze/export source view or define a reproducible cutoff;
-2. map source identity to omniAgent owner deterministically;
-3. copy non-destructively;
-4. verify counts, keys, event ordering, content digests as appropriate;
-5. report unmatched/invalid records explicitly;
-6. preserve Janus source until reconciliation is accepted;
-7. do not call partial copy a successful migration;
-8. do not switch writer until post-cutover rollback/reverse-sync is proven.
-
-## 8. Documentation acceptance
-
-Before Phase 9 PASS:
-
-- [ ] `README.md` matches real runtime ownership;
-- [ ] `doc/spec.md`, `doc/wbs.md`, `doc/todo.md`, `doc/ui.md`, `doc/acceptance.md` match exact deployed state;
-- [ ] existing `docs/` history remains traceable and point-in-time claims are not silently rewritten into present tense;
-- [ ] Janus active docs no longer claim ownership that has actually moved;
-- [ ] omniAgent docs do not claim ownership that has not actually moved;
-- [ ] stale service/path/env/API references are scanned in both repositories.
-
-## 9. Final declaration rule
-
-The phrase **`OMNIAGENT SPLIT COMPLETE`** is prohibited until Phase 9 is explicitly recorded as PASS with exact source, CI, deployment, live integration, storage, rollback, and documentation evidence.
-
-Any earlier state must be labeled with its actual scope, e.g. `source complete`, `candidate built`, `provider probe passed`, `partial Phase 6B`, or `cutover not accepted`.
+The phrase `OMNIAGENT SPLIT COMPLETE` is prohibited until explicit Phase 9 PASS with exact source, CI, deployment, provider/credential isolation, storage lifecycle, rollback and documentation evidence.
