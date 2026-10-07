@@ -1,6 +1,6 @@
 # omniAgent TODO
 
-> Implementation baseline reviewed: `main@d0974f03d79aa959c1164dbcd35657784d2119b4`.
+> Implementation baseline reviewed: `main@12a94018debd11f5b389aa2fdf325339782bb9d8`.
 > Architecture revision: 2026-10-07.
 > Code/migration/infra work listed here must be executed through the approved development flow; documentation updates are not implementation.
 
@@ -15,9 +15,18 @@
   - Diff review confirms no `ChatApi`, services, contracts, migration, infra or deploy change; create/send/event/approval/cancel behavior and `assistantProfile=default` remain unchanged.
   - Slice 1 is source-ready only. Deployed browser/mobile visual acceptance is still open and UI v1 is not complete.
 
-- [ ] **UI v1 Slice 2 — READY TO START.**
-  - Restyle thread navigation/selected state, conversation header/connection status, message/event/approval/queued/composer surfaces, and existing Tools/Skills/Data Sources sheet.
-  - Preserve all current behavior and truth-state wording; do not add backend capability or Groq UI.
+- [x] **UI v1 Slice 2 — SOURCE-READY / LIVE ACCEPTANCE OPEN.**
+  - Main implementation: `3e84083bed8992b5f67bb32504956320fca05a18`; presentation-only changes to thread navigation, selected state, conversation header/truthful event-sync status, message/event/approval/queued/composer surfaces, and existing Tools/Skills/Data Sources sheet.
+  - First CI run `37625610515`: analyze PASS, test FAIL because the new locked-approval UI used a perpetual `CircularProgressIndicator`, causing the existing `pumpAndSettle` test to time out; build was skipped.
+  - Fix commit: `12a94018debd11f5b389aa2fdf325339782bb9d8` replaces the perpetual animation with a static processing indicator; approval semantics were not changed.
+  - Re-validation run `37625912746`: `flutter pub get`, `flutter analyze lib test`, `flutter test`, and `flutter build web` all PASS.
+  - Diff review remains presentation/test only; no ChatApi/service/contract/migration/infra/deploy semantic changes and no Groq UI.
+  - Slice 2 is source-ready only. Browser/mobile deployed visual acceptance and production Twin Beast asset ingestion remain open.
+
+- [ ] **UI v1 next gate — DEPLOYED VISUAL ACCEPTANCE / ASSET PIPELINE.**
+  - Keep the current replaceable abstract Twin Beast slot until a production asset is explicitly selected/ingested.
+  - Next visual evidence should cover real browser/mobile layout, long chats, approval cards, code blocks, keyboard/composer behavior and responsive breakpoints.
+  - Deployment remains a separate decision under the current repo governance.
 
 ## P0 — real Phase 6B blockers
 
