@@ -230,7 +230,7 @@ export class McpHost {
     const config = this.config(configRef);
     const { transport, root } = await this.transport(config);
     let session: Session | undefined;
-    const client = new Client({ name: "janus-mcp-host", version: "0.1.0" }, {
+    const client = new Client({ name: "omniagent-mcp-host", version: "0.1.0" }, {
       enforceStrictCapabilities: true,
       inputRequired: { autoFulfill: false },
       listMaxPages: 16,
