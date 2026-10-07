@@ -14,6 +14,9 @@ permissions:
 env:
   GCP_PROJECT_ID: gen-lang-client-0593591102
   GCP_REGION: us-central1
+  OMNIAGENT_GCP_WIF_PROVIDER: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+  OMNIAGENT_GCP_CI_SERVICE_ACCOUNT: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+  OMNIAGENT_ARTIFACT_REPOSITORY: omniagent
 
 jobs:
   preflight:
@@ -21,29 +24,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Require omniAgent deployment variables
+      - name: Validate tracked omniAgent deployment identifiers
         shell: bash
-        env:
-          WIF_PROVIDER: ${{ vars.OMNIAGENT_GCP_WIF_PROVIDER }}
-          CI_SERVICE_ACCOUNT: ${{ vars.OMNIAGENT_GCP_CI_SERVICE_ACCOUNT }}
-          ARTIFACT_REPOSITORY: ${{ vars.OMNIAGENT_ARTIFACT_REPOSITORY }}
         run: |
           set -euo pipefail
-          test -n "$WIF_PROVIDER" || { echo "::error::OMNIAGENT_GCP_WIF_PROVIDER is missing"; exit 2; }
-          test -n "$CI_SERVICE_ACCOUNT" || { echo "::error::OMNIAGENT_GCP_CI_SERVICE_ACCOUNT is missing"; exit 2; }
-          test -n "$ARTIFACT_REPOSITORY" || { echo "::error::OMNIAGENT_ARTIFACT_REPOSITORY is missing"; exit 2; }
+          test -n "$OMNIAGENT_GCP_WIF_PROVIDER"
+          test -n "$OMNIAGENT_GCP_CI_SERVICE_ACCOUNT"
+          test -n "$OMNIAGENT_ARTIFACT_REPOSITORY"
+          bash -n infra/gcp/bootstrap-omniagent-ci.sh
 
       - uses: google-github-actions/auth@v2
         with:
-          workload_identity_provider: ${{ vars.OMNIAGENT_GCP_WIF_PROVIDER }}
-          service_account: ${{ vars.OMNIAGENT_GCP_CI_SERVICE_ACCOUNT }}
+          workload_identity_provider: ${{ env.OMNIAGENT_GCP_WIF_PROVIDER }}
+          service_account: ${{ env.OMNIAGENT_GCP_CI_SERVICE_ACCOUNT }}
 
       - uses: google-github-actions/setup-gcloud@v2
 
       - name: Verify GCP identity and omniAgent resources
         shell: bash
         env:
-          ARTIFACT_REPOSITORY: ${{ vars.OMNIAGENT_ARTIFACT_REPOSITORY }}
+          ARTIFACT_REPOSITORY: ${{ env.OMNIAGENT_ARTIFACT_REPOSITORY }}
         run: |
           set -euo pipefail
           gcloud config set project "$GCP_PROJECT_ID" >/dev/null

@@ -136,4 +136,5 @@ The 2026-10-07 credential/lakehouse decisions are `TARGET-DESIGN`, not completed
 - [x] Obsolete `omniagent-internal-signing-key` dependency removed from acceptance config; that Secret must not be recreated.
 - [x] legacy Artifact Registry hard-code removed from `cloudbuild.yaml`; image repository must be supplied explicitly.
 - [x] Node Core CI added and run `37628904846` PASS.
-- [ ] Configure omniAgent-owned GitHub→GCP variables: `OMNIAGENT_GCP_WIF_PROVIDER`, `OMNIAGENT_GCP_CI_SERVICE_ACCOUNT`, `OMNIAGENT_ARTIFACT_REPOSITORY`.
+- [x] Repo-side deployment identifiers and idempotent GCP bootstrap are defined for `OMNIAGENT_GCP_WIF_PROVIDER`, `OMNIAGENT_GCP_CI_SERVICE_ACCOUNT`, and `OMNIAGENT_ARTIFACT_REPOSITORY`.
+- [ ] Execute/read back the omniAgent GCP bootstrap and require a new preflight PASS before marking GitHub→GCP deployment identity configured.

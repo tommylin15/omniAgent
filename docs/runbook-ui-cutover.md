@@ -13,13 +13,13 @@ This is the active cutover runbook for omniAgent. It does not depend on another 
 
 Run `.github/workflows/omniagent-dev-preflight.yml`.
 
-Required repository variables:
+Tracked deployment identifiers:
 
-- `OMNIAGENT_GCP_WIF_PROVIDER`
-- `OMNIAGENT_GCP_CI_SERVICE_ACCOUNT`
-- `OMNIAGENT_ARTIFACT_REPOSITORY`
+- `OMNIAGENT_GCP_WIF_PROVIDER=projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github`
+- `OMNIAGENT_GCP_CI_SERVICE_ACCOUNT=omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com`
+- `OMNIAGENT_ARTIFACT_REPOSITORY=omniagent`
 
-The workflow must authenticate with an omniAgent-owned deployment identity and read the intended Cloud Run / Artifact Registry resources.
+Bootstrap or reconcile the GCP resources with `infra/gcp/bootstrap-omniagent-ci.sh` from an authenticated operator context. The workflow must then authenticate with the dedicated omniAgent deployment identity and read the intended Cloud Run / Artifact Registry resources. A repository commit alone is not GCP runtime evidence.
 
 ## 3. Runtime configuration
 

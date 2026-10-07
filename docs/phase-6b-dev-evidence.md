@@ -29,7 +29,8 @@ The older evidence statement naming `omniagent-internal-signing-key` is invalida
 
 - Run `37627162243`: failed closed because omniAgent deployment variables were absent.
 - Run `37627662825`: a temporary cross-project CI identity probe was rejected by the WIF attribute condition. That experiment is superseded and the cross-project identity has been removed from the workflow.
-- The current preflight requires omniAgent-owned `OMNIAGENT_GCP_WIF_PROVIDER`, `OMNIAGENT_GCP_CI_SERVICE_ACCOUNT`, and `OMNIAGENT_ARTIFACT_REPOSITORY`.
+- The current preflight uses tracked omniAgent-owned identifiers: WIF provider `projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github`, CI service account `omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com`, and Artifact Registry repository `omniagent`.
+- GCP bootstrap/reconciliation is defined by `infra/gcp/bootstrap-omniagent-ci.sh`. This source definition is not runtime proof that the resources exist or IAM bindings are effective.
 
 ## Still open
 

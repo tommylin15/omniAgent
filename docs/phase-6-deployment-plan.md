@@ -19,13 +19,13 @@ Status: active control document. Current state must be proven from this reposito
 
 GitHub Actions must use an omniAgent-owned WIF/CI identity. Never use another project's CI service account as a shortcut.
 
-Required repository variables:
+Tracked non-secret deployment identifiers:
 
-- `OMNIAGENT_GCP_WIF_PROVIDER`
-- `OMNIAGENT_GCP_CI_SERVICE_ACCOUNT`
-- `OMNIAGENT_ARTIFACT_REPOSITORY`
+- `OMNIAGENT_GCP_WIF_PROVIDER=projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github`
+- `OMNIAGENT_GCP_CI_SERVICE_ACCOUNT=omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com`
+- `OMNIAGENT_ARTIFACT_REPOSITORY=omniagent`
 
-Exact live values are intentionally not fabricated. The preflight workflow fails closed when any value is missing.
+These identifiers are fixed in the preflight workflow so GitHub repository-variable drift cannot silently change the deployment target. GCP resource creation and IAM binding are idempotently defined in `infra/gcp/bootstrap-omniagent-ci.sh`. The provider is restricted to `tommylin15/omniAgent` on `refs/heads/main`. Runtime evidence is still required before these resources may be called configured or PASS.
 
 ## Cloud Build / Artifact Registry
 
