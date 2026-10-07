@@ -33,11 +33,11 @@ The dev Chat database is an omniAgent-owned database boundary even when its Post
 - Login role: `omniagent_chat_app`; no superuser, createdb, createrole, or replication privilege.
 - Runtime Secret: `omniagent-chat-db`; its payload is the PostgreSQL DSN used only for `CHAT_DATABASE_URL`.
 - Provider secrets remain in `omniagent-provider-bundle`; database and provider credentials are not combined.
-- PostgreSQL runtime uses its own container, data directory, immutable image, port, HBA file and bounded firewall rule.
-- Host subnet/CIDR is discovered at bootstrap time; it is not copied into source as a fixed external-system value.
+- Dev uses an approved shared PostgreSQL instance on the existing VM; omniAgent owns only its logical database `omniagent_chat`, login role `omniagent_chat_app`, schema `omni_chat`, credentials and migrations. No second PostgreSQL container is created.
+- The shared instance remains on port `5432`. Host subnet/CIDR is discovered at bootstrap time; the bootstrap adds only the bounded `omniagent_chat` / `omniagent_chat_app` HBA rule required for private runtime access.
 - `001_chat_ownership.sql` and `002_skill_storage.sql` are applied transactionally and then verified for schema ownership, least-privilege role properties and rollback-safe read/write behavior.
 - The Chat candidate uses Direct VPC egress with `private-ranges-only`. `GET /ready` must prove a live DB connection before the no-traffic revision can pass acceptance.
-- Bootstrap CI access is temporary and must be revoked after DB creation/candidate deployment; runtime Secret access, image-pull access and the bounded DB firewall rule remain.
+- Bootstrap CI access is temporary and must be revoked after DB creation/candidate deployment; runtime DB Secret access and the bounded DB firewall/HBA rules remain.
 
 The historical `omniagent-bundle` reference on the current live Chat revision is not the target DB Secret. Do not mutate its `latest` value to stage this migration.
 
