@@ -18,7 +18,7 @@
 | --- | --- | --- |
 | 1.1 | independent omniAgent repo/build boundary | DONE |
 | 1.2 | generic contract/security split | DONE |
-| 1.3 | bounded external connector boundary (Janus adapter included) | DONE-CHECKPOINT |
+| 1.3 | bounded generic external connector boundary | DONE-CHECKPOINT |
 | 1.4 | Chat API/storage ownership target | DONE-CHECKPOINT |
 | 1.5 | generic Flutter Chat extraction | DONE-CHECKPOINT |
 
