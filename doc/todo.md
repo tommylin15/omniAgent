@@ -1,19 +1,23 @@
 # omniAgent TODO
 
-> Implementation baseline reviewed: `main@f21702f829514a72c41586e30b1665258909e94c`.
+> Implementation baseline reviewed: `main@d0974f03d79aa959c1164dbcd35657784d2119b4`.
 > Architecture revision: 2026-10-07.
 > Code/migration/infra work listed here must be executed through the approved development flow; documentation updates are not implementation.
 
 ## UI v1 development kickoff
 
-- [ ] **UI v1 Slice 1 — PATCH-READY / NOT IMPLEMENTED.**
-  - Work order: GitHub Issue #1, kickoff comment ID `6036339623`.
-  - Start from `main@f21702f829514a72c41586e30b1665258909e94c`.
-  - Before source edits, record exact-head Flutter baseline: `flutter pub get`, `flutter analyze lib test`, `flutter test`, `flutter build web`.
-  - First source slice: centralized Warm Cozy theme/tokens, sign-in/config state, new-thread empty state, replaceable Twin Beast mascot slot.
-  - Presentation layer only; existing Chat API routes/payloads/event/approval/cancel semantics and `assistantProfile=default` must remain unchanged.
-  - Exit evidence: exact commit + pre/post command results. Source PASS is not live acceptance.
-  - Status is PATCH-READY, not implemented; exact patch blueprint is recorded in GitHub Issue #1 comment `6038169430`. This documentation entry must not be counted as feature completion.
+- [x] **UI v1 Slice 1 — SOURCE-READY / LIVE ACCEPTANCE OPEN.**
+  - Work order: GitHub Issue #1; kickoff comment `6036339623`; patch blueprint `6038169430`.
+  - Exact-head pre-change baseline: `main@ce3c96a264cd5ffcb18e1d1a157b98baa489e05e`, GitHub Actions run `37623987916` — `flutter pub get`, `flutter analyze lib test`, `flutter test`, `flutter build web` all PASS.
+  - Implementation commit: `d0974f03d79aa959c1164dbcd35657784d2119b4`.
+  - Changed source only: centralized Warm Cozy theme/tokens, sign-in/config surface, new-thread empty state, replaceable Twin Beast mascot slot, presentation assertions.
+  - Exact-head post-change run `37624738722` — all four Flutter gates PASS.
+  - Diff review confirms no `ChatApi`, services, contracts, migration, infra or deploy change; create/send/event/approval/cancel behavior and `assistantProfile=default` remain unchanged.
+  - Slice 1 is source-ready only. Deployed browser/mobile visual acceptance is still open and UI v1 is not complete.
+
+- [ ] **UI v1 Slice 2 — READY TO START.**
+  - Restyle thread navigation/selected state, conversation header/connection status, message/event/approval/queued/composer surfaces, and existing Tools/Skills/Data Sources sheet.
+  - Preserve all current behavior and truth-state wording; do not add backend capability or Groq UI.
 
 ## P0 — real Phase 6B blockers
 
