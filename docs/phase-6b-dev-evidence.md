@@ -45,6 +45,14 @@ Runtime readback:
 - Current live Chat revision has no VPC egress configuration (`vpcAccess={}`), so it cannot yet use a private PostgreSQL endpoint.
 - The current live Chat image is still sourced from a legacy non-omniAgent Artifact Registry repository. The P0 candidate build path now targets only the approved `omniagent` repository.
 
+Candidate build evidence:
+
+- consolidated candidate run `37640263980`: PASS on `7cc0ac3abda4a37720951569afd0214e91fd401c`;
+- Node and Flutter gates both passed before image publication;
+- Chat candidate digest: `sha256:c5e812db8090490a6223fb317056859656190e343b1a3da499221b3e63aa3d23`;
+- PostgreSQL candidate digest: `sha256:cd55d533a4cbed2d5bace1a0d3a1608a6719ffc6399970275ef9f8bd0e80f963`;
+- both images are in the approved `omniagent` Artifact Registry; this build path does not use the default Cloud Build source-staging bucket.
+
 New source/control plane prepared:
 
 - dedicated DB Secret contract: `omniagent-chat-db`; provider credentials remain isolated in `omniagent-provider-bundle`;
