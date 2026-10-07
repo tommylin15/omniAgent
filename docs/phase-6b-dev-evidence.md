@@ -74,10 +74,21 @@ Runtime blocker evidence:
 - After the operator grant, capacity/shared-instance probes successfully reached the VM over IAP, proving Compute Viewer / OS Admin Login / IAP access is now effective. Run `37700874792` then failed earlier at the old `secretmanager.secrets.get` check before any DB mutation; source has since been corrected so bootstrap only needs Secret version access/add permissions granted on `omniagent-chat-db`.
 - Until the revised shared-instance bootstrap produces new runtime evidence for DB/role/migrations/HBA/Secret, the independent Chat DB remains **OPEN**, not PASS.
 
+## Shared Chat DB runtime acceptance — 2026-10-08
+
+- Shared-instance bootstrap run `37702554248`: **PASS**.
+- Recovery handled an existing least-privilege `omniagent_chat_app` role with no active `omniagent-chat-db` version by rotating only that not-yet-live role credential, then creating Secret version 1.
+- Database `omniagent_chat`, schema `omni_chat`, migrations 001/002 and all 7 expected tables verified.
+- Role remains login-only and non-superuser/non-createdb/non-createrole/non-replication.
+- Rollback-safe application-role write probe passed.
+- Bounded HBA rule for `omniagent_chat` / `omniagent_chat_app` on the discovered private subnet was installed and reloaded.
+- Non-secret Secret readback verified `omniagent-chat-db` targets `omniagent_chat_app@<private-host>:5432/omniagent_chat`.
+- No second PostgreSQL container was created.
+
 ## Still open
 
 - live readback of current Cloud Run revisions and Artifact Registry;
-- independent Chat DB/role plus migrations;
+- Chat/UI Cloud Run candidate deployment;
 - Chat/UI Cloud Run candidate deployment;
 - real browser OAuth and two-owner isolation;
 - durable Chat → Gateway dispatch;
