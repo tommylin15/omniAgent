@@ -45,3 +45,25 @@ The older evidence statement naming `omniagent-internal-signing-key` is invalida
 - production Twin Beast asset and deployed responsive visual acceptance.
 
 No open item may be upgraded to PASS without new runtime evidence.
+
+
+## External integration layer removal — 2026-10-07
+
+The dedicated project-specific external-domain adapter has been removed from the current omniAgent baseline.
+
+- Removed the dedicated external context client source, its tests, connector document and historical migration note.
+- Renamed remaining Gateway/MCP/Codex fixture identities to omniAgent-owned names.
+- Flutter Data Source copy now describes only generic omniAgent Tool/MCP/Data Source contracts.
+- Removed the legacy external-user mapping fields from the not-yet-live Chat migration baseline.
+- `setup-omniagent-db-dev.sh` no longer assumes another project's PostgreSQL container; `OMNIAGENT_POSTGRES_CONTAINER` is required and fails closed when absent.
+- OmniAgentGPT Drive no longer contains the obsolete project-specific Worker Gateway architecture file.
+- Repository hygiene CI rejects reintroduction of the removed project-specific integration in filenames or tracked content.
+
+Validation evidence:
+- intermediate Node Core run `37631303323` failed after the connector source was deleted while its test still existed; this was a real transitional failure, not a runtime/provider failure;
+- run `37631308817` passed after the dangling test was removed;
+- Node Core run `37632241702` PASS with migration/DB setup validation;
+- Flutter run `37631522509` PASS after generic Data Source copy;
+- Project Hygiene run `37632267393` PASS on `main@d3c4af7081919aab015a93cfef31dfee4839947c`.
+
+This removal does not mean generic Tool/MCP/Data Source capability is complete. It means no dedicated external-domain adapter is part of the current source baseline.
