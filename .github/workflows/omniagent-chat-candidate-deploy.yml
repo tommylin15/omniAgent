@@ -37,7 +37,7 @@ jobs:
 
       - uses: google-github-actions/setup-gcloud@v2
 
-      - name: Resolve candidate and current non-secret config
+      - name: Resolve candidate, database network, and current non-secret config
         shell: bash
         env:
           CANDIDATE_SHA: ${{ inputs.candidate_sha }}
@@ -55,9 +55,47 @@ jobs:
           echo "CANDIDATE_DIGEST=$digest" >> "$GITHUB_ENV"
 
           gcloud secrets versions describe latest             --secret="$CHAT_DB_SECRET"             --project="$GCP_PROJECT_ID"             --format='value(state)' | grep -qx ENABLED
+          gcloud secrets versions access latest             --secret="$CHAT_DB_SECRET"             --project="$GCP_PROJECT_ID" > /tmp/chat-db-url
+
+          python3 - /tmp/chat-db-url "$GITHUB_ENV" <<'PY'
+          import sys
+          from urllib.parse import urlparse
+          raw=open(sys.argv[1],encoding="utf-8").read().strip()
+          u=urlparse(raw)
+          if u.scheme not in ("postgresql","postgres") or u.username!="omniagent_chat_app":
+              raise SystemExit("unexpected Chat DB secret")
+          if (u.path or "").lstrip("/")!="omniagent_chat" or not u.hostname:
+              raise SystemExit("unexpected Chat DB target")
+          with open(sys.argv[2],"a",encoding="utf-8") as out:
+              out.write(f"POSTGRES_HOST={u.hostname}\n")
+          PY
+          rm -f /tmp/chat-db-url
+
+          gcloud compute instances list             --project="$GCP_PROJECT_ID"             --format=json > /tmp/instances.json
+          python3 - /tmp/instances.json "$POSTGRES_HOST" "$GITHUB_ENV" <<'PY'
+          import json,sys
+          rows=json.load(open(sys.argv[1]))
+          target=sys.argv[2]
+          matches=[]
+          for row in rows:
+              for ni in row.get("networkInterfaces") or []:
+                  if ni.get("networkIP")==target:
+                      matches.append((ni.get("network",""),ni.get("subnetwork","")))
+          if len(matches)!=1:
+              raise SystemExit(f"expected one VM interface for DB host, found {len(matches)}")
+          network,subnet=matches[0]
+          network=network.rsplit("/",1)[-1]
+          subnet=subnet.rsplit("/",1)[-1]
+          if not network or not subnet:
+              raise SystemExit("database VPC metadata missing")
+          with open(sys.argv[3],"a",encoding="utf-8") as out:
+              out.write(f"POSTGRES_NETWORK={network}\n")
+              out.write(f"POSTGRES_SUBNET={subnet}\n")
+          print("postgres_network="+network)
+          print("postgres_subnet="+subnet)
+          PY
 
           gcloud run services describe "$CHAT_SERVICE"             --region="$GCP_REGION"             --project="$GCP_PROJECT_ID"             --format=json > /tmp/chat.json
-
           python3 - /tmp/chat.json "$GITHUB_ENV" <<'PY'
           import json,sys
           d=json.load(open(sys.argv[1]))
@@ -65,34 +103,38 @@ jobs:
           env={x.get("name"):x.get("value","") for x in c.get("env") or [] if "value" in x}
           required=["OMNIAGENT_GOOGLE_CLIENT_ID","CHAT_INTERNAL_AUDIENCE","CHAT_INTERNAL_ALLOWED_EMAILS"]
           for name in required:
-              value=env.get(name,"")
-              if not value:
+              if not env.get(name):
                   raise SystemExit(f"missing current {name}")
           with open(sys.argv[2],"a",encoding="utf-8") as out:
               for name in required:
                   out.write(f"{name}={env[name]}\n")
           PY
 
-      - name: Deploy no-traffic candidate
+      - name: Deploy no-traffic candidate with Direct VPC egress
         shell: bash
         env:
           CANDIDATE_SHA: ${{ inputs.candidate_sha }}
         run: |
           set -euo pipefail
           tag="candidate-${CANDIDATE_SHA:0:7}"
-          gcloud run deploy "$CHAT_SERVICE"             --region="$GCP_REGION"             --project="$GCP_PROJECT_ID"             --image="$CANDIDATE_IMAGE"             --service-account="$CHAT_RUNTIME_SA"             --no-traffic             --tag="$tag"             --update-env-vars="OMNIAGENT_GOOGLE_CLIENT_ID=${OMNIAGENT_GOOGLE_CLIENT_ID},CHAT_INTERNAL_AUDIENCE=${CHAT_INTERNAL_AUDIENCE},CHAT_INTERNAL_ALLOWED_EMAILS=${CHAT_INTERNAL_ALLOWED_EMAILS}"             --update-secrets="CHAT_DATABASE_URL=${CHAT_DB_SECRET}:latest"             --quiet
+          gcloud run deploy "$CHAT_SERVICE"             --region="$GCP_REGION"             --project="$GCP_PROJECT_ID"             --image="$CANDIDATE_IMAGE"             --service-account="$CHAT_RUNTIME_SA"             --network="$POSTGRES_NETWORK"             --subnet="$POSTGRES_SUBNET"             --vpc-egress=private-ranges-only             --no-traffic             --tag="$tag"             --update-env-vars="OMNIAGENT_GOOGLE_CLIENT_ID=${OMNIAGENT_GOOGLE_CLIENT_ID},CHAT_INTERNAL_AUDIENCE=${CHAT_INTERNAL_AUDIENCE},CHAT_INTERNAL_ALLOWED_EMAILS=${CHAT_INTERNAL_ALLOWED_EMAILS}"             --update-secrets="CHAT_DATABASE_URL=${CHAT_DB_SECRET}:latest"             --quiet
 
           gcloud run services describe "$CHAT_SERVICE"             --region="$GCP_REGION"             --project="$GCP_PROJECT_ID"             --format=json > /tmp/after.json
-
-          python3 - /tmp/after.json "$tag" "$GITHUB_ENV" <<'PY'
+          python3 - /tmp/after.json "$tag" "$POSTGRES_NETWORK" "$POSTGRES_SUBNET" "$GITHUB_ENV" <<'PY'
           import json,sys
           d=json.load(open(sys.argv[1]))
-          tag=sys.argv[2]
+          tag,expected_network,expected_subnet=sys.argv[2:5]
+          spec=d.get("spec",{}).get("template",{}).get("spec",{})
+          vpc=spec.get("vpcAccess") or {}
+          network=(vpc.get("networkInterfaces") or [{}])[0].get("network","").rsplit("/",1)[-1]
+          subnet=(vpc.get("networkInterfaces") or [{}])[0].get("subnetwork","").rsplit("/",1)[-1]
+          if network!=expected_network or subnet!=expected_subnet or vpc.get("egress")!="PRIVATE_RANGES_ONLY":
+              raise SystemExit("candidate Direct VPC configuration mismatch")
           traffic=d.get("status",{}).get("traffic") or []
           row=next((x for x in traffic if x.get("tag")==tag),None)
           if not row or not row.get("revisionName") or not row.get("url"):
               raise SystemExit("candidate traffic tag missing")
-          with open(sys.argv[3],"a",encoding="utf-8") as out:
+          with open(sys.argv[5],"a",encoding="utf-8") as out:
               out.write(f"CANDIDATE_REVISION={row['revisionName']}\n")
               out.write(f"CANDIDATE_URL={row['url']}\n")
           print("candidate_revision="+row["revisionName"])
@@ -122,6 +164,12 @@ jobs:
           assert json.load(open(sys.argv[1]))["status"] == "ok"
           PY
             fi
+            if [[ "$route" == /ready ]]; then
+              python3 - "$response" <<'PY'
+          import json,sys
+          assert json.load(open(sys.argv[1]))["status"] == "ready"
+          PY
+            fi
             if [[ "$route" == / ]]; then
               grep -qi '<html' "$response"
             fi
@@ -129,6 +177,7 @@ jobs:
             echo "${route} status=${status}"
           }
           check /health 200
+          check /ready 200
           check / 200
           check /v1/threads 401
           echo "candidate_digest=$CANDIDATE_DIGEST"
