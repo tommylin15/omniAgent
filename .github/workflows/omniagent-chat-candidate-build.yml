@@ -8,7 +8,7 @@ on:
       - 'services/chat-api/**'
       - 'tests/**'
       - 'apps/agent_app/**'
-            - 'package.json'
+      - 'package.json'
       - 'package-lock.json'
       - 'tsconfig.json'
       - 'cloudbuild.yaml'
