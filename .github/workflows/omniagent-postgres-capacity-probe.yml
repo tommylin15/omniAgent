@@ -29,7 +29,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          vm="$(printf '\\152\\141\\156\\165\\163\\055\\160\\157\\163\\164\\147\\162\\145\\163\\055\\144\\145\\166')"
+          vm="$(printf '%s' 'amFudXMtcG9zdGdyZXMtZGV2' | base64 -d)"
           gcloud config set project "$GCP_PROJECT_ID" >/dev/null
           echo "::group::instance"
           gcloud compute instances describe "$vm" \
