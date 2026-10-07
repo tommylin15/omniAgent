@@ -1,0 +1,93 @@
+name: omniAgent Chat candidate build
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/omniagent-chat-candidate-build.yml'
+      - 'services/chat-api/**'
+      - 'apps/agent_app/**'
+      - 'infra/postgres/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'tsconfig.json'
+      - 'cloudbuild.yaml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  GCP_PROJECT_ID: gen-lang-client-0593591102
+  GCP_REGION: us-central1
+  OMNIAGENT_GCP_WIF_PROVIDER: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+  OMNIAGENT_GCP_CI_SERVICE_ACCOUNT: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+  OMNIAGENT_ARTIFACT_REPOSITORY: omniagent
+  CHAT_SERVICE: omniagent-chat
+
+jobs:
+  candidate-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.20.0'
+          cache: npm
+      - name: Node exact-head gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run build
+          npm test
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Flutter exact-head gates
+        working-directory: apps/agent_app
+        shell: bash
+        run: |
+          set -euo pipefail
+          flutter pub get
+          flutter analyze lib test
+          flutter test
+          flutter build web
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.OMNIAGENT_GCP_WIF_PROVIDER }}
+          service_account: ${{ env.OMNIAGENT_GCP_CI_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Resolve current Google Web client ID
+        shell: bash
+        run: |
+          set -euo pipefail
+          gcloud config set project "$GCP_PROJECT_ID" >/dev/null
+          client_id="$(gcloud run services describe "$CHAT_SERVICE"             --region="$GCP_REGION"             --project="$GCP_PROJECT_ID"             --format=json | python3 -c '
+          import json,sys
+          d=json.load(sys.stdin)
+          env=(d.get("spec",{}).get("template",{}).get("spec",{}).get("containers") or [{}])[0].get("env") or []
+          values={x.get("name"):x.get("value","") for x in env}
+          print(values.get("OMNIAGENT_GOOGLE_CLIENT_ID",""))
+          ')"
+          test -n "$client_id"
+          echo "OMNIAGENT_GOOGLE_CLIENT_ID=$client_id" >> "$GITHUB_ENV"
+
+      - name: Build immutable Chat and Flutter candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${OMNIAGENT_ARTIFACT_REPOSITORY}"
+          image="${repo}/omniagent-chat:${GITHUB_SHA}"
+          gcloud builds submit .             --project="$GCP_PROJECT_ID"             --config=cloudbuild.yaml             --substitutions="_IMAGE_REPOSITORY=${repo},_IMAGE_TAG=${GITHUB_SHA},_OMNIAGENT_GOOGLE_CLIENT_ID=${OMNIAGENT_GOOGLE_CLIENT_ID}"             --quiet
+          digest="$(gcloud artifacts docker images describe "$image"             --project="$GCP_PROJECT_ID"             --format='value(image_summary.digest)')"
+          test -n "$digest"
+          echo "candidate_sha=$GITHUB_SHA"
+          echo "candidate_image=${repo}/omniagent-chat@${digest}"
