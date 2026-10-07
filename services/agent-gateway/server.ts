@@ -19,7 +19,7 @@ const JSON_HEADERS = { "content-type": "application/json" };
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 
 function loadAgentBundle(): void {
-  const raw = process.env.JANUS_AGENT_PROVIDER_BUNDLE?.trim();
+  const raw = process.env.OMNIAGENT_PROVIDER_BUNDLE?.trim();
   if (!raw) return;
   const bundle = JSON.parse(raw) as Record<string, unknown>;
   for (const [target, source] of Object.entries({
@@ -666,8 +666,8 @@ function send(response: ServerResponse, status: number, body: Json): void {
 
 async function signedBody(request: IncomingMessage): Promise<Json> {
   const key = process.env.MCP_OWNER_SIGNING_KEY;
-  const timestamp = request.headers["x-janus-timestamp"];
-  const signature = request.headers["x-janus-signature"];
+  const timestamp = request.headers["x-omniagent-timestamp"];
+  const signature = request.headers["x-omniagent-signature"];
   if (!key || key.length < 32 || typeof timestamp !== "string" || typeof signature !== "string") {
     throw new Error("MCP internal authentication is unavailable");
   }
