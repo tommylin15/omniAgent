@@ -64,3 +64,5 @@ jobs:
           PY
 
 # retry: noexec-tmp
+
+# retry: partial-role-recovery
