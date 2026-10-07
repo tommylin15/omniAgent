@@ -8,7 +8,7 @@
 
 omniAgent is the independent generic Agent/Chat runtime and orchestration platform. It owns generic conversational runtime, Chat storage/API, worker/provider dispatch, tool/MCP orchestration, Skills, approvals, generic Flutter Chat UI, credential-selection policy, and its own historical/audit data lifecycle.
 
-Janus remains a separate domain system and may be integrated only through bounded authenticated API/MCP. omniAgent must not directly read Janus PostgreSQL/GCS/Iceberg or import Janus internals as runtime dependencies.
+External domain systems may be integrated only through bounded authenticated API/MCP. omniAgent must not directly read external PostgreSQL/GCS/Iceberg or import external internals as runtime dependencies.
 
 Core invariants:
 
@@ -97,9 +97,9 @@ MCP discovery/call/cancel/disconnect must preserve owner/session isolation and n
 
 ### FR-009 External domain context
 
-Janus and other domain systems may be consumed only through approved bounded authenticated interfaces. No direct storage access.
+External domain systems may be consumed only through approved bounded authenticated interfaces. No direct storage access.
 
-**Status:** Janus bounded client/source boundary exists; real turn integration `OPEN`.
+**Status:** no dedicated external-domain adapter is part of the current baseline; generic Tool/MCP/Data Source integration remains `OPEN`.
 
 ### FR-010 Skills
 
