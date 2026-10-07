@@ -39,7 +39,8 @@
 
 - [ ] **Create/verify independent dev Chat DB/role and apply 001/002.**
   - Source-ready: dedicated Secret `omniagent-chat-db`, isolated `omniagent_chat` DB, `omniagent_chat_app` role, dynamic subnet HBA, bounded firewall, idempotent 001/002 bootstrap and read/write probe are defined.
-  - Runtime remains OPEN: omniAgent CI needs the bounded bootstrap Secret/IAP/Compute access before the workflow can create and verify the DB.
+  - Runtime remains OPEN: fresh probe `37646016129` reconfirmed the CI identity lacks Compute/IAP bootstrap access, and self-reconcile run `37646421883` proved it cannot grant those roles to itself because project IAM policy access is denied.
+  - Next gate is a one-time IAM-capable operator execution of `infra/gcp/bootstrap-omniagent-postgres-access.sh grant`; after that, run the official PostgreSQL bootstrap workflow, verify migrations/read-write evidence, then revoke temporary CI bootstrap access.
 
 - [ ] **Deploy Chat API + Flutter candidate without writer cutover.**
   - No-traffic workflow is prepared against the dedicated DB Secret and Direct VPC egress.
