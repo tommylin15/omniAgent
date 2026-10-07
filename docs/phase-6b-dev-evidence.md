@@ -65,9 +65,11 @@ New source/control plane prepared:
 
 Runtime blocker evidence:
 
-- bounded bootstrap preflight run `37637059612` confirmed the omniAgent CI identity does not currently have `secretmanager.versions.access` and does not have `compute.instances.get` / IAP access to the approved PostgreSQL host path.
-- The temporary cross-project probe workflow used to identify this blocker was removed after the evidence was collected; it is not a runtime dependency.
-- `infra/gcp/bootstrap-omniagent-postgres-access.sh` defines the bounded grant/revoke path. Until that access is applied and the bootstrap workflow produces new runtime evidence, the independent Chat DB/role/migrations remain **OPEN**, not PASS.
+- bounded bootstrap preflight run `37637059612` first established that the omniAgent CI identity lacked DB-bootstrap access.
+- fresh probe run `37646016129` reconfirmed `compute.instances.get` is denied; IAP/SSH therefore cannot start. A temporary read of an external bootstrap Secret was also denied and is not part of the target omniAgent DB contract.
+- bounded self-reconcile run `37646421883` then proved `omniagent-ci` cannot grant the missing roles to itself: `gcloud projects add-iam-policy-binding` failed because the CI identity lacks project IAM policy read/write authority.
+- The temporary probe/reconcile workflows were removed immediately after collecting evidence; they are not runtime dependencies and the tracked source remains project-clean.
+- `infra/gcp/bootstrap-omniagent-postgres-access.sh` is the approved one-time administrator bootstrap for the missing Compute Viewer / OS Admin Login / IAP Tunnel access plus the dedicated `omniagent-chat-db` Secret/firewall path. Until an IAM-capable operator applies that bootstrap and the PostgreSQL workflow produces new runtime evidence, the independent Chat DB/role/migrations remain **OPEN**, not PASS.
 
 ## Still open
 
