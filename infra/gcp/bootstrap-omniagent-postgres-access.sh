@@ -20,7 +20,8 @@ runtime_member="serviceAccount:${CHAT_RUNTIME_SERVICE_ACCOUNT}"
 gcloud config set project "$PROJECT_ID" >/dev/null
 
 instance_json="$(mktemp)"
-trap 'rm -f "$instance_json"' EXIT
+firewall_json="$(mktemp)"
+trap 'rm -f "$instance_json" "$firewall_json"' EXIT
 gcloud compute instances describe "$OMNIAGENT_POSTGRES_HOST_VM"   --zone="$OMNIAGENT_POSTGRES_HOST_ZONE"   --project="$PROJECT_ID"   --format=json >"$instance_json"
 
 read -r vm_sa network subnet < <(python3 - "$instance_json" <<'PY'
@@ -62,10 +63,11 @@ if [[ "$action" == "grant" ]]; then
     gcloud compute firewall-rules create "$FIREWALL_RULE"       --project="$PROJECT_ID"       --network="$network"       --direction=INGRESS       --priority=1000       --action=ALLOW       --rules="tcp:$HOST_PORT"       --source-ranges="$subnet_cidr"       --target-service-accounts="$vm_sa" >/dev/null
   fi
 
-  gcloud compute firewall-rules describe "$FIREWALL_RULE"     --project="$PROJECT_ID"     --format=json | python3 - "$network" "$subnet_cidr" "$vm_sa" "$HOST_PORT" <<'PY'
+  gcloud compute firewall-rules describe "$FIREWALL_RULE"     --project="$PROJECT_ID"     --format=json >"$firewall_json"
+  python3 - "$firewall_json" "$network" "$subnet_cidr" "$vm_sa" "$HOST_PORT" <<'PY'
 import json,sys
-d=json.load(sys.stdin)
-network,source,sa,port=sys.argv[1:]
+d=json.load(open(sys.argv[1]))
+network,source,sa,port=sys.argv[2:]
 actual_network=str(d.get("network","")).rsplit("/",1)[-1]
 ranges=set(d.get("sourceRanges") or [])
 targets=set(d.get("targetServiceAccounts") or [])
