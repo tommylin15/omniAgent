@@ -32,12 +32,11 @@ The older evidence statement naming `omniagent-internal-signing-key` is invalida
 - The current preflight uses tracked omniAgent-owned identifiers: WIF provider `projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github`, CI service account `omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com`, and Artifact Registry repository `omniagent`.
 - GCP bootstrap/reconciliation is defined by `infra/gcp/bootstrap-omniagent-ci.sh`. This source definition is not runtime proof that the resources exist or IAM bindings are effective.
 - Repo-side bootstrap commit `aabd96f879b84a984e54e9987ff28546fad99687`: Project Hygiene run `37633716460` PASS, including bootstrap shell syntax validation.
-- Preflight run `37633716553` reached `google-github-actions/auth@v2` with the tracked omniAgent identifiers and failed with Google STS `invalid_target`: the dedicated `omniagent-github/providers/github` WIF target does not yet exist, is disabled, or has not been bootstrapped. Setup-gcloud/resource readback did not run.
+- Preflight run `37633716553` attempt 1 failed at Google STS with `invalid_target` before GCP bootstrap. After the dedicated omniAgent WIF/CI/Artifact Registry bootstrap was executed, attempt 2 PASS: tracked identifier validation, `google-github-actions/auth@v2`, `setup-gcloud`, and `Verify GCP identity and omniAgent resources` all completed successfully.
 
 ## Still open
 
 - live readback of current Cloud Run revisions and Artifact Registry;
-- omniAgent WIF/CI identity configuration;
 - independent Chat DB/role plus migrations;
 - Chat/UI Cloud Run candidate deployment;
 - real browser OAuth and two-owner isolation;
