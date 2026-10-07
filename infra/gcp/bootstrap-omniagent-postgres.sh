@@ -8,6 +8,7 @@ ARTIFACT_REPOSITORY="${OMNIAGENT_ARTIFACT_REPOSITORY:-omniagent}"
 DB_SECRET="${OMNIAGENT_CHAT_DB_SECRET:-omniagent-chat-db}"
 CONTAINER="${OMNIAGENT_POSTGRES_CONTAINER:-omniagent-postgres}"
 HOST_PORT="${OMNIAGENT_POSTGRES_HOST_PORT:-5433}"
+: "${OMNIAGENT_POSTGRES_IMAGE:?OMNIAGENT_POSTGRES_IMAGE must be an immutable @sha256 image}"
 
 : "${OMNIAGENT_POSTGRES_HOST_VM:?OMNIAGENT_POSTGRES_HOST_VM is required}"
 : "${OMNIAGENT_POSTGRES_HOST_ZONE:?OMNIAGENT_POSTGRES_HOST_ZONE is required}"
@@ -46,14 +47,11 @@ fi
 openssl rand -hex 32 >"$work/bootstrap-password"
 chmod 600 "$work/app-password" "$work/bootstrap-password"
 
-tag="${GITHUB_SHA:-manual-$(date -u +%Y%m%d%H%M%S)}"
-image_tag="${REGION}-docker.pkg.dev/${PROJECT_ID}/${ARTIFACT_REPOSITORY}/omniagent-postgres:${tag}"
-
-gcloud builds submit infra/postgres   --tag "$image_tag"   --project="$PROJECT_ID"   --quiet
-
-digest="$(gcloud artifacts docker images describe "$image_tag"   --project="$PROJECT_ID"   --format='value(image_summary.digest)')"
-test -n "$digest"
-image_ref="${REGION}-docker.pkg.dev/${PROJECT_ID}/${ARTIFACT_REPOSITORY}/omniagent-postgres@${digest}"
+image_ref="$OMNIAGENT_POSTGRES_IMAGE"
+[[ "$image_ref" == *@sha256:* ]] || {
+  echo "OMNIAGENT_POSTGRES_IMAGE must use an immutable digest" >&2
+  exit 2
+}
 
 cat >"$work/remote-bootstrap.sh" <<'REMOTE'
 #!/usr/bin/env bash
@@ -179,5 +177,5 @@ echo "postgres_host=$host_ip"
 echo "postgres_port=$HOST_PORT"
 echo "postgres_database=omniagent_chat"
 echo "postgres_role=omniagent_chat_app"
-echo "postgres_image_digest=$digest"
+echo "postgres_image=$image_ref"
 echo "chat_db_secret=$DB_SECRET"
