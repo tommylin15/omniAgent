@@ -201,7 +201,7 @@ gcloud compute ssh "$OMNIAGENT_POSTGRES_HOST_VM" \
    sudo mv /tmp/002_skill_storage.sql /tmp/omniagent-002.sql; \
    sudo chmod 600 /tmp/omniagent-app-password /tmp/omniagent-001.sql /tmp/omniagent-002.sql; \
    sudo chmod 700 /tmp/omniagent-remote-bootstrap.sh; \
-   sudo /tmp/omniagent-remote-bootstrap.sh '$OMNIAGENT_POSTGRES_CONTAINER' '$secret_has_version' '$subnet_cidr'"
+   sudo bash /tmp/omniagent-remote-bootstrap.sh '$OMNIAGENT_POSTGRES_CONTAINER' '$secret_has_version' '$subnet_cidr'"
 
 if [[ "$secret_has_version" != true ]]; then
   python3 - "$host_ip" "$HOST_PORT" "$work/app-password" "$work/dsn" <<'PY'
