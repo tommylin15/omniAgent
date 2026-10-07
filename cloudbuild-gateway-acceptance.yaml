@@ -11,7 +11,18 @@ steps:
       - |
         test -n "${_SERVICE_URL}"
         test -n "${_TOKEN_SERVICE_ACCOUNT}"
-        gcloud secrets versions access 1 --secret=omniagent-internal-signing-key --project="${PROJECT_ID}" --out-file=/tmp/signing-key
+        gcloud secrets versions access latest --secret=omniagent-provider-bundle --project="${PROJECT_ID}" --out-file=/tmp/provider-bundle
+        PROVIDER_BUNDLE_FILE=/tmp/provider-bundle SIGNING_KEY_FILE=/tmp/signing-key python3 - <<'PY'
+        import json, os
+        with open(os.environ["PROVIDER_BUNDLE_FILE"], encoding="utf-8") as f:
+            bundle = json.load(f)
+        key = bundle.get("mcp_owner_signing_key")
+        if not isinstance(key, str) or len(key.strip()) < 32:
+            raise SystemExit("omniagent-provider-bundle.mcp_owner_signing_key is missing or invalid")
+        with open(os.environ["SIGNING_KEY_FILE"], "w", encoding="utf-8") as f:
+            f.write(key.strip())
+        os.chmod(os.environ["SIGNING_KEY_FILE"], 0o600)
+        PY
         token="$(gcloud auth print-identity-token --impersonate-service-account="${_TOKEN_SERVICE_ACCOUNT}" --audiences="${_SERVICE_URL}" --include-email)"
         sign() {
           local body="$1" output="$2" timestamp signature
@@ -19,7 +30,7 @@ steps:
           signature="$(KEY_FILE=/tmp/signing-key TIMESTAMP="${timestamp}" BODY="${body}" python3 -c 'import hashlib,hmac,os; print(hmac.new(open(os.environ["KEY_FILE"],"rb").read(),(os.environ["TIMESTAMP"]+"."+os.environ["BODY"]).encode(),hashlib.sha256).hexdigest())')"
           curl --silent --show-error --max-time 300 -o "${output}" -w '%{http_code}' -X POST \
             -H "Authorization: Bearer ${token}" -H 'Content-Type: application/json' \
-            -H "X-Janus-Timestamp: ${timestamp}" -H "X-Janus-Signature: v1=${signature}" \
+            -H "X-OmniAgent-Timestamp: ${timestamp}" -H "X-OmniAgent-Signature: v1=${signature}" \
             --data "${body}" "${_SERVICE_URL}/internal/v1/assistant/turn"
         }
         for runtime in openrouter gemini; do
