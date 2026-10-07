@@ -1,7 +1,7 @@
 # Architecture — current target and implementation boundary
 
 > Architecture revision: 2026-10-07.
-> Implementation baseline reviewed before this documentation-only revision: `main@75336a248381d935c7b23dd8afab06f5e9c4151a`.
+> Executable baseline validated through `main@d1769491ba41670e86222536ee129b94bbfba04f`; Node Core run `37628904846` PASS. UI source baseline `12a94018debd11f5b389aa2fdf325339782bb9d8`; Flutter run `37625912746` PASS.
 > This document distinguishes **target architecture** from **implemented/live evidence**.
 
 ## 1. Architecture decision
@@ -167,18 +167,18 @@ The event transport must be based on persisted event state and cursor replay. St
 
 A delivery mechanism such as Cloud Tasks may be evaluated as a wake-up mechanism later, but it is not approved or implemented by this document and must not become the source of truth for queue state.
 
-## 9. Janus boundary
+## 9. External domain boundary (Janus adapter included)
 
-Janus remains a separate domain system. omniAgent MAY consume approved Janus data/tools only through bounded authenticated API/MCP.
+External domain systems remain separate from omniAgent. The Janus adapter is one example; omniAgent MAY consume approved external data/tools only through bounded authenticated API/MCP.
 
 omniAgent MUST NOT:
 
-- import Janus internals as runtime dependencies;
-- read Janus PostgreSQL directly;
-- read Janus GCS/Iceberg directly;
-- treat Janus storage as omniAgent memory storage.
+- import external-system internals as runtime dependencies;
+- read external PostgreSQL directly;
+- read external GCS/Iceberg directly;
+- treat external storage as omniAgent memory storage.
 
-Janus can therefore be one external domain/tool provider without owning omniAgent's Chat memory, credential plane, or data lakehouse.
+Janus may therefore be one external domain/tool provider without owning omniAgent's Chat memory, credential plane, deployment plane, or data lakehouse.
 
 ## 10. Current implementation truth
 
