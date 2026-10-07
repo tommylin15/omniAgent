@@ -46,7 +46,7 @@ Before deploying or promoting `omniagent-chat`:
 
 ## External domain integrations
 
-External systems, including Janus, are integration targets only. They may be consumed through approved bounded authenticated API/MCP contracts. Their repositories, credentials, storage and deployment state are not omniAgent current-state sources and must not be read to fill missing omniAgent values.
+External systems are integration targets only. They may be consumed through approved bounded authenticated Tool/MCP/Data Source contracts. Their repositories, credentials, storage and deployment state are not omniAgent current-state sources and must not be read to fill missing omniAgent values.
 
 ## Completion rule
 
