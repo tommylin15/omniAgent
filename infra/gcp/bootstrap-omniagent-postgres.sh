@@ -93,8 +93,14 @@ if [[ -z "$role_exists" ]]; then
   printf "SET log_min_error_statement = PANIC;\nCREATE ROLE omniagent_chat_app LOGIN PASSWORD '%s';\n" "$app_password" |
     sudo docker exec -i -u postgres "$container" psql -v ON_ERROR_STOP=1 >/dev/null
 elif [[ "$secret_has_version" != true ]]; then
-  echo "role exists but DB secret has no version; refusing credential guess/rotation" >&2
-  exit 31
+  role_safe="$(pg -Atqc "SELECT rolcanlogin AND NOT rolsuper AND NOT rolcreatedb AND NOT rolcreaterole AND NOT rolreplication FROM pg_roles WHERE rolname='omniagent_chat_app'")"
+  [[ "$role_safe" == "t" ]] || {
+    echo "existing omniAgent role has unexpected privileges; refusing recovery" >&2
+    exit 31
+  }
+  printf "SET log_min_error_statement = PANIC;\nALTER ROLE omniagent_chat_app PASSWORD '%s';\n" "$app_password" |
+    sudo docker exec -i -u postgres "$container" psql -v ON_ERROR_STOP=1 >/dev/null
+  echo "postgres_role_credential=RECOVERED"
 fi
 
 if [[ -z "$db_exists" ]]; then
