@@ -1,16 +1,13 @@
--- New omniAgent-owned schema. Do not apply this to the Janus migration ledger.
+-- omniAgent-owned Chat schema.
 CREATE SCHEMA IF NOT EXISTS omni_chat;
 
 CREATE TABLE IF NOT EXISTS omni_chat.owners (
   owner_id uuid PRIMARY KEY,
   issuer text NOT NULL,
   subject text NOT NULL,
-  legacy_janus_user_id uuid UNIQUE,
-  mapping_verified_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
   last_seen_at timestamptz NOT NULL DEFAULT now(),
-  UNIQUE (issuer, subject),
-  CHECK ((legacy_janus_user_id IS NULL) = (mapping_verified_at IS NULL))
+  UNIQUE (issuer, subject)
 );
 
 CREATE TABLE IF NOT EXISTS omni_chat.threads (
