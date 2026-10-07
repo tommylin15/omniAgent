@@ -2,7 +2,7 @@
 
 Independent Agent runtime, Chat API/storage target, provider/worker orchestration layer, and Flutter Chat UI source.
 
-Split Phases 0–5 are closed as migration checkpoints. That does **not** mean live cutover is complete. The last recorded Phase 6B evidence is partial: the private Gateway candidate and real Gemini/OpenRouter provider probes passed, while durable Chat→Gateway dispatch, real Chat/UI deployment, multi-owner acceptance, Codex owner auth, storage cutover, and final acceptance remain open.
+omniAgent is the authoritative owner of its Chat/Gateway/UI source and current deployment documentation. Phase 6B remains partial: the recorded Gateway candidate and real Gemini/OpenRouter provider probes passed at their cited checkpoints, while durable Chat→Gateway dispatch, real Chat/UI deployment, multi-owner acceptance, Codex owner auth, storage cutover, and final acceptance remain open.
 
 ## Current architecture direction
 
@@ -22,4 +22,4 @@ Janus remains an external domain system. omniAgent must not read Janus DB/GCS/Ic
 
 Node: run `npm ci`, `npm run build`, and `npm test` here. Flutter: run `flutter pub get`, `flutter analyze lib test`, `flutter test`, and `flutter build web` from `apps/agent_app`. No credentials or real endpoint values are checked in.
 
-See [current control documents](doc/README.md), [architecture](docs/architecture.md), [storage/migration gate](docs/chat-storage-migration.md), [split execution status](docs/todo.md), [UI cutover runbook](docs/runbook-ui-cutover.md), and [Janus connector](docs/janus-connector.md).
+See [current control documents](doc/README.md), [architecture](docs/architecture.md), [storage ownership/import gate](docs/chat-storage-migration.md), [active TODO](doc/todo.md), [deployment runbook](docs/runbook-ui-cutover.md), and [external Janus connector](docs/janus-connector.md).
