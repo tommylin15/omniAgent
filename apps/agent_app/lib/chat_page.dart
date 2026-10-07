@@ -242,7 +242,7 @@ class _ChatPageState extends State<ChatPage> {
                   contentPadding: EdgeInsets.zero,
                   leading: Icon(Icons.storage_outlined),
                   title: Text('資料源'),
-                  subtitle: Text('Janus context 僅能經驗證的 bounded API/MCP 選取'),
+                  subtitle: Text('外部資料來源僅能經 omniAgent 驗證的 Tool/MCP/Data Source contract 選取'),
                 ),
               ],
             ),
