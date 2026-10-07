@@ -30,7 +30,7 @@ The current target is:
 - `owner_id` = memory/data isolation boundary regardless of which provider key pays/authenticates the request;
 - Codex execution context = owner-isolated even when platform authorization is reused;
 - Agent Gateway provider target = Gemini, OpenRouter, Codex, plus planned direct Groq support;
-- external domain systems (including Janus) = bounded API/MCP providers only, never omniAgent's internal storage or deployment source.
+- external domain systems = bounded API/MCP providers only, never omniAgent's internal storage or deployment source.
 
 These are architecture requirements. Current implementation status is recorded in SPEC/WBS/TODO/acceptance and must not be upgraded merely because the design is approved.
 
