@@ -18,8 +18,6 @@ The accepted design keeps Iceberg out of the runtime queue/state-machine path. P
 
 Target provider set is Gemini, OpenRouter, Codex, and Groq. Current source contains Gemini/OpenRouter/Codex support; direct Groq support and the generalized Credential Resolver are planning targets, not implemented evidence.
 
-Janus remains an external domain system. omniAgent must not read Janus DB/GCS/Iceberg directly; Janus may only be consumed through approved bounded API/MCP contracts.
-
 Node: run `npm ci`, `npm run build`, and `npm test` here. Flutter: run `flutter pub get`, `flutter analyze lib test`, `flutter test`, and `flutter build web` from `apps/agent_app`. No credentials or real endpoint values are checked in.
 
-See [current control documents](doc/README.md), [architecture](docs/architecture.md), [storage ownership/import gate](docs/chat-storage-migration.md), [active TODO](doc/todo.md), [deployment runbook](docs/runbook-ui-cutover.md), and [external Janus connector](docs/janus-connector.md).
+See [current control documents](doc/README.md), [architecture](docs/architecture.md), [storage ownership/import gate](docs/chat-storage-migration.md), [active TODO](doc/todo.md), and [deployment runbook](docs/runbook-ui-cutover.md).
