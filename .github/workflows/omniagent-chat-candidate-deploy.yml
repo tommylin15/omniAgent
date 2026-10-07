@@ -60,7 +60,7 @@ jobs:
 
           gcloud secrets versions access latest             --secret="$CHAT_DB_SECRET"             --project="$GCP_PROJECT_ID" > /tmp/chat-db-url
 
-          python3 - /tmp/chat-db-url "$GITHUB_ENV" <<'PY'
+          POSTGRES_HOST="$(python3 - /tmp/chat-db-url <<'PY'
           import sys
           from urllib.parse import urlparse
           raw=open(sys.argv[1],encoding="utf-8").read().strip()
@@ -69,9 +69,11 @@ jobs:
               raise SystemExit("unexpected Chat DB secret")
           if (u.path or "").lstrip("/")!="omniagent_chat" or not u.hostname:
               raise SystemExit("unexpected Chat DB target")
-          with open(sys.argv[2],"a",encoding="utf-8") as out:
-              out.write(f"POSTGRES_HOST={u.hostname}\n")
+          print(u.hostname)
           PY
+          )"
+          test -n "$POSTGRES_HOST"
+          echo "POSTGRES_HOST=$POSTGRES_HOST" >> "$GITHUB_ENV"
           rm -f /tmp/chat-db-url
 
           gcloud compute instances list             --project="$GCP_PROJECT_ID"             --format=json > /tmp/instances.json
