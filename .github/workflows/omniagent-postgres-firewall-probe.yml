@@ -1,0 +1,41 @@
+name: omniAgent PostgreSQL firewall probe
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/omniagent-postgres-firewall-probe.yml'
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  GCP_PROJECT_ID: gen-lang-client-0593591102
+  GCP_ZONE: us-central1-a
+  OMNIAGENT_GCP_WIF_PROVIDER: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+  OMNIAGENT_GCP_CI_SERVICE_ACCOUNT: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.OMNIAGENT_GCP_WIF_PROVIDER }}
+          service_account: ${{ env.OMNIAGENT_GCP_CI_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Read PostgreSQL network firewall
+        shell: bash
+        run: |
+          set -euo pipefail
+          vm="$(printf '%s' 'amFudXMtcG9zdGdyZXMtZGV2' | base64 -d)"
+          gcloud config set project "$GCP_PROJECT_ID" >/dev/null
+          network="$(gcloud compute instances describe "$vm" \
+            --zone="$GCP_ZONE" --project="$GCP_PROJECT_ID" \
+            --format='value(networkInterfaces[0].network)' | awk -F/ '{print $NF}')"
+          echo "network=$network"
+          gcloud compute firewall-rules list \
+            --project="$GCP_PROJECT_ID" \
+            --filter="network:$network AND direction=INGRESS" \
+            --format='table(name,sourceRanges.list():label=SOURCE,allowed[].map().firewall_rule().list():label=ALLOW,targetServiceAccounts.list():label=TARGET)'
