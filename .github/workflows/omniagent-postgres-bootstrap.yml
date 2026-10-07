@@ -1,0 +1,92 @@
+name: omniAgent PostgreSQL bootstrap
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: '40-character SHA from a successful omniAgent Chat candidate build'
+        required: true
+        type: string
+      postgres_host_vm:
+        description: 'Approved dev VM that will host the isolated omniAgent PostgreSQL container'
+        required: true
+        type: string
+      postgres_host_zone:
+        description: 'Zone of the approved dev PostgreSQL host VM'
+        required: true
+        default: 'us-central1-a'
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  GCP_PROJECT_ID: gen-lang-client-0593591102
+  GCP_REGION: us-central1
+  OMNIAGENT_GCP_WIF_PROVIDER: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+  OMNIAGENT_GCP_CI_SERVICE_ACCOUNT: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+  OMNIAGENT_ARTIFACT_REPOSITORY: omniagent
+  OMNIAGENT_CHAT_DB_SECRET: omniagent-chat-db
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.OMNIAGENT_GCP_WIF_PROVIDER }}
+          service_account: ${{ env.OMNIAGENT_GCP_CI_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Resolve immutable PostgreSQL candidate
+        shell: bash
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+        run: |
+          set -euo pipefail
+          [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          git merge-base --is-ancestor "$CANDIDATE_SHA" origin/main
+          gcloud config set project "$GCP_PROJECT_ID" >/dev/null
+
+          image="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${OMNIAGENT_ARTIFACT_REPOSITORY}/omniagent-postgres:${CANDIDATE_SHA}"
+          digest="$(gcloud artifacts docker images describe "$image"             --project="$GCP_PROJECT_ID"             --format='value(image_summary.digest)')"
+          test -n "$digest"
+          echo "OMNIAGENT_POSTGRES_IMAGE=${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${OMNIAGENT_ARTIFACT_REPOSITORY}/omniagent-postgres@${digest}" >> "$GITHUB_ENV"
+
+      - name: Bootstrap isolated dev Chat DB and apply 001/002
+        shell: bash
+        env:
+          OMNIAGENT_POSTGRES_HOST_VM: ${{ inputs.postgres_host_vm }}
+          OMNIAGENT_POSTGRES_HOST_ZONE: ${{ inputs.postgres_host_zone }}
+        run: |
+          set -euo pipefail
+          bash infra/gcp/bootstrap-omniagent-postgres.sh
+
+      - name: Read back non-secret DB contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          work="$(mktemp)"
+          trap 'rm -f "$work"' EXIT
+          gcloud secrets versions access latest             --secret="$OMNIAGENT_CHAT_DB_SECRET"             --project="$GCP_PROJECT_ID" >"$work"
+          python3 - "$work" <<'PY'
+          import sys
+          from urllib.parse import urlparse
+          raw=open(sys.argv[1],encoding="utf-8").read().strip()
+          u=urlparse(raw)
+          assert u.scheme in ("postgresql","postgres")
+          assert u.username=="omniagent_chat_app"
+          assert (u.path or "").lstrip("/")=="omniagent_chat"
+          assert u.hostname
+          print("db_secret=omniagent-chat-db")
+          print("db_user="+u.username)
+          print("db_host="+u.hostname)
+          print("db_port="+str(u.port or 5432))
+          print("db_name="+(u.path or "").lstrip("/"))
+          PY
