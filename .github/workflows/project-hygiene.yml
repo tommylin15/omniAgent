@@ -1,0 +1,30 @@
+name: omniAgent Project Hygiene
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  ownership-hygiene:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject removed project-specific integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          forbidden="$(printf '\152\141\156\165\163')"
+          if git ls-files | grep -i "$forbidden"; then
+            echo "::error::Removed project-specific integration filename detected"
+            exit 1
+          fi
+          if git grep -n -i "$forbidden" -- .; then
+            echo "::error::Removed project-specific integration reference detected"
+            exit 1
+          fi
+      - name: Validate omniAgent DB setup shell
+        run: bash -n setup-omniagent-db-dev.sh
