@@ -79,17 +79,26 @@ Use the Twin Beasts sparingly and intentionally:
 
 Do not place large mascot artwork beside every message. The conversation content remains primary.
 
-### 3.3 Asset rule for UI v1
+### 3.3 Approved visual reference and asset rule for UI v1
 
-No approved Twin Beast image asset exists in the current `apps/agent_app` tree.
+A user-supplied Twin Beast main visual and an omniAgent-adapted candidate visual now exist as the approved **visual-direction references** for UI v1.
 
-Therefore:
+Drive source of record:
 
-- do not invent permanent character artwork in code;
-- do not substitute unrelated animals or stock mascots;
-- create the layout with a replaceable mascot slot/component;
-- until canonical assets are supplied, use a restrained non-character placeholder treatment such as paired abstract circles/silhouettes labeled as temporary development assets;
-- temporary placeholders must be structurally easy to replace without changing page layout or behavior.
+- folder: `OmniAgentGPT/UI_Visual_Contract`;
+- document: `omniAgent UI Visual Contract — 雙生獸主視覺`;
+- Drive document ID: `1HxL8Kr_jOgWRo3_vzt4RQ526V-vOzdwLUY1FYYt1OOo`;
+- the document embeds both the original Twin Beast visual and the Omni-adapted visual plus the known-gap review.
+
+The Omni-adapted visual changes the surrounding lifestyle/home-calendar emphasis into AI / Chat / Agent motifs while keeping the Twin Beasts as the product identity.
+
+Current implementation rule:
+
+- the reference images are approved for visual direction, but are not yet production assets in `apps/agent_app`;
+- Codex should use the Drive reference when replacing the mascot slot during UI v1 implementation;
+- do not invent new permanent anatomy, markings, names, powers, lore, or unrelated mascot substitutions;
+- production asset ingestion, variants, compression, `pubspec.yaml` registration, PWA/favicon outputs, and responsive crops belong to the Codex implementation flow and require build/test evidence;
+- until those assets are actually present in the Flutter source, keep any development placeholder structurally replaceable.
 
 ## 4. Visual direction
 
@@ -512,3 +521,21 @@ Still required separately according to SPEC/TODO:
 - final routing/cutover/rollback evidence.
 
 Do not label the system complete merely because this Visual Contract has been implemented.
+
+
+## 17. Visual asset gaps and follow-up
+
+The current main visual is sufficient to start UI v1 implementation, but the asset set is not complete.
+
+Known gaps:
+
+1. **Character canon sheet** — formal silver-white / gray-black palette, markings, horn/ear/tail proportions, accessories and small-size silhouette are not yet frozen. The current Omni candidate still carries substantial warm-gold and deep-blue accents.
+2. **Responsive variants** — only a square 1:1 main visual is approved. Wide hero, mobile onboarding, transparent mascot-only, monochrome mark, and compact 16/32/48 px assets are still missing.
+3. **State variants** — waiting, working/tool use, approval, success, recoverable error and empty-state poses/illustrations are not yet produced.
+4. **Dark mode** — no approved dark-background treatment exists.
+5. **omniAgent-specific symbol language** — chat/tool/knowledge motifs are currently generic; a distinct omniAgent icon/symbol system is still open.
+6. **Wordmark lockup** — the fixed relationship between the `omniAgent` wordmark and Twin Beasts for app icon, sign-in, sidebar and PWA/favicon has not been approved.
+7. **Accessibility validation** — contrast, focus/disabled states, approval/error semantics, keyboard and screen-reader behavior still need implementation-level verification.
+8. **Real-device validation** — long chat, tool events, approvals, code blocks, mobile keyboard/composer and browser breakpoints are not yet accepted on deployed UI.
+9. **Production asset pipeline** — the reference images are stored in Drive but are not yet checked into `apps/agent_app`, registered in Flutter assets, optimized, variant-generated or tested.
+10. **UI implementation status** — this document and Issue #1 remain implementation instructions; they do not prove that Flutter source, CI, deployment or live acceptance has passed.
