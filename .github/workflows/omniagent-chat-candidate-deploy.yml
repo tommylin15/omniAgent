@@ -129,21 +129,34 @@ jobs:
           import json,sys
           d=json.load(open(sys.argv[1]))
           tag,expected_network,expected_subnet=sys.argv[2:5]
-          spec=d.get("spec",{}).get("template",{}).get("spec",{})
-          vpc=spec.get("vpcAccess") or {}
-          network=(vpc.get("networkInterfaces") or [{}])[0].get("network","").rsplit("/",1)[-1]
-          subnet=(vpc.get("networkInterfaces") or [{}])[0].get("subnetwork","").rsplit("/",1)[-1]
-          if network!=expected_network or subnet!=expected_subnet or vpc.get("egress")!="PRIVATE_RANGES_ONLY":
+          tmpl=d.get("spec",{}).get("template",{})
+          ann=(tmpl.get("metadata") or {}).get("annotations") or {}
+          raw=ann.get("run.googleapis.com/network-interfaces","")
+          try:
+              interfaces=json.loads(raw)
+          except Exception as exc:
+              raise SystemExit(f"candidate Direct VPC interfaces unreadable: {exc}")
+          row_if=(interfaces or [{}])[0]
+          network=str(row_if.get("network","")).rsplit("/",1)[-1]
+          subnet=str(row_if.get("subnetwork","")).rsplit("/",1)[-1]
+          egress=ann.get("run.googleapis.com/vpc-access-egress","").lower()
+          if network!=expected_network or subnet!=expected_subnet or egress!="private-ranges-only":
               raise SystemExit("candidate Direct VPC configuration mismatch")
           traffic=d.get("status",{}).get("traffic") or []
           row=next((x for x in traffic if x.get("tag")==tag),None)
           if not row or not row.get("revisionName") or not row.get("url"):
               raise SystemExit("candidate traffic tag missing")
+          if int(row.get("percent") or 0) != 0:
+              raise SystemExit("candidate unexpectedly receives production traffic")
           with open(sys.argv[5],"a",encoding="utf-8") as out:
               out.write(f"CANDIDATE_REVISION={row['revisionName']}\n")
               out.write(f"CANDIDATE_URL={row['url']}\n")
           print("candidate_revision="+row["revisionName"])
           print("candidate_url="+row["url"])
+          print("candidate_network="+network)
+          print("candidate_subnet="+subnet)
+          print("candidate_vpc_egress="+egress)
+          print("candidate_traffic_percent="+str(int(row.get("percent") or 0)))
           PY
 
       - name: Candidate smoke without traffic promotion
