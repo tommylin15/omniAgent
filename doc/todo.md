@@ -26,7 +26,7 @@
 - [ ] **UI v1 next gate — DEPLOYED VISUAL ACCEPTANCE / ASSET PIPELINE.**
   - Keep the current replaceable abstract Twin Beast slot until a production asset is explicitly selected/ingested.
   - Next visual evidence should cover real browser/mobile layout, long chats, approval cards, code blocks, keyboard/composer behavior and responsive breakpoints.
-  - Deployment is authorized for omniAgent. Current blocker is omniAgent-owned GitHub→GCP configuration; preflight run `37628839968` fails closed because `OMNIAGENT_GCP_WIF_PROVIDER` is not configured.
+  - Deployment is authorized for omniAgent. GitHub→GCP preflight is now configured and passing; deployed visual acceptance remains open.
 
 ## P0 — real Phase 6B blockers
 
@@ -137,7 +137,8 @@ The 2026-10-07 credential/lakehouse decisions are `TARGET-DESIGN`, not completed
 - [x] legacy Artifact Registry hard-code removed from `cloudbuild.yaml`; image repository must be supplied explicitly.
 - [x] Node Core CI added and run `37628904846` PASS.
 - [x] Repo-side deployment identifiers and idempotent GCP bootstrap are defined for `OMNIAGENT_GCP_WIF_PROVIDER`, `OMNIAGENT_GCP_CI_SERVICE_ACCOUNT`, and `OMNIAGENT_ARTIFACT_REPOSITORY`.
-- [ ] Execute/read back the omniAgent GCP bootstrap and require a new preflight PASS before marking GitHub→GCP deployment identity configured.
+- [x] Execute/read back the omniAgent GCP bootstrap and require a new preflight PASS before marking GitHub→GCP deployment identity configured.
   - Repo-side bootstrap commit: `aabd96f879b84a984e54e9987ff28546fad99687`.
   - Project Hygiene `37633716460`: PASS.
-  - GCP preflight `37633716553`: FAIL at WIF token exchange with `invalid_target`; the dedicated WIF target is not yet present/enabled. This is the current deployment blocker.
+  - GCP preflight `37633716553` attempt 1: FAIL at WIF token exchange with `invalid_target` before bootstrap.
+  - GCP preflight `37633716553` attempt 2: PASS; tracked identifier validation, GitHub OIDC auth, `setup-gcloud`, and omniAgent resource readback all passed.
