@@ -108,7 +108,7 @@ describe("omniAgent Chat API ownership boundary", () => {
     expect(store.cancelQueuedTurn).toHaveBeenCalledWith("owner-alice","thread-1","turn-1");
   });
 
-  it("rejects nested credentials and keeps the new schema separate from Janus history", () => {
+  it("rejects nested credentials and keeps the new schema isolated from legacy history", () => {
     expect(() => safeRecord({ payload: [{ refresh_token: "secret" }] })).toThrow("credential");
     const sql = readFileSync("infra/postgres/migrations/001_chat_ownership.sql","utf8");
     expect(sql).toContain("CREATE SCHEMA IF NOT EXISTS omni_chat");
