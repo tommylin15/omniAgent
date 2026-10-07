@@ -62,7 +62,7 @@ export class AppServerClient {
 
   async initialize(experimentalApi = false): Promise<Json> {
     const result = await this.request("initialize", {
-      clientInfo: { name: "janus-agent-gateway", version: "0.1.0" },
+      clientInfo: { name: "omniagent-agent-gateway", version: "0.1.0" },
       capabilities: { experimentalApi },
     });
     this.notify("initialized", {});
