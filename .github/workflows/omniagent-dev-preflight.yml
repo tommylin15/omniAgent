@@ -21,34 +21,39 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Resolve deployment-only WIF identity
+      - name: Require omniAgent deployment variables
         shell: bash
+        env:
+          WIF_PROVIDER: ${{ vars.OMNIAGENT_GCP_WIF_PROVIDER }}
+          CI_SERVICE_ACCOUNT: ${{ vars.OMNIAGENT_GCP_CI_SERVICE_ACCOUNT }}
+          ARTIFACT_REPOSITORY: ${{ vars.OMNIAGENT_ARTIFACT_REPOSITORY }}
         run: |
-          echo "Using existing GitHub WIF provider and shared CI deployment identity."
-          echo "Runtime service accounts, OAuth credentials and Secret Manager values are not read or changed by this step."
+          set -euo pipefail
+          test -n "$WIF_PROVIDER" || { echo "::error::OMNIAGENT_GCP_WIF_PROVIDER is missing"; exit 2; }
+          test -n "$CI_SERVICE_ACCOUNT" || { echo "::error::OMNIAGENT_GCP_CI_SERVICE_ACCOUNT is missing"; exit 2; }
+          test -n "$ARTIFACT_REPOSITORY" || { echo "::error::OMNIAGENT_ARTIFACT_REPOSITORY is missing"; exit 2; }
 
       - uses: google-github-actions/auth@v2
         with:
-          workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/github-actions/providers/github
-          service_account: janus-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+          workload_identity_provider: ${{ vars.OMNIAGENT_GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.OMNIAGENT_GCP_CI_SERVICE_ACCOUNT }}
 
       - uses: google-github-actions/setup-gcloud@v2
 
-      - name: Verify GCP identity and omniAgent candidate resources
+      - name: Verify GCP identity and omniAgent resources
         shell: bash
+        env:
+          ARTIFACT_REPOSITORY: ${{ vars.OMNIAGENT_ARTIFACT_REPOSITORY }}
         run: |
           set -euo pipefail
           gcloud config set project "$GCP_PROJECT_ID" >/dev/null
           echo "project=$(gcloud config get-value project)"
           echo "account=$(gcloud auth list --filter=status:ACTIVE --format='value(account)')"
-          echo "== Cloud Run candidates =="
           for svc in omniagent-chat omniagent-agent-gateway; do
-            if gcloud run services describe "$svc" --region="$GCP_REGION"               --format='value(metadata.name,status.url,status.latestReadyRevisionName)' 2>/tmp/"$svc".err; then
+            if gcloud run services describe "$svc" --region="$GCP_REGION"               --format='value(metadata.name,status.url,status.latestReadyRevisionName)'; then
               true
             else
               echo "$svc: not readable or not present"
-              cat /tmp/"$svc".err
             fi
           done
-          echo "== Artifact Registry repo =="
-          gcloud artifacts repositories describe janusai-poc             --location="$GCP_REGION"             --format='value(name,format)'
+          gcloud artifacts repositories describe "$ARTIFACT_REPOSITORY"             --location="$GCP_REGION"             --format='value(name,format)'
