@@ -118,7 +118,7 @@
 
 - [x] independent omniAgent repo/build boundary;
 - [x] generic Agent contract/security split;
-- [x] bounded external-source boundary (including the optional Janus adapter);
+- [x] bounded generic external-source boundary;
 - [x] target Chat API/`omni_chat` source;
 - [x] generic Flutter Chat source;
 - [x] private Gateway candidate at the recorded checkpoint;
