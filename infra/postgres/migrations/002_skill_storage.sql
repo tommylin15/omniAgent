@@ -1,4 +1,4 @@
--- New omniAgent-owned skill records. Never apply to Janus's private schema.
+-- omniAgent-owned Skill records.
 CREATE TABLE IF NOT EXISTS omni_chat.skill_revisions (
   owner_id uuid NOT NULL REFERENCES omni_chat.owners(owner_id),
   skill_id varchar(128) NOT NULL,
