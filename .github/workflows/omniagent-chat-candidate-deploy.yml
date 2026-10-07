@@ -54,7 +54,6 @@ jobs:
           echo "CANDIDATE_IMAGE=${repo}/omniagent-chat@${digest}" >> "$GITHUB_ENV"
           echo "CANDIDATE_DIGEST=$digest" >> "$GITHUB_ENV"
 
-          gcloud secrets versions describe latest             --secret="$CHAT_DB_SECRET"             --project="$GCP_PROJECT_ID"             --format='value(state)' | grep -qx ENABLED
           gcloud secrets versions access latest             --secret="$CHAT_DB_SECRET"             --project="$GCP_PROJECT_ID" > /tmp/chat-db-url
 
           python3 - /tmp/chat-db-url "$GITHUB_ENV" <<'PY'
