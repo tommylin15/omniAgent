@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'chat_api.dart';
+import 'omni_theme.dart';
 import 'twin_beast_mascot.dart';
 
 class ChatPage extends StatefulWidget {
@@ -193,57 +194,132 @@ class _ChatPageState extends State<ChatPage> {
       .showSnackBar(SnackBar(content: Text(message)));
 
   void showControls() => showModalBottomSheet<void>(
-      context: context,
-      builder: (_) => const SafeArea(
-              child: Padding(
-            padding: EdgeInsets.all(16),
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              ListTile(
+        context: context,
+        backgroundColor: OmniColors.softSurface,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        builder: (_) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 14, 20, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: OmniColors.milkTea,
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Text(
+                  '工具與能力',
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                ),
+                const SizedBox(height: 4),
+                const Text('只呈現已接線或已知的真實狀態，不建立假的操作入口。'),
+                const SizedBox(height: 12),
+                const ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.build_outlined),
                   title: Text('工具（MCP）'),
-                  subtitle: Text('管理 API 尚未接線；工具事件仍可在對話中檢視')),
-              ListTile(
+                  subtitle: Text('管理 API 尚未接線；工具事件仍可在對話中檢視'),
+                ),
+                const ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.auto_awesome_outlined),
                   title: Text('技能'),
-                  subtitle: Text('Skill storage 已建立；管理 API 與歷史資料尚未切換')),
-              ListTile(
+                  subtitle: Text('Skill storage 已建立；管理 API 與歷史資料尚未切換'),
+                ),
+                const ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.storage_outlined),
                   title: Text('資料源'),
-                  subtitle: Text('Janus context 僅能經驗證的 bounded API/MCP 選取')),
-            ]),
-          )));
+                  subtitle: Text('Janus context 僅能經驗證的 bounded API/MCP 選取'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(builder: (context, box) {
         final wide = box.maxWidth >= 700;
         return Scaffold(
-          appBar: AppBar(title: const Text('omniAgent'), actions: [
-            IconButton(
+          appBar: AppBar(
+            title: const Text('omniAgent'),
+            actions: [
+              IconButton(
                 tooltip: '重新載入事件',
                 onPressed: refresh,
-                icon: const Icon(Icons.refresh)),
-            IconButton(
+                icon: const Icon(Icons.refresh_rounded),
+              ),
+              IconButton(
                 tooltip: '工具與技能',
                 onPressed: showControls,
-                icon: const Icon(Icons.tune)),
-          ]),
-          drawer: wide ? null : Drawer(child: _threadList()),
+                icon: const Icon(Icons.tune_rounded),
+              ),
+              const SizedBox(width: 4),
+            ],
+          ),
+          drawer: wide
+              ? null
+              : Drawer(
+                  backgroundColor: OmniColors.softSurface,
+                  child: _threadList(),
+                ),
           body: wide
-              ? Row(children: [
-                  SizedBox(width: 240, child: _threadList()),
-                  const VerticalDivider(width: 1),
-                  Expanded(child: _room()),
-                ])
+              ? Row(
+                  children: [
+                    Container(
+                      width: 272,
+                      decoration: const BoxDecoration(
+                        color: OmniColors.softSurface,
+                        border: Border(
+                          right: BorderSide(color: OmniColors.milkTea),
+                        ),
+                      ),
+                      child: _threadList(),
+                    ),
+                    Expanded(child: _room()),
+                  ],
+                )
               : _room(),
         );
       });
 
-  Widget _threadList() => Column(children: [
-        Padding(
-            padding: const EdgeInsets.all(8),
-            child: FilledButton.icon(
+  Widget _threadList() => SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
+              child: FilledButton.icon(
                 onPressed: () => setState(() => thread = null),
-                icon: const Icon(Icons.add),
-                label: const Text('新對話'))),
-        Expanded(
-            child: FutureBuilder<dynamic>(
+                icon: const Icon(Icons.add_rounded),
+                label: const Text('新對話'),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 4, 18, 8),
+              child: Text(
+                '對話',
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      color: OmniColors.mutedCocoa,
+                      fontWeight: FontWeight.w700,
+                    ),
+              ),
+            ),
+            Expanded(
+              child: FutureBuilder<dynamic>(
                 future: threads,
                 builder: (context, snapshot) {
                   if (snapshot.hasError) {
@@ -254,22 +330,116 @@ class _ChatPageState extends State<ChatPage> {
                   }
                   final data = snapshot.data;
                   final rows = data is Map ? data['items'] as List? ?? [] : [];
-                  return ListView(children: [
-                    for (final raw in rows)
-                      ListTile(
-                        selected: raw['thread_id'] == thread?['thread_id'],
-                        title: Text('${raw['runtime']} · ${raw['model']}'),
-                        subtitle: Text('${raw['thread_id']}'),
-                        onTap: () {
-                          if (Scaffold.of(context).isDrawerOpen) {
-                            Navigator.pop(context);
-                          }
-                          select(Map<String, dynamic>.from(raw));
-                        },
-                      )
-                  ]);
-                }))
-      ]);
+                  if (rows.isEmpty) {
+                    return const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(24),
+                        child: Text(
+                          '還沒有對話，從上方建立第一個吧。',
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    );
+                  }
+                  return ListView(
+                    padding: const EdgeInsets.fromLTRB(8, 0, 8, 12),
+                    children: [
+                      for (final raw in rows)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 6),
+                          child: Material(
+                            color: raw['thread_id'] == thread?['thread_id']
+                                ? const Color(0xFFFFE8DD)
+                                : Colors.transparent,
+                            borderRadius: BorderRadius.circular(16),
+                            child: ListTile(
+                              selected:
+                                  raw['thread_id'] == thread?['thread_id'],
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              leading: const Icon(Icons.chat_bubble_outline),
+                              title:
+                                  Text('${raw['runtime']} · ${raw['model']}'),
+                              subtitle: Text(
+                                '${raw['thread_id']}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              onTap: () {
+                                if (Scaffold.of(context).isDrawerOpen) {
+                                  Navigator.pop(context);
+                                }
+                                select(Map<String, dynamic>.from(raw));
+                              },
+                            ),
+                          ),
+                        ),
+                    ],
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      );
+
+  Widget _connectionStatus() {
+    IconData icon;
+    String label;
+    Color background;
+    Color foreground;
+
+    switch (connection) {
+      case 'disconnected':
+        icon = Icons.cloud_off_outlined;
+        label = '連線中斷，請重新載入事件';
+        background = Theme.of(context).colorScheme.errorContainer;
+        foreground = Theme.of(context).colorScheme.onErrorContainer;
+        break;
+      case 'connecting':
+        icon = Icons.sync_rounded;
+        label = '正在同步事件';
+        background = const Color(0xFFFFF0E8);
+        foreground = OmniColors.cocoa;
+        break;
+      case 'connected':
+        icon = Icons.check_circle_outline_rounded;
+        label = '事件已同步 · 游標 $cursor';
+        background = const Color(0xFFEAF2E7);
+        foreground = OmniColors.cocoa;
+        break;
+      default:
+        icon = Icons.circle_outlined;
+        label = '尚未同步事件';
+        background = const Color(0xFFF3EEE8);
+        foreground = OmniColors.mutedCocoa;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(99),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: foreground),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              label,
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: foreground,
+                    fontWeight: FontWeight.w600,
+                  ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _room() {
     if (thread == null) {
@@ -352,49 +522,148 @@ class _ChatPageState extends State<ChatPage> {
     final ordered = events.values.toList()
       ..sort((a, b) => (int.tryParse('${a['seq']}') ?? 0)
           .compareTo(int.tryParse('${b['seq']}') ?? 0));
-    return Column(children: [
-      ListTile(
-        title: Text('${thread!['runtime']} · ${thread!['model']}'),
-        subtitle: Text(
-            connection == 'disconnected' ? '連線中斷，請重新載入事件' : '事件游標 $cursor'),
-        trailing: IconButton(
-            tooltip: '分支對話',
-            onPressed: busy ? null : fork,
-            icon: const Icon(Icons.call_split)),
-      ),
-      Expanded(
-          child: ordered.isEmpty
-              ? const Center(child: Text('開始輸入訊息'))
-              : ListView(padding: const EdgeInsets.all(12), children: [
-                  for (final event in ordered)
-                    _EventCard(event, approval, lockedApprovals)
-                ])),
-      if (queuedTurn != null)
-        ListTile(
-            title: const Text('訊息已排隊，等待執行環境接手'),
-            trailing: TextButton(
-                onPressed: busy ? null : cancelQueued,
-                child: const Text('取消排隊'))),
-      SafeArea(
-          top: false,
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Row(children: [
+    return Column(
+      children: [
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.fromLTRB(18, 12, 10, 12),
+          decoration: const BoxDecoration(
+            color: OmniColors.softSurface,
+            border: Border(
+              bottom: BorderSide(color: OmniColors.milkTea),
+            ),
+          ),
+          child: Row(
+            children: [
               Expanded(
-                  child: TextField(
-                      controller: input,
-                      minLines: 1,
-                      maxLines: 5,
-                      onSubmitted: (_) => send(),
-                      decoration: const InputDecoration(
-                          hintText: '輸入訊息…', border: OutlineInputBorder()))),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${thread!['runtime']} · ${thread!['model']}',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
+                    const SizedBox(height: 7),
+                    _connectionStatus(),
+                  ],
+                ),
+              ),
               IconButton(
-                  tooltip: '送出',
-                  onPressed: busy ? null : send,
-                  icon: const Icon(Icons.send)),
-            ]),
-          )),
-    ]);
+                tooltip: '分支對話',
+                onPressed: busy ? null : fork,
+                icon: const Icon(Icons.call_split_rounded),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: ordered.isEmpty
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(32),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.chat_bubble_outline_rounded,
+                          size: 34,
+                          color: OmniColors.mutedCocoa,
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          '開始輸入訊息',
+                          style:
+                              Theme.of(context).textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                        ),
+                        const SizedBox(height: 4),
+                        const Text(
+                          '訊息、工具事件與執行結果會依實際狀態出現在這裡。',
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              : ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
+                  children: [
+                    for (final event in ordered)
+                      _EventCard(event, approval, lockedApprovals),
+                  ],
+                ),
+        ),
+        if (queuedTurn != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(14, 8, 8, 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF0E8),
+                border: Border.all(color: OmniColors.milkTea),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.schedule_rounded, size: 20),
+                  const SizedBox(width: 10),
+                  const Expanded(
+                    child: Text('訊息已排隊，等待執行環境接手'),
+                  ),
+                  TextButton(
+                    onPressed: busy ? null : cancelQueued,
+                    child: const Text('取消排隊'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        SafeArea(
+          top: false,
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+            decoration: const BoxDecoration(
+              color: OmniColors.softSurface,
+              border: Border(
+                top: BorderSide(color: OmniColors.milkTea),
+              ),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: input,
+                    minLines: 1,
+                    maxLines: 5,
+                    onSubmitted: (_) => send(),
+                    decoration: const InputDecoration(
+                      hintText: '輸入訊息…',
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    color:
+                        busy ? OmniColors.milkTea : OmniColors.apricot,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: IconButton(
+                    tooltip: '送出',
+                    onPressed: busy ? null : send,
+                    icon: const Icon(Icons.send_rounded),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }
 
@@ -408,63 +677,194 @@ class _EventCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final type = '${event['event_type']}';
     final payload = Map<String, dynamic>.from(event['payload'] as Map? ?? {});
+
+    Widget compactEvent(
+      IconData icon,
+      String title,
+      String subtitle, {
+      bool error = false,
+    }) =>
+        Container(
+          margin: const EdgeInsets.only(bottom: 8),
+          decoration: BoxDecoration(
+            color: error
+                ? Theme.of(context).colorScheme.errorContainer
+                : OmniColors.softSurface,
+            border: Border.all(
+              color: error
+                  ? Theme.of(context).colorScheme.error
+                  : OmniColors.milkTea,
+            ),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: ListTile(
+            dense: true,
+            leading: Icon(
+              icon,
+              color: error
+                  ? Theme.of(context).colorScheme.onErrorContainer
+                  : OmniColors.mutedCocoa,
+            ),
+            title: Text(
+              title,
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+            subtitle: subtitle.isEmpty ? null : Text(subtitle),
+          ),
+        );
+
     if (type == 'approval_request') {
       final id = '${payload['request_id'] ?? payload['requestId'] ?? ''}';
+      final isLocked = locked.contains(id);
       return Card(
-          child: ListTile(
-        title: const Text('需要核准的操作'),
-        subtitle: Text('操作：${payload['operation'] ?? '未提供'}\n'
-            '參數摘要：${payload['params_digest'] ?? payload['paramsDigest'] ?? '未提供'}\n'
-            '到期：${payload['expires_at'] ?? payload['expiresAt'] ?? '未提供'}'),
-        trailing: Wrap(children: [
-          TextButton(
-              onPressed:
-                  locked.contains(id) ? null : () => onApproval(event, false),
-              child: const Text('拒絕')),
-          FilledButton(
-              onPressed:
-                  locked.contains(id) ? null : () => onApproval(event, true),
-              child: const Text('允許')),
-        ]),
-      ));
+        margin: const EdgeInsets.only(bottom: 12),
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(18),
+          side: const BorderSide(color: OmniColors.milkTea),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.verified_user_outlined),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      '需要核准的操作',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
+                  ),
+                  if (isLocked)
+                    const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text('操作：${payload['operation'] ?? '未提供'}'),
+              const SizedBox(height: 4),
+              Text(
+                '參數摘要：${payload['params_digest'] ?? payload['paramsDigest'] ?? '未提供'}',
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '到期：${payload['expires_at'] ?? payload['expiresAt'] ?? '未提供'}',
+              ),
+              const SizedBox(height: 14),
+              Wrap(
+                alignment: WrapAlignment.end,
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  TextButton(
+                    onPressed:
+                        isLocked ? null : () => onApproval(event, false),
+                    child: const Text('拒絕'),
+                  ),
+                  FilledButton(
+                    onPressed:
+                        isLocked ? null : () => onApproval(event, true),
+                    child: const Text('允許'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      );
     }
     if (type == 'tool_request' || type == 'tool_result') {
-      return ListTile(
-          leading: const Icon(Icons.build_outlined),
-          title: Text(type == 'tool_request' ? '工具呼叫' : '工具結果'),
-          subtitle: Text('${payload['tool'] ?? payload['name'] ?? '未提供'}'));
+      return compactEvent(
+        Icons.build_outlined,
+        type == 'tool_request' ? '工具呼叫' : '工具結果',
+        '${payload['tool'] ?? payload['name'] ?? '未提供'}',
+      );
     }
     if (type == 'citation') {
-      return ListTile(
-          leading: const Icon(Icons.link),
-          title: const Text('引用來源'),
-          subtitle: Text('${payload['source'] ?? payload['url'] ?? '未提供'}'));
+      return compactEvent(
+        Icons.link_rounded,
+        '引用來源',
+        '${payload['source'] ?? payload['url'] ?? '未提供'}',
+      );
     }
     if (type == 'usage') {
-      return ListTile(
-          title: const Text('用量'),
-          subtitle: Text('${payload['total_tokens'] ?? '未提供'}'));
+      return compactEvent(
+        Icons.data_usage_rounded,
+        '用量',
+        '${payload['total_tokens'] ?? '未提供'}',
+      );
     }
     if (type.startsWith('turn_') || type == 'approval_resolved') {
-      return ListTile(
-          title: Text({
-                'turn_completed': '已完成',
-                'turn_cancelled': '已取消',
-                'turn_error': '執行失敗',
-                'approval_resolved': '核准狀態已更新'
-              }[type] ??
-              type));
+      final title = {
+            'turn_completed': '已完成',
+            'turn_cancelled': '已取消',
+            'turn_error': '執行失敗',
+            'approval_resolved': '核准狀態已更新'
+          }[type] ??
+          type;
+      return compactEvent(
+        type == 'turn_error'
+            ? Icons.error_outline_rounded
+            : Icons.check_circle_outline_rounded,
+        title,
+        '',
+        error: type == 'turn_error',
+      );
     }
+
     final content =
         '${payload['content'] ?? payload['text'] ?? payload['message'] ?? ''}';
-    return Align(
-        alignment: payload['role'] == 'user'
-            ? Alignment.centerRight
-            : Alignment.centerLeft,
-        child: Card(
+    final isUser = payload['role'] == 'user';
+    final role = payload['role'] == 'assistant'
+        ? 'omniAgent'
+        : isUser
+            ? '你'
+            : null;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Align(
+        alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 720),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: isUser
+                  ? const Color(0xFFFFE9DE)
+                  : OmniColors.softSurface,
+              border: Border.all(color: OmniColors.milkTea),
+              borderRadius: BorderRadius.circular(18),
+            ),
             child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: MarkdownText(content))));
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (role != null) ...[
+                    Text(
+                      role,
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                            color: OmniColors.mutedCocoa,
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
+                    const SizedBox(height: 6),
+                  ],
+                  MarkdownText(content),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 

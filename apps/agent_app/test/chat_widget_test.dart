@@ -117,6 +117,7 @@ void main() {
     await tester.tap(find.text('gemini · test-model').first);
     await tester.pumpAndSettle();
     expect(find.text('需要核准的操作'), findsOneWidget);
+    expect(find.textContaining('事件已同步'), findsOneWidget);
     await tester.tap(find.text('允許'));
     await tester.pumpAndSettle();
     expect(api.writes.single['path'],
@@ -125,6 +126,7 @@ void main() {
         'sha256:${List.filled(64, 'a').join()}');
     await tester.tap(find.byTooltip('工具與技能'));
     await tester.pumpAndSettle();
+    expect(find.text('工具與能力'), findsOneWidget);
     expect(find.text('管理 API 尚未接線；工具事件仍可在對話中檢視'), findsOneWidget);
   });
 
