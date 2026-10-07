@@ -21,20 +21,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Require WIF repository variables
+      - name: Resolve deployment-only WIF identity
         shell: bash
-        env:
-          WIF_PROVIDER: ${{ vars.GCP_WIF_PROVIDER }}
-          CI_SERVICE_ACCOUNT: ${{ vars.GCP_CI_SERVICE_ACCOUNT }}
         run: |
-          set -euo pipefail
-          test -n "$WIF_PROVIDER" || { echo "::error::GCP_WIF_PROVIDER repo variable is missing"; exit 2; }
-          test -n "$CI_SERVICE_ACCOUNT" || { echo "::error::GCP_CI_SERVICE_ACCOUNT repo variable is missing"; exit 2; }
+          echo "Using existing GitHub WIF provider and shared CI deployment identity."
+          echo "Runtime service accounts, OAuth credentials and Secret Manager values are not read or changed by this step."
 
       - uses: google-github-actions/auth@v2
         with:
-          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
-          service_account: ${{ vars.GCP_CI_SERVICE_ACCOUNT }}
+          workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/github-actions/providers/github
+          service_account: janus-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
 
       - uses: google-github-actions/setup-gcloud@v2
 
