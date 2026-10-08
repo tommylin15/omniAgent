@@ -14,6 +14,16 @@
   Cloud Run candidates, readback and all real integration/security gates.
 - [ ] Implement serialized safe promotion/real traffic rollback, readback,
   budget controls, stale-SHA protection and recovery evidence.
+- [x] Source: post-release **keep latest 2 Cloud Run revisions per service**
+  safety helper, reusable Actions last-stage job and unit tests added.
+  Does not delete GHCR packages or legacy Artifact Registry/GCS resources.
+- [ ] Attach retention job **only after** the not-yet-complete release
+  workflow's real acceptance, rollback rehearsal, successful promotion and
+  traffic readback; confirm WIF `run.revisions.delete` effective permission.
+- [ ] Run real safe dry-run/deletion/readback on Chat, Gateway and Shared;
+  capture exact Actions run and runtime evidence. A source commit is not PASS.
+  If a tagged, active or latest revision would be removed, report BLOCKED
+  and keep more than two instead of deleting unsafely.
 - [ ] Extend read-only legacy Cloud Build status workflow with bounded masked
   failure summary; current workflow only prints status, failure class and steps.
 - [ ] Verify retirement of old Cloud Build triggers **after** replacement
