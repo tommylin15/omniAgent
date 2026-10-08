@@ -1,4 +1,5 @@
-# GHCR-public transition. No Cloud Build, Artifact Registry or GCS calls.
+# Main source CI -> 3 GHCR digest images. No Cloud Build, Artifact Registry or GCS writes.
+# Successful publication enables zero-traffic candidates, never production promotion.
 name: omniAgent GHCR image publish
 on:
   push:
