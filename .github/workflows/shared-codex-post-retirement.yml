@@ -1,4 +1,4 @@
-name: Shared Codex Post-Retirement Live Acceptance
+name: Shared Codex Independent Runtime Acceptance
 
 on:
   workflow_dispatch:
@@ -28,7 +28,7 @@ jobs:
           workload_identity_provider: ${{ env.WIF }}
           service_account: ${{ env.CI }}
       - uses: google-github-actions/setup-gcloud@v2
-      - name: Recheck dedicated auth, private service and all callers after legacy retirement
+      - name: Recheck dedicated auth, private service and all callers without assuming retirement
         shell: bash
         run: |
           set -euo pipefail
@@ -83,7 +83,7 @@ jobs:
               -w '%{http_code}' -H "Authorization: Bearer $token" \
               -H "Content-Type: application/json" -X POST \
               --data-binary @/tmp/request.json "$URL/v1/codex/execute")"
-            [[ "$status" == "200" ]] || { echo "post_retirement_live_inference=FAIL project=$name http=$status" >&2; exit 1; }
+            [[ "$status" == "200" ]] || { echo "shared_codex_live_inference=FAIL project=$name http=$status" >&2; exit 1; }
             PROJECT_LABEL="$name" PREV_THREAD="$prev_thread" python3 - <<'PY' > /tmp/current-thread
           import json,os,sys
           d=json.load(open("/tmp/response.json"))
@@ -95,7 +95,7 @@ jobs:
           print(ids["threadId"])
           PY
             prev_thread="$(cat /tmp/current-thread)"
-            echo "post_retirement_live_inference=PASS project=$name isolated_thread=PASS"
+            echo "shared_codex_live_inference=PASS project=$name isolated_thread=PASS"
             if [[ -n "$prev_project" ]]; then
               PREVIOUS="$prev_project" python3 - <<'PY' > /tmp/wrong-project.json
           import json,os,uuid
@@ -113,5 +113,5 @@ jobs:
             seen=$((seen+1))
           done < /tmp/callers.tsv
           [[ "$seen" == 3 ]] || { echo "caller_count_mismatch" >&2; exit 1; }
-          echo "post_retirement_service_acceptance=PASS"
-          echo "legacy_secret_deletion_status=NOT_VERIFIABLE_WITH_THIS_CI_IDENTITY"
+          echo "shared_codex_runtime_acceptance=PASS"
+          echo "legacy_secret_retirement=NOT_TESTED_BY_THIS_WORKFLOW"
