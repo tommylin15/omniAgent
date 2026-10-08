@@ -44,6 +44,8 @@ These are architecture requirements. Current implementation status is recorded i
 | [ui.md](ui.md) | Flutter interaction model and Warm Cozy Twin Beast Visual Contract. |
 | [visual-assets.md](visual-assets.md) | Twin Beast / omniAgent visual source registry, Drive source-of-record linkage, production-asset gaps. |
 | [acceptance.md](acceptance.md) | Evidence and security/isolation/storage acceptance gates. |
+| [current GitHub Actions/GHCR release runbook](../docs/cicd-ghcr-actions-runbook.md) | New CI/CD target, WIF, GHCR immutable digests, Cloud Run 0%-traffic candidates, integration/rollback/diagnostics. |
+| [historical Cloud Build V2 runbook](../docs/cicd-v2-runbook.md) | Earlier Cloud Build release execution and evidence; superseded for future releases. |
 
 Supporting architecture/migration records remain under `docs/`, especially `docs/architecture.md`, `docs/chat-storage-migration.md`, deployment plans/evidence, and cutover runbooks.
 
