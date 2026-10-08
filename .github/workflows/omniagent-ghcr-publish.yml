@@ -3,7 +3,18 @@ name: omniAgent GHCR image publish
 on:
   push:
     branches: [main]
-    paths: ['.github/workflows/omniagent-ghcr-publish.yml']
+    paths:
+      - 'services/**'
+      - 'apps/agent_app/**'
+      - 'tests/**'
+      - 'infra/postgres/migrations/**'
+      - 'infra/gcp/**'
+      - 'scripts/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'tsconfig.json'
+      - 'setup-omniagent-db-dev.sh'
+      - '.github/workflows/omniagent-ghcr-publish.yml'
   workflow_dispatch:
 permissions:
   contents: read
