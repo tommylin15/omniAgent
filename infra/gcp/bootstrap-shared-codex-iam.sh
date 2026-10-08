@@ -6,7 +6,6 @@ umask 077
 
 PROJECT="gen-lang-client-0593591102"
 PROJECT_NUMBER="131494961796"
-REGION="us-central1"
 DEST="omniagent-shared-codex-auth"
 : "${SOURCE_CODEX_AUTH_SECRET:?Set SOURCE_CODEX_AUTH_SECRET to the approved existing Codex login Secret name}"
 if [[ ! "$SOURCE_CODEX_AUTH_SECRET" =~ ^[a-z][a-z0-9_-]{2,254}$ ]]; then
