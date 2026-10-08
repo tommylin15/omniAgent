@@ -10,6 +10,8 @@ on:
       - 'package-lock.json'
       - 'tsconfig.json'
       - 'cloudbuild*.yaml'
+      - 'infra/gcp/cicd_v2.py'
+      - 'infra/gcp/live_acceptance_v2.py'
       - 'infra/postgres/migrations/**'
       - 'setup-omniagent-db-dev.sh'
       - '.github/workflows/node-core.yml'
@@ -21,6 +23,8 @@ on:
       - 'package-lock.json'
       - 'tsconfig.json'
       - 'cloudbuild*.yaml'
+      - 'infra/gcp/cicd_v2.py'
+      - 'infra/gcp/live_acceptance_v2.py'
       - 'infra/postgres/migrations/**'
       - 'setup-omniagent-db-dev.sh'
       - '.github/workflows/node-core.yml'
@@ -42,3 +46,7 @@ jobs:
       - run: npm test
       - name: Validate DB setup script syntax
         run: bash -n setup-omniagent-db-dev.sh
+      - name: CI/CD V2 Python syntax and release safety
+        run: |
+          python3 -m py_compile infra/gcp/cicd_v2.py infra/gcp/live_acceptance_v2.py
+          python3 -m unittest discover -s tests -p test_cicd_v2.py -v

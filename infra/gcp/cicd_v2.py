@@ -359,6 +359,18 @@ def traffic_percent(rows):
     return {r["revisionName"]: r["percent"] for r in rows if r.get("percent", 0)}
 
 
+def recovery_route(snapshot, tag, expected_revision, expected_traffic):
+    """Verify a recovery tag separately from the unchanged formal traffic."""
+    routes = snapshot["status"].get("traffic", [])
+    if traffic_percent(routes) != expected_traffic:
+        raise RuntimeError("recovery changed active traffic")
+    tagged = [route for route in routes if route.get("tag") == tag]
+    if len(tagged) != 1 or tagged[0].get("revisionName") != expected_revision or not tagged[0].get("url"):
+        raise RuntimeError("recovery tag revision/url mismatch")
+    # A tag on an actively serving revision may report its actual 100% share.
+    return tagged[0]
+
+
 def recover(state, promoted):
     failures = []
     for key in reversed(promoted):
@@ -436,6 +448,24 @@ def referenced_images(value):
             yield from referenced_images(child)
 
 
+def revision_image(revision, region):
+    """Refuse deletion unless the revision's immutable image can be identified."""
+    image = revision.get("status", {}).get("imageDigest")
+    if not image:
+        name = revision.get("metadata", {}).get("name")
+        if not name:
+            raise RuntimeError("cleanup refused: unnamed revision")
+        detailed = cloud_json("run", "revisions", "describe", name, "--region=" + region)
+        image = detailed.get("status", {}).get("imageDigest")
+        if not image:
+            containers = detailed.get("spec", {}).get("containers", [])
+            if len(containers) == 1:
+                image = containers[0].get("image")
+    if not isinstance(image, str) or not re.fullmatch(r".+@sha256:[0-9a-f]{64}", image):
+        raise RuntimeError("cleanup refused: revision digest unavailable")
+    return image
+
+
 def cleanup(state, apply=False):
     protected = {r["image"] for r in state["services"].values() if r.get("image")}
     # Keep *all* extant revisions, including zero-traffic rollback revisions.
@@ -449,10 +479,7 @@ def cleanup(state, apply=False):
         if len(revisions) >= 1000:
             raise RuntimeError("cleanup refused: revision inventory may be truncated")
         for revision in revisions:
-            digest = revision.get("status", {}).get("imageDigest")
-            if not digest:
-                raise RuntimeError("cleanup refused: revision digest unavailable")
-            protected.add(digest)
+            protected.add(revision_image(revision, region))
     jobs = cloud_json("run", "jobs", "list", "--limit=1000")
     if len(jobs) >= 1000:
         raise RuntimeError("cleanup refused: job inventory may be truncated")
@@ -473,6 +500,8 @@ def cleanup(state, apply=False):
                     image = image.rsplit(":", 1)[0] + "@" + digest
                 protected.add(image)
     images = cloud_json("artifacts", "docker", "images", "list", REGISTRY, "--include-tags", "--limit=10000")
+    if len(images) >= 10000:
+        raise RuntimeError("cleanup refused: image inventory may be truncated")
     plan = cleanup_candidates(images, protected)
     state["cleanup_dry_run"] = plan
     save(state)

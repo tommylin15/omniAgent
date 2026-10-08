@@ -7,7 +7,7 @@ import urllib.error
 import urllib.request
 import uuid
 
-from cicd_v2 import PROJECT, REGION, SERVICES, STATE, cloud_json, gcloud, save, service, store_object, traffic_percent
+from cicd_v2 import PROJECT, REGION, SERVICES, STATE, cloud_json, gcloud, recovery_route, save, service, store_object, traffic_percent
 
 
 def provider_call(state):
@@ -177,23 +177,27 @@ def recovery(state):
         row = state["services"][key]
         if not row.get("candidate_revision"):
             raise RuntimeError("recovery blocked: " + key + " candidate unavailable")
-        if traffic_percent(service(SERVICES[key])["status"]["traffic"]) != traffic_percent(row["previous_traffic"]):
+        initial = service(SERVICES[key])
+        baseline = traffic_percent(row["previous_traffic"])
+        if traffic_percent(initial["status"]["traffic"]) != baseline:
             raise RuntimeError("candidate changed active traffic")
         tag = "v2-recovery-" + state["build_id"][:8]
+        if any(route.get("tag") == tag for route in initial["status"]["traffic"]):
+            raise RuntimeError("recovery tag collision; existing tag must not be overwritten")
         try:
             for revision in (row["candidate_revision"], row["previous_revision"], row["candidate_revision"]):
                 gcloud("run", "services", "update-traffic", SERVICES[key], f"--region={REGION}",
                     "--update-tags=" + tag + "=" + revision)
-                live = service(SERVICES[key])
-                route = next(r for r in live["status"]["traffic"] if r.get("tag") == tag)
-                if route["revisionName"] != revision or route.get("percent", 0):
-                    raise RuntimeError("recovery tag revision/traffic mismatch")
+                route = recovery_route(service(SERVICES[key]), tag, revision, baseline)
                 token = None if key == "chat" else identity(
                     state["services"]["chat"]["runtime_sa"] if key == "gateway" else f"omniagent-codex-chat-client@{PROJECT}.iam.gserviceaccount.com", row["url"])
                 require(request(route["url"], "/health", token)[0], 200)
         finally:
             gcloud("run", "services", "update-traffic", SERVICES[key], f"--region={REGION}", "--remove-tags=" + tag)
-        if traffic_percent(service(SERVICES[key])["status"]["traffic"]) != traffic_percent(row["previous_traffic"]):
+        after = service(SERVICES[key])
+        if any(route.get("tag") == tag for route in after["status"]["traffic"]):
+            raise RuntimeError("recovery tag removal not confirmed")
+        if traffic_percent(after["status"]["traffic"]) != baseline:
             raise RuntimeError("recovery changed active traffic")
         state.setdefault("recovery_probe", {})[key] = "PASS: candidate -> previous -> candidate tagged route, active traffic preserved"
         save(state)

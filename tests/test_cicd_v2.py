@@ -54,6 +54,44 @@ class ReleaseSafety(unittest.TestCase):
         self.assertIn("docker-cli docker-buildx", builder)
         self.assertNotIn("docker.io", builder)
 
+    def test_recovery_tag_on_active_revision_can_report_100_percent(self):
+        original, candidate = "chat-old", "chat-candidate"
+        for tagged_percent in (0, 100):
+            snapshot = {"status": {"traffic": [
+                {"revisionName": original, "percent": 100},
+                {"revisionName": original, "tag": "recovery", "url": "https://tagged", "percent": tagged_percent},
+                {"revisionName": candidate, "percent": 0}]}}
+            self.assertEqual(v2.recovery_route(snapshot, "recovery", original, {original: 100})["url"], "https://tagged")
+
+    def test_recovery_route_fails_closed_on_revision_or_traffic_drift(self):
+        snapshot = {"status": {"traffic": [{"revisionName": "changed", "percent": 100},
+            {"revisionName": "candidate", "tag": "recovery", "url": "https://tagged", "percent": 0}]}}
+        with self.assertRaisesRegex(RuntimeError, "active traffic"):
+            v2.recovery_route(snapshot, "recovery", "candidate", {"original": 100})
+        with self.assertRaisesRegex(RuntimeError, "revision/url"):
+            v2.recovery_route(snapshot, "recovery", "wrong", {"changed": 100})
+
+    def test_cleanup_refetches_missing_revision_digest_before_dry_run(self):
+        package = v2.REGISTRY + "/omniagent-chat"
+        old = package + "@sha256:" + "a" * 64
+        free = package + "@sha256:" + "b" * 64
+        runtime = {"metadata": {"name": "omniagent-chat",
+            "labels": {"cloud.googleapis.com/location": "us-central1"}}}
+        listed = {"metadata": {"name": "omniagent-chat-00001-abc"}}
+        described = {"status": {"imageDigest": old}}
+        images = [{"package": package, "version": "sha256:" + key * 64} for key in "ab"]
+        with patch.object(v2, "cloud_json", side_effect=[[runtime], [listed], described, [], images]) as sdk, \
+            patch.object(v2, "save"):
+            state = {"services": {}}
+            v2.cleanup(state)
+        self.assertEqual(state["cleanup_dry_run"], [free])
+        self.assertEqual(sdk.call_args_list[2].args[:3], ("run", "revisions", "describe"))
+
+    def test_cleanup_refuses_missing_immutable_revision_image(self):
+        with patch.object(v2, "cloud_json", return_value={"spec": {"containers": [{"image": "unresolved:latest"}]}}):
+            with self.assertRaisesRegex(RuntimeError, "revision digest unavailable"):
+                v2.revision_image({"metadata": {"name": "legacy"}}, "us-central1")
+
     def test_cleanup_keeps_job_and_execution_images(self):
         state = {"services": {}}
         package = v2.REGISTRY + "/omniagent-chat"
