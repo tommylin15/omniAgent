@@ -1,0 +1,32 @@
+# Public GHCR image native binary smoke; no credentials or GCP runtime mutation.
+name: omniAgent Shared GHCR native binary smoke
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/omniagent-shared-ghcr-binary-smoke.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  check:
+    if: github.repository == 'tommylin15/omniAgent' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Pull the public immutable Shared Codex image anonymously
+        shell: bash
+        run: |
+          set -euo pipefail
+          IMAGE='ghcr.io/tommylin15/omniagent-shared-codex@sha256:7e4a00bdd438b3a6aa50d115a02171c42e38ef9cdc4e5bfc34f0135f5ffb8dfb'
+          docker pull "$IMAGE" >/dev/null
+          echo "shared_public_ghcr_pull=PASS"
+          # Container is launched without Secret Manager / user tokens / network.
+          # Verify only that its configured native executable is present/runnable.
+          docker run --rm --network none --read-only --entrypoint /bin/sh "$IMAGE" -c '
+            set -eu
+            test -n "$CODEX_BIN"
+            test -x "$CODEX_BIN"
+            "$CODEX_BIN" --version
+          '
+          echo "shared_codex_native_binary=PASS"
