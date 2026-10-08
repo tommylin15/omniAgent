@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { makeSharedCodexServer, parseCallers, parseRequest } from "../services/shared-codex/server.js";
+import { CodexExecutionStageError, makeSharedCodexServer, parseCallers, parseRequest } from "../services/shared-codex/server.js";
 
 const ownerId = "00000000-0000-4000-8000-000000000001";
 const requestId = "00000000-0000-4000-8000-000000000002";
@@ -74,9 +74,42 @@ describe("shared Codex authenticated execution contract", () => {
       expect(response.status).toBe(502);
       const body = await response.text();
       expect(body).toContain("codex_execution_failed");
+      expect(body).toContain('"failureStage":"unknown"');
       expect(body).not.toContain("sensitive-credential");
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
   });
+  it("returns only allowlisted execution stage for signed authorized caller", async () => {
+    const server = makeSharedCodexServer({
+      callers: new Map([["consumer-a", caller]]), audience: "https://example.run.app",
+      verify: async () => caller,
+      execute: async () => { throw new CodexExecutionStageError("auth_load"); },
+    });
+    server.listen(0, "127.0.0.1");
+    await new Promise<void>((resolve) => server.once("listening", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("address missing");
+    try {
+      const endpoint = "http://127.0.0.1:" + address.port + "/v1/codex/execute";
+      const forged = await fetch(endpoint, { method: "POST",
+        headers: { authorization: "Bearer token" },
+        body: JSON.stringify({ ...valid, project: "other" }) });
+      expect(forged.status).toBe(403);
+      expect((await forged.text())).not.toContain("failureStage");
+
+      const response = await fetch(endpoint, { method: "POST",
+        headers: { authorization: "Bearer token" }, body: JSON.stringify(valid) });
+      expect(response.status).toBe(502);
+      const result = await response.json() as Record<string, unknown>;
+      expect(result).toEqual({
+        status: "failed", requestId, error: "codex_execution_failed",
+        failureStage: "auth_load",
+      });
+      expect(JSON.stringify(result)).not.toContain("sensitive");
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
 });
