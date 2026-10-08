@@ -160,7 +160,7 @@ def api(url, token, body=None):
 
 def github_token():
     token = gcloud("auth", "print-access-token")
-    data = api(f"https://cloudbuild.googleapis.com/v2/{REPOSITORY}:fetchReadToken", token, {})
+    data = api(f"https://cloudbuild.googleapis.com/v2/{REPOSITORY}:accessReadToken", token, {})
     return data["token"]
 
 

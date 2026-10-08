@@ -12,6 +12,11 @@ if spec.loader and Path(spec.origin).exists():
 
 
 class ReleaseSafety(unittest.TestCase):
+    def test_repository_read_token_uses_the_rest_access_method(self):
+        with patch.object(v2, "gcloud", return_value="redacted"), patch.object(v2, "api", return_value={"token": "ephemeral"}) as remote:
+            self.assertEqual(v2.github_token(), "ephemeral")
+        self.assertEqual(remote.call_args.args[0], "https://cloudbuild.googleapis.com/v2/" + v2.REPOSITORY + ":accessReadToken")
+
     def test_shared_change_rebuilds_all_images_and_ui_change_rebuilds_chat(self):
         self.assertEqual(v2.changed_components(["package-lock.json"]), set(v2.SERVICES))
         self.assertEqual(v2.changed_components(["apps/agent_app/lib/main.dart"]), {"chat"})
