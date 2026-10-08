@@ -25,15 +25,22 @@ jobs:
           workload_identity_provider: ${{ env.OMNIAGENT_GCP_WIF_PROVIDER }}
           service_account: ${{ env.OMNIAGENT_GCP_CI_SERVICE_ACCOUNT }}
       - uses: google-github-actions/setup-gcloud@v2
-      - name: Read PostgreSQL recent connection diagnostics
+      - name: Classify omniAgent-only PostgreSQL connection diagnostics
         shell: bash
         run: |
           set -euo pipefail
+          # Approved shared host; keep its unrelated database traffic out of logs.
           vm="$(printf '%s' 'amFudXMtcG9zdGdyZXMtZGV2' | base64 -d)"
           container="$(printf '%s' 'amFudXMtcG9zdGdyZXM=' | base64 -d)"
           gcloud compute ssh "$vm" \
             --zone="$GCP_ZONE" --project="$GCP_PROJECT_ID" \
             --tunnel-through-iap --quiet \
-            --command="echo RECENT_LOGS; sudo docker logs --since 15m '$container' 2>&1 | tail -n 120; \
-              echo ACTIVE; sudo docker exec -u postgres '$container' psql -Atqc \"SELECT usename,datname,client_addr,state FROM pg_stat_activity WHERE usename='omniagent_chat_app';\"; \
-              echo HBA; sudo docker exec -u postgres '$container' psql -Atqc \"SELECT rule_number,type,database,user_name,address,auth_method,error FROM pg_hba_file_rules WHERE database @> ARRAY['omniagent_chat'] OR user_name @> ARRAY['omniagent_chat_app'];\""
+            --command="set -eu; \
+              sudo docker inspect '$container' --format '{{.State.Running}}' >/dev/null; \
+              echo OMNIAGENT_LOG_COUNTS; \
+              sudo docker logs --since 6h '$container' 2>&1 | grep -Ei 'omniagent_chat(_app)?' | \
+              awk 'BEGIN {n=0;a=0;h=0;t=0} {n++} /password authentication failed|authentication failed|role .* does not exist/ {a++} /no pg_hba.conf entry|pg_hba.conf rejects/ {h++} /SSL|TLS|certificate/ {t++} END {printf \"matched=%d auth=%d hba=%d tls=%d\\n\",n,a,h,t}'; \
+              echo OMNIAGENT_ACTIVE_SESSION_COUNT; \
+              sudo docker exec -u postgres '$container' psql -Atqc \"SELECT count(*) FROM pg_stat_activity WHERE usename='omniagent_chat_app';\"; \
+              echo OMNIAGENT_HBA_RULES; \
+              sudo docker exec -u postgres '$container' psql -Atqc \"SELECT rule_number,type,address,auth_method,coalesce(error,'') FROM pg_hba_file_rules WHERE database @> ARRAY['omniagent_chat'] OR user_name @> ARRAY['omniagent_chat_app'];\""
