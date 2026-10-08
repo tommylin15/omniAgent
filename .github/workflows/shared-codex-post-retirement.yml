@@ -1,0 +1,117 @@
+name: Shared Codex Post-Retirement Live Acceptance
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/shared-codex-post-retirement.yml'
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  PROJECT: gen-lang-client-0593591102
+  REGION: us-central1
+  WIF: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+  CI: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+  SERVICE: omniagent-shared-codex
+
+jobs:
+  live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.WIF }}
+          service_account: ${{ env.CI }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Recheck dedicated auth, private service and all callers after legacy retirement
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL="$(gcloud run services describe "$SERVICE" --project="$PROJECT" --region="$REGION" --format='value(status.url)')"
+          test -n "$URL"
+          echo "shared_codex_url=$URL"
+          gcloud run services describe "$SERVICE" --project="$PROJECT" --region="$REGION" --format=json > /tmp/shared-service.json
+          gcloud run services get-iam-policy "$SERVICE" --project="$PROJECT" --region="$REGION" --format=json > /tmp/shared-iam.json
+          gcloud secrets versions describe latest --secret=omniagent-shared-codex-auth \
+            --project="$PROJECT" --format='value(state)' | grep -Fx ENABLED >/dev/null
+          python3 - <<'PY' > /tmp/callers.tsv
+          import json,os
+          d=json.load(open("/tmp/shared-service.json"))
+          iam=json.load(open("/tmp/shared-iam.json"))
+          status=d.get("status",{})
+          spec=d["spec"]["template"]["spec"]
+          assert status.get("latestReadyRevisionName"), "runtime revision not ready"
+          assert spec["serviceAccountName"]=="omniagent-shared-codex@gen-lang-client-0593591102.iam.gserviceaccount.com"
+          assert spec["containerConcurrency"]==1
+          env={v.get("name"):v.get("value") for v in spec["containers"][0].get("env",[])}
+          assert env.get("SHARED_CODEX_AUTH_RESOURCE")=="projects/gen-lang-client-0593591102/secrets/omniagent-shared-codex-auth"
+          assert env.get("SHARED_CODEX_AUDIENCE")==status["url"]
+          callers=json.loads(env["SHARED_CODEX_CALLERS_JSON"])
+          assert set(callers)=={"life-assistant","market-mart","omniagent"}, "caller labels changed"
+          members=set()
+          for b in iam.get("bindings",[]):
+              if b["role"]=="roles/run.invoker": members.update(b.get("members",[]))
+          assert "allUsers" not in members and "allAuthenticatedUsers" not in members
+          assert all("serviceAccount:"+email in members for email in callers.values())
+          for name,email in sorted(callers.items()):
+              print(name+"\t"+email)
+          PY
+          echo "dedicated_secret_and_private_runtime=PASS"
+          status="$(curl --silent --show-error --max-time 20 -o /tmp/anon -w '%{http_code}' \
+            -X POST -H "Content-Type: application/json" -d '{}' "$URL/v1/codex/execute")"
+          [[ "$status" == "403" ]] || { echo "anonymous_rejection=FAIL status=$status" >&2; exit 1; }
+          echo "anonymous_rejection=PASS"
+
+          seen=0
+          prev_project=""
+          prev_thread=""
+          while IFS=$'\t' read -r name account; do
+            token="$(gcloud auth print-identity-token --impersonate-service-account="$account" \
+              --audiences="$URL" --include-email)"
+            test -n "$token"
+            PROJECT_LABEL="$name" python3 - <<'PY' > /tmp/request.json
+          import json,os,uuid
+          print(json.dumps({"project":os.environ["PROJECT_LABEL"],"ownerId":str(uuid.uuid4()),
+            "requestId":str(uuid.uuid4()),"prompt":"Reply with exactly READY. Do not use tools."}))
+          PY
+            status="$(curl --silent --show-error --max-time 160 -o /tmp/response.json \
+              -w '%{http_code}' -H "Authorization: Bearer $token" \
+              -H "Content-Type: application/json" -X POST \
+              --data-binary @/tmp/request.json "$URL/v1/codex/execute")"
+            [[ "$status" == "200" ]] || { echo "post_retirement_live_inference=FAIL project=$name http=$status" >&2; exit 1; }
+            PROJECT_LABEL="$name" PREV_THREAD="$prev_thread" python3 - <<'PY' > /tmp/current-thread
+          import json,os,sys
+          d=json.load(open("/tmp/response.json"))
+          assert d.get("status")=="completed" and d.get("project")==os.environ["PROJECT_LABEL"]
+          assert isinstance(d.get("result",{}).get("text"),str) and d["result"]["text"].strip()
+          ids=d.get("providerIds",{})
+          assert ids.get("threadId") and ids.get("turnId")
+          assert ids["threadId"]!=os.environ["PREV_THREAD"], "thread unexpectedly reused across projects"
+          print(ids["threadId"])
+          PY
+            prev_thread="$(cat /tmp/current-thread)"
+            echo "post_retirement_live_inference=PASS project=$name isolated_thread=PASS"
+            if [[ -n "$prev_project" ]]; then
+              PREVIOUS="$prev_project" python3 - <<'PY' > /tmp/wrong-project.json
+          import json,os,uuid
+          print(json.dumps({"project":os.environ["PREVIOUS"],"ownerId":str(uuid.uuid4()),
+            "requestId":str(uuid.uuid4()),"prompt":"Reject this cross-project test."}))
+          PY
+              cross="$(curl --silent --show-error --max-time 20 -o /tmp/cross-response \
+                -w '%{http_code}' -H "Authorization: Bearer $token" \
+                -H "Content-Type: application/json" -X POST \
+                --data-binary @/tmp/wrong-project.json "$URL/v1/codex/execute")"
+              [[ "$cross" == "403" ]] || { echo "cross_project_rejection=FAIL http=$cross" >&2; exit 1; }
+              echo "cross_project_rejection=PASS"
+            fi
+            prev_project="$name"
+            seen=$((seen+1))
+          done < /tmp/callers.tsv
+          [[ "$seen" == 3 ]] || { echo "caller_count_mismatch" >&2; exit 1; }
+          echo "post_retirement_service_acceptance=PASS"
+          echo "legacy_secret_deletion_status=NOT_VERIFIABLE_WITH_THIS_CI_IDENTITY"
