@@ -1,0 +1,54 @@
+name: Shared Codex runtime IAM bootstrap
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/shared-codex-resource-bootstrap.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  GCP_PROJECT_ID: gen-lang-client-0593591102
+  WIF_PROVIDER: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+  CI_SERVICE_ACCOUNT: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+  RUNTIME_SERVICE_ACCOUNT: omniagent-shared-codex@gen-lang-client-0593591102.iam.gserviceaccount.com
+  CLIENT_SERVICE_ACCOUNT: omniagent-codex-life-client@gen-lang-client-0593591102.iam.gserviceaccount.com
+  DEDICATED_SECRET: omniagent-shared-codex-auth
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.WIF_PROVIDER }}
+          service_account: ${{ env.CI_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Provision isolated Secret metadata and runtime identities
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! gcloud secrets describe "$DEDICATED_SECRET" --project="$GCP_PROJECT_ID" >/dev/null 2>&1; then
+            gcloud secrets create "$DEDICATED_SECRET" --project="$GCP_PROJECT_ID" --replication-policy=automatic --quiet
+          fi
+          for account in omniagent-shared-codex omniagent-codex-life-client; do
+            email="$account@$GCP_PROJECT_ID.iam.gserviceaccount.com"
+            if ! gcloud iam service-accounts describe "$email" --project="$GCP_PROJECT_ID" >/dev/null 2>&1; then
+              gcloud iam service-accounts create "$account" --project="$GCP_PROJECT_ID" --display-name="$account"
+            fi
+          done
+          for role in roles/secretmanager.secretAccessor roles/secretmanager.secretVersionManager; do
+            gcloud secrets add-iam-policy-binding "$DEDICATED_SECRET" --project="$GCP_PROJECT_ID"               --member="serviceAccount:$RUNTIME_SERVICE_ACCOUNT" --role="$role" --quiet >/dev/null
+          done
+          gcloud iam service-accounts add-iam-policy-binding "$RUNTIME_SERVICE_ACCOUNT"             --project="$GCP_PROJECT_ID" --member="serviceAccount:$CI_SERVICE_ACCOUNT"             --role=roles/iam.serviceAccountUser --quiet >/dev/null
+          gcloud secrets describe "$DEDICATED_SECRET" --project="$GCP_PROJECT_ID" --format='value(name,replication.automatic)'
+          for email in "$RUNTIME_SERVICE_ACCOUNT" "$CLIENT_SERVICE_ACCOUNT"; do
+            gcloud iam service-accounts describe "$email" --project="$GCP_PROJECT_ID" --format='value(email)'
+          done
+          echo "isolated_resource_bootstrap=PASS"
+          echo "credential_content_migration=NOT_PERFORMED"
