@@ -106,6 +106,16 @@ describe("omniAgent Chat API ownership boundary", () => {
     expect(store.appendEvent).toHaveBeenCalledWith("owner-alice","thread-1","turn-1","event-1","text_delta",{});
   });
 
+  it("rejects anonymous and human requests to disabled internal dispatch", async () => {
+    const { base } = await app();
+    const url = base + "/internal/v1/chat/dispatch:once";
+    expect((await fetch(url,{method:"POST"})).status).toBe(401);
+    expect((await fetch(url,{method:"POST",
+      headers:{Authorization:"Bearer alice"}})).status).toBe(401);
+    expect((await fetch(url,{method:"POST",
+      headers:{Authorization:"Bearer service"}})).status).toBe(404);
+  });
+
   it("forks within the verified owner and only cancels queued turns", async () => {
     const { base, store } = await app();
     const headers = { Authorization: "Bearer alice", "Idempotency-Key": "fork-1", "Content-Type": "application/json" };
