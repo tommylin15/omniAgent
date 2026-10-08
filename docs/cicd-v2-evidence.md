@@ -117,3 +117,26 @@ remain paused. Status stays ACTIVE / PARTIAL, never CLOSED.
   Gateway dependency, Chat readiness, recovery and safe cleanup remain OPEN.
 
 This checkpoint preserves observed evidence; it does not resume cloud operations.
+
+## Continued CI/CD V2 source hardening — 2026-10-08
+
+- On resumed engineering instruction, real main commit
+  `fd96c9821f0c666c2a39c6c89c0b4d3a4bef6412` changed recovery-tag
+  verification and revision image cleanup guards; no Cloud Run traffic,
+  Secret, IAM, or external consumer repository mutation was made by this
+  GitHub change.
+- Recovery now distinguishes a tag's revision/URL from formal traffic,
+  accepts an active revision's legitimate nonzero traffic share, checks
+  formal traffic after each tag change, rejects tag collisions and
+  verifies temporary tag removal. Cleanup refetches missing image digest
+  from the actual revision and fails closed on unresolved/mutable references,
+  including possibly truncated registry inventories.
+- GitHub Actions Node Core run `37737346341` **SUCCESS**: Node 33 PASS/
+  1 skipped, Python CI/CD V2 19/19 PASS, Python syntax PASS.
+  Project Hygiene run `37737346329` **SUCCESS**.
+- These are source-level automated checks, **not** new Cloud Build/Cloud Run
+  live acceptance. The previously observed Chat 503 readiness, Gateway
+  provider-bundle blocker, pending live recovery/cleanup rerun,
+  human browser OAuth and dispatcher work remain OPEN.
+- No evidence of a new canonical release, production promotion,
+  successful live rollback, or image deletion was collected in this continuation.

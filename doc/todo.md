@@ -13,15 +13,19 @@
   denial PASS; no unrelated rebuild or consumer repository changes.
 - [ ] Chat readiness 503; active/candidate DB Secret references differ. Precise
   DB failure remains undiagnosed; formal active readiness 200/traffic unchanged.
-- [ ] Recovery tag mismatch and cleanup missing revision digest need diagnosis.
+- [x] Recovery tag/readback and cleanup missing-digest source guards fixed;
+  GitHub Node Core `37737346341` and 19/19 CI/CD V2 safety tests PASS.
+- [ ] Repeat live tagged recovery and cleanup dry-run; GitHub tests alone
+  do not confirm the old Cloud Run failures are resolved.
 - [ ] Approved provider bundle missing; human OAuth/dispatcher dependencies OPEN.
 - [ ] All mandatory candidate gates, canonical release/readback/recovery.
 - [ ] Safe image cleanup after dry-run and accepted release.
 - [ ] Final evidence reconciliation; CLOSED only after every required gate.
 
 See [operations](../docs/cicd-v2-runbook.md); CI success is not runtime acceptance.
-Owner paused engineering/deployment; documentation save only was requested.
-Latest observed checkpoint: [evidence](../docs/cicd-v2-evidence.md#paused-checkpoint--2026-10-08).
+Owner paused at the earlier checkpoint; subsequent instruction resumed
+source hardening. Runtime promotion is still blocked pending live acceptance.
+Latest observations: [evidence](../docs/cicd-v2-evidence.md#continued-cicd-v2-source-hardening--2026-10-08).
 
 > Executable ownership-cleanup baseline validated through `main@d1769491ba41670e86222536ee129b94bbfba04f`; Node Core run `37628904846` PASS. UI source baseline `12a94018debd11f5b389aa2fdf325339782bb9d8`; Flutter run `37625912746` PASS.
 > Architecture revision: 2026-10-07.
