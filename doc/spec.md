@@ -264,19 +264,22 @@ original percentages on partial failure. No synthetic approval, no mandatory
 gate skipped by manual release.
 
 **Post-success retention policy:** after real integration/rollback rehearsal,
-successful promotion and traffic readback, the final pipeline job retains
-exactly the newest **two Cloud Run revisions per existing service**: current
-100%-traffic revision and the immediately prior recorded rollback revision.
-Only older unreferenced, untagged, zero-traffic revisions may be deleted.
-Never delete the only/latest revision, an active or tagged revision, or a
-revision protected by rollback evidence. A stale SHA, missing readback,
-unready newest revision, traffic split or unexpected older revision tag
-blocks cleanup rather than forcing the count to two. Use dry-run, revalidate
-before every delete and read back results. GHCR images and all historic
-GCS/Artifact Registry assets are outside this retention policy. Delete
-Cloud Run revisions only after all release gates pass; source/publish-only
-Actions never initiate cleanup. Future recovery beyond retained revisions
-requires re-deploying an archived immutable image digest.
+successful promotion and traffic readback, the final pipeline job keeps
+the newest **10 Cloud Run revisions per existing service** (or all when
+fewer than ten exist). The approved current 100%-traffic revision and
+its recorded previous known-good rollback target must both fall within
+the ten newest revisions; otherwise cleanup is BLOCKED rather than
+sacrificing recovery. Failed candidate revisions may also be in the ten;
+the count does not certify ten validated releases. Delete only older
+untagged/zero-traffic revisions; never remove a serving, tagged, or
+protected revision. Stale SHA, missing readback, latest revision
+unready, traffic split, altered service state or protected version
+outside the ten must BLOCK deletion, leaving more than ten if necessary.
+Dry-run, revalidate before each delete and read back afterwards.
+No image deletion: GHCR, legacy GCS and Artifact Registry assets are
+outside this policy. Source/publish-only Actions never trigger cleanup.
+Idle Cloud Run revisions are generally not billed for compute, except
+when resource/billing settings or tagged requests keep instances running.
 
 The **new delivery pipeline must not invoke Cloud Build/triggers, push Docker
 images to Artifact Registry, write CI/CD evidence/source/locks into GCS or
