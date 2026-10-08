@@ -192,7 +192,8 @@ export class ChatStore {
    * Reconciliation and attempt recovery must be implemented before enabling
    * unattended dispatch in production.
    */
-  async claimNextQueuedTurn(): Promise<DispatchClaim | null> {
+  async claimNextQueuedTurn(approvedOwners: readonly string[]): Promise<DispatchClaim | null> {
+    if (!approvedOwners.length) throw new Error("dispatch requires an approved owner list");
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
@@ -211,8 +212,10 @@ export class ChatStore {
           ORDER BY seq LIMIT 1
         ) AS e ON TRUE
         WHERE t.status='QUEUED' AND th.status='ACTIVE'
+          AND t.owner_id = ANY($1::uuid[])
         ORDER BY t.created_at,t.owner_id,t.thread_id,t.turn_id
-        LIMIT 1 FOR UPDATE OF t SKIP LOCKED`
+        LIMIT 1 FOR UPDATE OF t SKIP LOCKED`,
+        [approvedOwners]
       )).rows[0];
       if (!selected) {
         await client.query("COMMIT");
