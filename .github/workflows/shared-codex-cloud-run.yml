@@ -141,3 +141,75 @@ jobs:
           print("deployment_readback=PASS")
           print("live_model_inference=NOT_YET_ACCEPTED")
           PY
+
+      - name: Three caller live Codex inference and project isolation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' > /tmp/allowed-callers
+          import os,json
+          data=json.loads(os.environ["SHARED_CODEX_CALLERS_JSON"])
+          for label,email in sorted(data.items()):
+              print(label+"\t"+email)
+          PY
+          previous_label=""
+          previous_token=""
+          tested=0
+          while IFS=$'\t' read -r label email; do
+            token="$(gcloud auth print-identity-token \
+              --impersonate-service-account="$email" --audiences="$SHARED_CODEX_URL" --include-email)"
+            test -n "$token"
+            LABEL="$label" python3 - <<'PY' > /tmp/codex-request.json
+          import os,json,uuid
+          print(json.dumps({
+            "project":os.environ["LABEL"],
+            "ownerId":str(uuid.uuid4()),
+            "requestId":str(uuid.uuid4()),
+            "prompt":"Reply with exactly the word READY. Do not use tools.",
+          }))
+          PY
+            status="$(curl --silent --show-error --max-time 180 --retry 0 \
+              -o /tmp/codex-response.json -w '%{http_code}' \
+              -H "Authorization: Bearer $token" -H "Content-Type: application/json" \
+              -X POST --data-binary @/tmp/codex-request.json "$SHARED_CODEX_URL/v1/codex/execute")"
+            if [[ "$status" != "200" ]]; then
+              echo "live_inference_failed caller=$label status=$status" >&2
+              exit 1
+            fi
+            LABEL="$label" python3 - <<'PY'
+          import os,json,hashlib
+          data=json.load(open("/tmp/codex-response.json"))
+          assert data.get("status")=="completed" and data.get("project")==os.environ["LABEL"]
+          result=data.get("result") or {}
+          text=result.get("text","")
+          assert isinstance(text,str) and text.strip()
+          ids=data.get("providerIds") or {}
+          assert ids.get("threadId") and ids.get("turnId")
+          print("caller="+os.environ["LABEL"]+" live_inference=PASS output_sha256="+hashlib.sha256(text.encode()).hexdigest())
+          PY
+            if [[ -n "$previous_label" ]]; then
+              PREVIOUS="$previous_label" python3 - <<'PY' > /tmp/codex-cross-project.json
+          import os,json,uuid
+          print(json.dumps({
+            "project":os.environ["PREVIOUS"],
+            "ownerId":str(uuid.uuid4()),
+            "requestId":str(uuid.uuid4()),
+            "prompt":"Cross-project authorization test.",
+          }))
+          PY
+              cross_status="$(curl --silent --show-error --max-time 20 \
+                -o /tmp/codex-cross-response.json -w '%{http_code}' \
+                -H "Authorization: Bearer $token" -H "Content-Type: application/json" \
+                -X POST --data-binary @/tmp/codex-cross-project.json "$SHARED_CODEX_URL/v1/codex/execute")"
+              [[ "$cross_status" == "403" ]] || {
+                echo "cross_project_rejection=FAIL" >&2
+                exit 1
+              }
+              echo "cross_project_rejection=PASS"
+            fi
+            previous_label="$label"
+            previous_token="$token"
+            tested=$((tested+1))
+          done < /tmp/allowed-callers
+          [[ "$tested" == "3" ]] || { echo "caller_count_invalid" >&2; exit 1; }
+          echo "all_configured_callers_live_inference=PASS"
