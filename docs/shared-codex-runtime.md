@@ -1,6 +1,6 @@
 # Shared Codex runtime — integration and acceptance
 
-Status (2026-10-08): SOURCE / NODE TEST VERIFIED. Cloud Run deployment and live authenticated provider execution are separate gates; do not mark DONE until both pass.
+Status (2026-10-08): Shared endpoint implementation/tests, private Cloud Run deployment and live signed inference for all three configured caller identities **PASS** (GitHub Actions run 37709954944, attempt 3). External consumer adapter cutovers and legacy credential Secret retirement remain separate outstanding work; do not claim these completed.
 
 ## Boundary
 
@@ -104,6 +104,17 @@ A deployment-only PASS is not a real provider-inference PASS. Two external consu
 The dedicated life and market caller accounts are **low privilege** and receive only permission to invoke the shared Cloud Run service; they must not inherit market-analysis database/storage permissions or the default compute account's broader privileges. When an existing consumer service needs to call, it may mint an audience-bound Google ID token by being granted scoped impersonation of its dedicated caller identity, or run under that identity if its other permissions allow it. The consumer adapters themselves belong to their own repositories, not this one.
 
 **OpenID Connect ID-token tests:** the release workflow now requires one real Codex response for each of the three caller identities plus cross-project rejection. The release CI identity needs a temporary, narrowly scoped ability to mint ID tokens for the three dedicated/test caller accounts (for example a short-lived `roles/iam.serviceAccountTokenCreator` binding on each target service account), and those grants should be revoked after acceptance if no longer required. This step is not equivalent to consumer application E2E and does not assert those consumer apps are already migrated.
+
+## Production acceptance evidence — 2026-10-08
+
+- **GitHub Actions source and deployment gate:** [37709954944 attempt 3](https://github.com/tommylin15/omniAgent/actions/runs/37709954944) = **SUCCESS**, head SHA \`ff282575fb13163018827761b8bfee8e8789bcb3\`.
+- **Cloud Run URL / Google ID-token audience:** \`https://omniagent-shared-codex-2oo7qbkd5q-uc.a.run.app\`, region \`us-central1\`, service \`omniagent-shared-codex\`, private Cloud Run ingress IAM.
+- **Auth and deployment:** enabled dedicated Secret verified; runtime SA and service revision readback PASS; anonymous request returned 403 as expected.
+- **Provider live inference:** \`life-assistant\`, \`market-mart\` and \`omniagent\` each returned HTTP 200, nonempty native Codex output and provider thread/turn IDs. CI logged only output SHA-256 digest, not payload. \`cross_project_rejection=PASS\` twice and \`all_configured_callers_live_inference=PASS\`.
+- **Independent signed caller diagnostic:** [37710625658](https://github.com/tommylin15/omniAgent/actions/runs/37710625658) = PASS: Cloud Run invoker binding, minted ID token email/audience/email_verified and HTTP 200 Codex response. A prior first-attempt 403 did not reproduce after IAM propagated; do not classify that earlier failure as a provider outage.
+- **Explicit boundaries:** This proves the **shared service itself** is callable using impersonated consumer identities. It does *not* prove any external application has changed its runtime code to use it. The consumer teams must separately implement and verify their own adapters. The original external auth Secret is **still present**, and its retirement remains a dedicated privileged operation after this evidence has been reviewed.
+- **Caller identity contract:** \`life-assistant\` -> \`omniagent-codex-life-client@gen-lang-client-0593591102.iam.gserviceaccount.com\`; \`market-mart\` -> \`omniagent-codex-market-client@gen-lang-client-0593591102.iam.gserviceaccount.com\`; \`omniagent\` -> \`omniagent-codex-chat-client@gen-lang-client-0593591102.iam.gserviceaccount.com\`. Each caller must mint an ID token for the exact Cloud Run URL and use the corresponding \`project\` in the body.
+- **No GitHub or consumer-source edits** outside the omniAgent repository occurred in this work package. This service exposes bounded read-only text operations, not arbitrary CLI shell or repository mutations.
 
 ## Operational cautions
 
