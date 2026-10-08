@@ -1,0 +1,163 @@
+# Read-only checkpoint of omniAgent Chat candidate. Never reveal Secret payloads or raw logs.
+name: omniAgent V2 read-only candidate diagnostic
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/omniagent-v2-readonly-diagnostic.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: omniagent-v2-readonly-diagnostic
+  cancel-in-progress: false
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GCP_PROJECT_ID: gen-lang-client-0593591102
+      GCP_REGION: us-central1
+    steps:
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+          service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Read runtime metadata without Secret values
+        shell: bash
+        run: |
+          set -euo pipefail
+          gcloud run services describe omniagent-chat --region="$GCP_REGION" \
+            --project="$GCP_PROJECT_ID" --format=json > "$RUNNER_TEMP/chat-service.json"
+          python3 - "$RUNNER_TEMP" <<'PY'
+          import json, subprocess, sys
+          from pathlib import Path
+          root=Path(sys.argv[1])
+          service=json.loads((root/"chat-service.json").read_text())
+          routes=service.get("status",{}).get("traffic",[])
+          active=next((r.get("revisionName") for r in routes if r.get("percent",0)>0),None)
+          candidates=[r for r in routes if (r.get("tag") or "").startswith("v2-")]
+          expected="v2-741b4e0c798bd3d8"
+          tagged=next((r for r in candidates if r.get("tag")==expected),None)
+          print("service=omniagent-chat")
+          print("formal_traffic="+json.dumps([
+              {"revision":r.get("revisionName"),"percent":r.get("percent",0)}
+              for r in routes if r.get("percent",0)>0],sort_keys=True))
+          print("v2_candidate_tags="+json.dumps([
+              {"tag":r.get("tag"),"revision":r.get("revisionName"),"percent":r.get("percent",0)}
+              for r in candidates],sort_keys=True))
+          print("checkpoint_candidate="+("FOUND" if tagged else "NOT_FOUND"))
+          if tagged and tagged.get("url", "").startswith("https://"):
+              (root/"candidate-url.txt").write_text(tagged["url"])
+              (root/"candidate-revision.txt").write_text(tagged["revisionName"])
+          for kind,name in (("active",active),("candidate",tagged.get("revisionName") if tagged else None)):
+              if not name:
+                  print(kind+"_revision=UNAVAILABLE")
+                  continue
+              command=["gcloud","run","revisions","describe",name,"--region=us-central1",
+                  "--project=gen-lang-client-0593591102","--format=json"]
+              result=subprocess.run(command,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,text=True,check=False)
+              if result.returncode:
+                  print(kind+"_metadata=NOT_READABLE")
+                  continue
+              data=json.loads(result.stdout)
+              spec=data.get("spec",{})
+              containers=spec.get("containers") or [{}]
+              env={}
+              for item in containers[0].get("env") or []:
+                  value_from=item.get("valueFrom") or {}
+                  secret=value_from.get("secretKeyRef") or {}
+                  env[item.get("name","")]={
+                    "source":"secret" if secret else "literal",
+                    "secret_name":secret.get("name","") if secret else "",
+                    "secret_version":secret.get("key","") if secret else ""}
+              conditions=[{"type":c.get("type"),"status":c.get("status"),"reason":c.get("reason")}
+                          for c in data.get("status",{}).get("conditions",[])]
+              print(kind+"_revision="+name)
+              print(kind+"_image_immutable="+str("@sha256:" in containers[0].get("image","")))
+              print(kind+"_db_env="+json.dumps(env.get("CHAT_DATABASE_URL","ABSENT"),sort_keys=True))
+              print(kind+"_tls_mode_source="+str(env.get("CHAT_DATABASE_TLS_MODE","UNSET")))
+              print(kind+"_conditions="+json.dumps(conditions,sort_keys=True))
+              print(kind+"_vpc="+json.dumps(spec.get("vpcAccess") or {},sort_keys=True))
+          PY
+
+      - name: Non-payload Secret metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          for secret in omniagent-chat-db omniagent-provider-bundle; do
+            if gcloud secrets versions describe latest --secret="$secret" \
+              --project="$GCP_PROJECT_ID" --format='value(state)' > "$RUNNER_TEMP/secret-state" 2>/dev/null; then
+              printf '%s=%s\n' "$secret" "$(cat "$RUNNER_TEMP/secret-state")"
+            else
+              echo "$secret=MISSING_OR_NOT_READABLE"
+            fi
+          done
+
+      - name: Probe checkpoint candidate HTTP statuses only
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - "$RUNNER_TEMP" <<'PY'
+          import sys,urllib.error,urllib.request
+          from pathlib import Path
+          path=Path(sys.argv[1])/"candidate-url.txt"
+          if not path.exists():
+              print("candidate_http=NOT_RUN_NO_CHECKPOINT_TAG")
+              raise SystemExit(0)
+          url=path.read_text().strip().rstrip("/")
+          for endpoint in ("health","ready"):
+              try:
+                  with urllib.request.urlopen(url+"/"+endpoint,timeout=15) as response:
+                      status=response.status
+              except urllib.error.HTTPError as exc:
+                  status=exc.code
+              except Exception:
+                  status="UNREACHABLE"
+              print("candidate_"+endpoint+"_http="+str(status))
+          PY
+
+      - name: Classify Chat candidate Cloud Logging without printing raw messages
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! -f "$RUNNER_TEMP/candidate-revision.txt" ]]; then
+            echo "candidate_log_classification=NOT_RUN_NO_CHECKPOINT_TAG"
+            exit 0
+          fi
+          revision="$(cat "$RUNNER_TEMP/candidate-revision.txt")"
+          filter="resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"omniagent-chat\" AND resource.labels.revision_name=\"$revision\""
+          if ! gcloud logging read "$filter" --project="$GCP_PROJECT_ID" \
+            --freshness=72h --limit=200 --format=json > "$RUNNER_TEMP/chat-logs.json" 2>/dev/null; then
+            echo "candidate_log_classification=NO_LOG_READ_PERMISSION"
+            exit 0
+          fi
+          python3 - "$RUNNER_TEMP/chat-logs.json" <<'PY'
+          import collections,json,sys
+          records=json.load(open(sys.argv[1]))
+          patterns={
+              "database_auth":["password authentication failed","authentication failed","role does not exist"],
+              "database_hba":["no pg_hba.conf entry","pg_hba.conf rejects"],
+              "database_tls":["self-signed certificate","certificate verify failed","ssl","tls"],
+              "database_connectivity":["econnrefused","etimedout","enotfound","connect timeout","network is unreachable"],
+              "database_missing":["database does not exist","relation does not exist"],
+              "readiness_503":["/ready","503"],
+          }
+          counts=collections.Counter()
+          for record in records:
+              message=str(record.get("textPayload") or "")+" "+json.dumps(record.get("jsonPayload") or {})
+              low=message.lower()
+              for label,markers in patterns.items():
+                  if any(marker in low for marker in markers):
+                      counts[label]+=1
+          print("candidate_log_records_checked="+str(len(records)))
+          print("candidate_log_categories="+json.dumps(dict(counts),sort_keys=True))
+          print("raw_messages_or_credentials=NOT_PRINTED")
+          PY
