@@ -5,6 +5,7 @@ import os
 import time
 import urllib.error
 import urllib.request
+from urllib.parse import quote
 import uuid
 
 from cicd_v2 import PROJECT, REGION, SERVICES, STATE, cloud_json, gcloud, recovery_route, save, service, store_object, traffic_percent
@@ -34,8 +35,32 @@ def request(url, path, token=None, body=None, headers=None, timeout=180):
 
 
 def identity(email, audience):
-    return gcloud("auth", "print-identity-token", "--impersonate-service-account=" + email,
-        "--audiences=" + audience, "--include-email")
+    """Mint only an OIDC ID token; do not request broad SA impersonation rights.
+
+    Cloud Build's own access token calls IAMCredentials generateIdToken. The
+    caller needs getOpenIdToken on the named service account, not getAccessToken
+    or Service Account Token Creator. No credential is written to evidence.
+    """
+    if not email or not audience.startswith("https://"):
+        raise RuntimeError("invalid identity token request")
+    token = gcloud("auth", "print-access-token")
+    url = ("https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/"
+           + quote(email, safe="") + ":generateIdToken")
+    req = urllib.request.Request(
+        url,
+        data=json.dumps({"audience": audience, "includeEmail": True}).encode(),
+        headers={"Authorization": "Bearer " + token, "Content-Type": "application/json"},
+        method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=20) as response:
+            body = json.loads(response.read())
+        signed = body.get("token")
+        if not isinstance(signed, str) or not signed:
+            raise ValueError("missing OIDC token")
+        return signed
+    except (urllib.error.HTTPError, urllib.error.URLError, ValueError, TypeError, KeyError):
+        # Error response bodies can contain untrusted content; never persist it.
+        raise RuntimeError("ID_TOKEN_ISSUANCE_FAILED") from None
 
 
 def require(status, expected):
