@@ -23,8 +23,13 @@ def merge(current: object, dsn: str) -> dict:
             or parse_qs(url.query).get("sslmode") != ["require"]):
         raise ValueError("dedicated Chat database URL contract mismatch")
     try:
-        if not ipaddress.ip_address(url.hostname).is_private:
-            raise ValueError("database host must be private")
+        host = ipaddress.ip_address(url.hostname)
+        if not isinstance(host, ipaddress.IPv4Address) or not any(
+            host in network for network in (
+                ipaddress.ip_network("10.0.0.0/8"),
+                ipaddress.ip_network("172.16.0.0/12"),
+                ipaddress.ip_network("192.168.0.0/16"))):
+            raise ValueError("database host must be RFC1918 private")
     except (ValueError, TypeError):
         raise ValueError("database host must be private") from None
     signing = data.get("mcp_owner_signing_key")

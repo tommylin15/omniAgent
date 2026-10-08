@@ -39,8 +39,13 @@ def validate_unified_bundle(raw):
                 or uri.path != "/omniagent_chat" or not uri.password or uri.port not in (None, 5432)
                 or "require" not in parse_qs(uri.query).get("sslmode", [])):
             raise ValueError("database identity/TLS contract mismatch")
-        if not ipaddress.ip_address(uri.hostname).is_private:
-            raise ValueError("Chat database host must be private")
+        host = ipaddress.ip_address(uri.hostname)
+        if not isinstance(host, ipaddress.IPv4Address) or not any(
+            host in network for network in (
+                ipaddress.ip_network("10.0.0.0/8"),
+                ipaddress.ip_network("172.16.0.0/12"),
+                ipaddress.ip_network("192.168.0.0/16"))):
+            raise ValueError("Chat database host must be RFC1918 private")
     except (ValueError, TypeError, AttributeError) as exc:
         # No exception details: parsers and client libraries may embed credentials.
         raise RuntimeError("unified omniagent-bundle schema validation failed") from None

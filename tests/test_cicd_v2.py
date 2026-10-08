@@ -47,7 +47,7 @@ class ReleaseSafety(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "schema validation failed"):
                 v2.validate_unified_bundle(json.dumps(bad))
         bad = dict(bundle)
-        bad["chat_database_url"] = "postgresql://omniagent_chat_app:secret@203.0.113.1/omniagent_chat?sslmode=require"
+        bad["chat_database_url"] = "postgresql://omniagent_chat_app:secret@8.8.8.8/omniagent_chat?sslmode=require"
         with self.assertRaisesRegex(RuntimeError, "schema validation failed"):
             v2.validate_unified_bundle(json.dumps(bad))
 
@@ -181,7 +181,8 @@ class ReleaseSafety(unittest.TestCase):
         self.assertEqual(v2.changed_components(["services/agent-gateway/codex_bridge.ts"]), {"gateway", "shared"})
         self.assertEqual(v2.changed_components(["services/agent-gateway/agent_security.ts"]), set(v2.SERVICES))
         self.assertEqual(v2.changed_components(["services/agent-gateway/openrouter_provider.ts"]), {"gateway"})
-        self.assertEqual(v2.changed_components(["tests/chat_api.test.ts", "infra/gcp/cicd_v2.py"]), set())
+        self.assertEqual(v2.changed_components(["tests/chat_api.test.ts", "infra/gcp/cicd_v2.py"]), {"chat", "gateway"})
+        self.assertEqual(v2.changed_components(["tests/chat_api.test.ts"]), set())
         self.assertEqual(v2.changed_components(["doc/todo.md"]), set())
         self.assertEqual(v2.changed_components(["services/chat-api/deleted.ts"]), {"chat"})
         self.assertEqual(v2.changed_components(None), set(v2.SERVICES))
