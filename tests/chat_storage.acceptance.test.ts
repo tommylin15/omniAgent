@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { Pool } from "pg";
 import { describe, expect, it } from "vitest";
 import { ChatConflict, ChatNotFound, ChatStore } from "../services/chat-api/storage.js";
+import { ChatDispatcher } from "../services/chat-api/gateway_dispatch.js";
 
 const dsn = process.env.PG_TEST_URL;
 describe.runIf(Boolean(dsn))("isolated PostgreSQL ChatStore acceptance", () => {
@@ -97,6 +98,25 @@ describe.runIf(Boolean(dsn))("isolated PostgreSQL ChatStore acceptance", () => {
       expect(statuses.rows.every(row => row.status === "RUNNING")).toBe(true);
       // No automatic replay of in-flight provider effects after a crash.
       expect(await store.claimNextQueuedTurn()).toBeNull();
+
+      // Real ephemeral Postgres persists Gateway replies under the claimed
+      // owner only. The provider is stubbed: GCP live integration is separate.
+      const pending=await store.message(b,"thread-b","gateway hello","gateway-1");
+      const executor=new ChatDispatcher(store,async task => ({events:[
+        {type:"text_delta",threadId:task.threadId,turnId:task.turnId,
+          payload:{text:"assistant reply"}},
+        {type:"turn_completed",threadId:task.threadId,turnId:task.turnId,
+          payload:{status:"completed"}}
+      ]}));
+      expect(await executor.runOnce()).toMatchObject({
+        status:"completed",turnId:pending.turn.turn_id
+      });
+      expect(await executor.runOnce()).toMatchObject({status:"idle"});
+      expect((await store.events(b,"thread-b",-1,200)).map(row=>row.event_type))
+        .toEqual(["item_upsert","text_delta","turn_completed"]);
+      await expect(store.events(a,"thread-b",-1,200)).rejects.toBeInstanceOf(ChatNotFound);
+      await expect(store.appendEvent(a,"thread-b",pending.turn.turn_id as string,
+        "foreign","text_delta",{text:"not allowed"})).rejects.toBeInstanceOf(ChatNotFound);
 
       const content = { prompt:"summarize", required_tools:[], workflow:[] };
       const skill = await store.writeSkillRevision(a,"summary",1,content,"skill-1");
