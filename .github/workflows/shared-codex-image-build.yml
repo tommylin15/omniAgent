@@ -1,0 +1,49 @@
+name: Shared Codex isolated image build
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'services/shared-codex/**'
+      - 'services/agent-gateway/server.ts'
+      - 'services/agent-gateway/codex_bridge.ts'
+      - '.github/workflows/shared-codex-image-build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  GCP_PROJECT_ID: gen-lang-client-0593591102
+  GCP_REGION: us-central1
+  WIF_PROVIDER: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+  CI_SERVICE_ACCOUNT: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+  IMAGE_REPOSITORY: omniagent
+  IMAGE_NAME: omniagent-shared-codex
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.WIF_PROVIDER }}
+          service_account: ${{ env.CI_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Build and push immutable image to omniAgent registry
+        shell: bash
+        run: |
+          set -euo pipefail
+          gcloud auth configure-docker "${GCP_REGION}-docker.pkg.dev" --quiet
+          IMAGE="${GCP_REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${IMAGE_REPOSITORY}/${IMAGE_NAME}:${GITHUB_SHA}"
+          docker build --file services/shared-codex/Dockerfile --tag "$IMAGE" .
+          docker run --rm "$IMAGE" /app/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/bin/codex --version
+          docker push "$IMAGE"
+          digest="$(gcloud artifacts docker images describe "$IMAGE" --project="$GCP_PROJECT_ID" --format='value(image_summary.digest)')"
+          test -n "$digest"
+          echo "shared_codex_image=$IMAGE"
+          echo "image_digest=$digest"
+          echo "image_build_push=PASS"
