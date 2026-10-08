@@ -66,6 +66,38 @@ describe.runIf(Boolean(dsn))("isolated PostgreSQL ChatStore acceptance", () => {
       expect((await store.cancelQueuedTurn(a,"thread-a",queued.turn.turn_id as string)).status).toBe("CANCELLED");
       await expect(store.cancelQueuedTurn(b,"thread-a",queued.turn.turn_id as string)).rejects.toBeInstanceOf(ChatNotFound);
 
+      // Two claimants exercise real PostgreSQL row locks, not mocked queues.
+      // Claims are derived exclusively from durable owner/thread/turn rows.
+      const bobThread = await store.createThread(b,{ ...input,threadId:"thread-b" },"bob-create");
+      expect(bobThread.thread_id).toBe("thread-b");
+      const aliceQueued = await store.message(a,"thread-a","dispatch alice","dispatch-alice");
+      const bobQueued = await store.message(b,"thread-b","dispatch bob","dispatch-bob");
+      const [claimOne,claimTwo] = await Promise.all([
+        store.claimNextQueuedTurn(),store.claimNextQueuedTurn()
+      ]);
+      expect(claimOne).not.toBeNull();
+      expect(claimTwo).not.toBeNull();
+      expect(new Set([claimOne!.turnId,claimTwo!.turnId])).toEqual(
+        new Set([aliceQueued.turn.turn_id,bobQueued.turn.turn_id])
+      );
+      const observed = new Map([claimOne!,claimTwo!].map(c => [c.ownerId,c]));
+      expect(observed.get(a)).toMatchObject({
+        ownerId:a,threadId:"thread-a",runtime:"gemini",model:"test-model",
+        content:"dispatch alice"
+      });
+      expect(observed.get(b)).toMatchObject({
+        ownerId:b,threadId:"thread-b",runtime:"gemini",model:"test-model",
+        content:"dispatch bob"
+      });
+      expect(await store.claimNextQueuedTurn()).toBeNull();
+      const statuses = await pool.query(`
+        SELECT owner_id,status FROM omni_chat.turns
+        WHERE turn_id=ANY($1::varchar[])`, [[claimOne!.turnId,claimTwo!.turnId]]);
+      expect(statuses.rows).toHaveLength(2);
+      expect(statuses.rows.every(row => row.status === "RUNNING")).toBe(true);
+      // No automatic replay of in-flight provider effects after a crash.
+      expect(await store.claimNextQueuedTurn()).toBeNull();
+
       const content = { prompt:"summarize", required_tools:[], workflow:[] };
       const skill = await store.writeSkillRevision(a,"summary",1,content,"skill-1");
       expect(skill.content_digest).toMatch(/^sha256:[0-9a-f]{64}$/);

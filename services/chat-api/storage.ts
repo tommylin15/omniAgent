@@ -5,6 +5,17 @@ import { authorizeApproval } from "../agent-gateway/agent_security.js";
 export class ChatConflict extends Error {}
 export class ChatNotFound extends Error {}
 
+// Durable, database-derived dispatch envelope. No client-supplied owner ID is
+// trusted, and no raw credentials are ever included in a claim.
+export type DispatchClaim = {
+  ownerId: string;
+  threadId: string;
+  turnId: string;
+  runtime: "openrouter" | "gemini" | "codex";
+  model: string;
+  content: string;
+};
+
 export type ThreadInput = { threadId?: string; runtime: "openrouter" | "gemini" | "codex";
   model: string; assistantProfile: string; skillProfile?: string; parentThreadId?: string };
 export type ApprovalInput = { ownerId: string; threadId: string; turnId: string; requestId: string;
@@ -166,6 +177,63 @@ export class ChatStore {
       await client.query(`UPDATE omni_chat.threads SET updated_at=now() WHERE owner_id=$1 AND thread_id=$2`, [ownerId,threadId]);
       await client.query("COMMIT");
       return { thread, turn, event, dispatch: { status: "QUEUED" } };
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally { client.release(); }
+  }
+
+  /**
+   * Claim one durable queued turn from PostgreSQL, never from an in-memory
+   * queue. SKIP LOCKED prevents two workers from claiming the same turn.
+   *
+   * A RUNNING claim is intentionally not automatically requeued after an
+   * uncertain crash: the provider may have executed a non-idempotent action.
+   * Reconciliation and attempt recovery must be implemented before enabling
+   * unattended dispatch in production.
+   */
+  async claimNextQueuedTurn(): Promise<DispatchClaim | null> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const selected = (await client.query<{
+        owner_id: string; thread_id: string; turn_id: string;
+        runtime: DispatchClaim["runtime"]; model: string; payload: unknown;
+      }>(`
+        SELECT t.owner_id,t.thread_id,t.turn_id,th.runtime,th.model,e.payload
+        FROM omni_chat.turns AS t
+        JOIN omni_chat.threads AS th
+          ON th.owner_id=t.owner_id AND th.thread_id=t.thread_id
+        JOIN LATERAL (
+          SELECT payload FROM omni_chat.events
+          WHERE owner_id=t.owner_id AND thread_id=t.thread_id AND turn_id=t.turn_id
+            AND event_type='item_upsert' AND payload->>'role'='user'
+          ORDER BY seq LIMIT 1
+        ) AS e ON TRUE
+        WHERE t.status='QUEUED' AND th.status='ACTIVE'
+        ORDER BY t.created_at,t.owner_id,t.thread_id,t.turn_id
+        LIMIT 1 FOR UPDATE OF t SKIP LOCKED`
+      )).rows[0];
+      if (!selected) {
+        await client.query("COMMIT");
+        return null;
+      }
+      const payload = selected.payload;
+      const content = payload && typeof payload === "object" && !Array.isArray(payload)
+        ? (payload as Record<string, unknown>).content : undefined;
+      if (typeof content !== "string" || !content.trim() || content.length > 50_000) {
+        throw new Error("queued message is invalid");
+      }
+      const updated = (await client.query(
+        `UPDATE omni_chat.turns SET status='RUNNING'
+         WHERE owner_id=$1 AND thread_id=$2 AND turn_id=$3 AND status='QUEUED'
+         RETURNING turn_id`,
+        [selected.owner_id,selected.thread_id,selected.turn_id]
+      )).rows;
+      if (updated.length !== 1) throw new ChatConflict("turn claim lost");
+      await client.query("COMMIT");
+      return { ownerId:selected.owner_id,threadId:selected.thread_id,
+        turnId:selected.turn_id,runtime:selected.runtime,model:selected.model,content };
     } catch (error) {
       await client.query("ROLLBACK");
       throw error;
