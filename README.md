@@ -20,4 +20,6 @@ Target provider set is Gemini, OpenRouter, Codex, and Groq. Current source conta
 
 Node: run `npm ci`, `npm run build`, and `npm test` here. Flutter: run `flutter pub get`, `flutter analyze lib test`, `flutter test`, and `flutter build web` from `apps/agent_app`. No credentials or real endpoint values are checked in.
 
+**CI/CD target (2026-10-08, migration OPEN):** GitHub Actions full CI + public GHCR immutable digests → Cloud Run 0%-traffic candidate revisions → real acceptance / protected promotion / rollback. The new release process does not invoke Cloud Build or explicitly write Artifact Registry/GCS. [Policy](doc/spec.md#8-cicd--github-actions--public-ghcr--cloud-run-2026-10-08) · [runbook](docs/cicd-ghcr-actions-runbook.md).
+
 See [current control documents](doc/README.md), [architecture](docs/architecture.md), [storage ownership/import gate](docs/chat-storage-migration.md), [active TODO](doc/todo.md), and [deployment runbook](docs/runbook-ui-cutover.md).
