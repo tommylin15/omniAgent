@@ -6,16 +6,22 @@
   repository and create separate us-central1 CI Push / manual Release triggers.
 - [x] Source: tested SHA/change/image safeguards, independent Shared lock,
   bounded attempt/provider cost and recovery; manual V2 replaces old publishers.
-- [x] Real CI Push PASS: `7fa347db`, Cloud Build `3f228e9a-d4a9-4133-b9e3-f6a05d09af2d`.
-- [ ] Explicit bounded candidate Release: `d6925968-f5b6-473c-83b8-0cb5d6fc8073`
-  source gates PASS; image step failed before deployment (SDK stable lacks Python).
-  Python-enabled image fix and Job/Execution cleanup protection await new Push/release evidence.
+- [x] Real CI Push PASS: `741b4e0c`, Cloud Build `2b4ea3e7-da60-48f0-857a-eb053b94253c`.
+- [x] Explicit bounded shadow build/image/no-traffic Chat candidate executed:
+  `400898cb-7bff-4a4f-8f94-08b89dc129e9`; full acceptance remains FAIL.
+- [x] Shared existing three identities: real responses/fresh threads/cross-project
+  denial PASS; no unrelated rebuild or consumer repository changes.
+- [ ] Chat readiness 503; active/candidate DB Secret references differ. Precise
+  DB failure remains undiagnosed; formal active readiness 200/traffic unchanged.
+- [ ] Recovery tag mismatch and cleanup missing revision digest need diagnosis.
 - [ ] Approved provider bundle missing; human OAuth/dispatcher dependencies OPEN.
 - [ ] All mandatory candidate gates, canonical release/readback/recovery.
 - [ ] Safe image cleanup after dry-run and accepted release.
 - [ ] Final evidence reconciliation; CLOSED only after every required gate.
 
 See [operations](../docs/cicd-v2-runbook.md); CI success is not runtime acceptance.
+Owner paused engineering/deployment; documentation save only was requested.
+Latest observed checkpoint: [evidence](../docs/cicd-v2-evidence.md#paused-checkpoint--2026-10-08).
 
 > Executable ownership-cleanup baseline validated through `main@d1769491ba41670e86222536ee129b94bbfba04f`; Node Core run `37628904846` PASS. UI source baseline `12a94018debd11f5b389aa2fdf325339782bb9d8`; Flutter run `37625912746` PASS.
 > Architecture revision: 2026-10-07.

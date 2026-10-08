@@ -4,11 +4,15 @@
 
 Four paths: Chat API, Flutter bundled in Chat, Gateway, Shared Codex. Main Push
 CI and explicit full-SHA Release are separate. Source safety checks are executable
-in `tests/test_cicd_v2.py`; cloud/live proof is pending. Existing provider Secret
+in `tests/test_cicd_v2.py`; main `741b4e0c` CI PASS and Shared three-caller live
+responses/isolation PASS. Chat candidate is zero-traffic, health 200/readiness 503;
+Gateway not deployed, recovery and cleanup gates FAIL. Existing provider Secret
 absence, human Google Web identity and durable dispatcher gates stay OPEN.
 No canonical release, image cleanup or CLOSED claim is made from source tests.
 
 Evidence and operator commands: [V2 runbook](../docs/cicd-v2-runbook.md).
+Paused observed results: [V2 evidence](../docs/cicd-v2-evidence.md#paused-checkpoint--2026-10-08).
+Owner requested engineering pause and documentation save only.
 
 > Executable baseline validated through `main@d1769491ba41670e86222536ee129b94bbfba04f`; Node Core run `37628904846` PASS. UI source baseline `12a94018debd11f5b389aa2fdf325339782bb9d8`; Flutter run `37625912746` PASS.
 > Architecture revision: 2026-10-07.

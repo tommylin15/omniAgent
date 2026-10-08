@@ -79,3 +79,41 @@ unimplemented. Canonical release/full live acceptance/CLOSED are not claimed.
   A regression checks the actual deploy arguments for all three existing services.
 - Owner selected administrator completion of the existing Provider bundle runbook.
   No new Secret, key material or Secret/IAM admin grant was made by this task.
+
+## Paused checkpoint — 2026-10-08
+
+Owner requested pause, then documentation save to GitHub. Engineering/deployment
+remain paused. Status stays ACTIVE / PARTIAL, never CLOSED.
+
+- Verified source SHA `741b4e0c798bd3d8f569b39961c5e6b7b0f86958`:
+  real main Push CI `2b4ea3e7-da60-48f0-857a-eb053b94253c` **SUCCESS**;
+  Node/API/security, isolated PostgreSQL, Flutter and 15 release-safety checks PASS.
+- Manual shadow build `400898cb-7bff-4a4f-8f94-08b89dc129e9`: source,
+  image build/push and no-traffic deployment steps PASS. Live probes ran;
+  cleanup step failed closed (`revision digest unavailable`), so final promotion/
+  GCS evidence step did not run. Detailed results remain in Cloud Logging.
+- Chat candidate `omniagent-chat-v2-741b4e0c798bd3d8f569b39961c5e6b7`,
+  image digest `sha256:c9dfca5da831b0cd84f138289b69f4727a4fac31fa1e0cb91c7efa1e7d518721`.
+  Candidate health 200, readiness 503; API/DB/owner-isolation and bundled Flutter
+  live acceptance are therefore NOT PASS. Independent readback confirms formal
+  traffic remains `omniagent-chat-00004-dzs` 100%, candidate 0%.
+- DB metadata comparison: active revision references `omniagent-bundle:2`;
+  candidate references `omniagent-chat-db:latest`. Both have the same private VPC
+  egress and no explicit TLS mode. Active readiness 200 versus candidate 503.
+  Reference difference is proven; the precise connection failure remains undiagnosed.
+  No DB Secret/configuration/data was changed to repair it.
+- Gateway image digest `sha256:142a77d005b6c61706f17b5d694a1d6250705c6545306b4f5e19a22af6d27da5`.
+  No candidate deployed: approved provider bundle missing/inaccessible.
+  Administrator completion was selected by the owner.
+- Shared was NOT rebuilt. Existing revision `omniagent-shared-codex-00004-xmq`
+  and existing caller identities retained. **Three real Codex HTTP 200 responses**:
+  `life-assistant`, `market-mart`, `omniagent`; each fresh thread and cross-project
+  denial PASS. Private IAM/no-anonymous check PASS. Three provider calls consumed.
+  Consumer repository adapters were not modified or claimed accepted.
+- Automated recovery probe FAIL (`recovery tag revision/traffic mismatch`);
+  independent readback confirms original formal traffic and candidate tag retained,
+  temporary recovery tag removed. No successful recovery drill is claimed.
+- No formal release or image deletion. Human browser OAuth, dispatcher integration,
+  Gateway dependency, Chat readiness, recovery and safe cleanup remain OPEN.
+
+This checkpoint preserves observed evidence; it does not resume cloud operations.
