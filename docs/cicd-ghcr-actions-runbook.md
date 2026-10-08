@@ -103,8 +103,55 @@ IDs. After *all* affected service acceptance and recovery drill PASS, apply
 protected progressive/controlled traffic change and read back each revision
 percentage. On partial failure, restore/read back the exact prior allocation
 and preserve previously serving images. Stale SHA, simultaneous releases
-or image-digest mismatch must fail closed. No automated image deletion in
-the migration stage.
+or image-digest mismatch must fail closed. Image deletion remains disabled during migration; **Cloud Run Revision
+retention** is separately permitted **only as the final post-promotion
+step** after all acceptance, rollback and traffic readback pass.
+
+### Automated Cloud Run Revision retention (keep 2 per service)
+
+Owner setting: **latest 2 revisions per existing service**, meaning (1) exact
+approved promoted current revision at 100% traffic and (2) its immediately
+preceding revision that was recorded as the rollback target. Deleting older
+Cloud Run revisions does **not** delete any GHCR Docker image; preserve image
+digests for independent recovery.
+
+The reusable last-stage workflow is
+`.github/workflows/omniagent-cloudrun-retain-two.yml`; pure safety planner/
+executor is `scripts/cloudrun_revision_retention.py`, with regression tests
+`tests/test_cloudrun_revision_retention.py`. Once the real release workflow
+exists, **call the reusable workflow as its final dependent job**, only
+after the actual Cloud Run acceptance + rollback rehearsal + promotion +
+readback job succeeds. Provide `release_sha`, boolean
+`acceptance_and_promotion_passed=true`, plus per-service exact promoted
+and previous rollback revision names. This is not an independent timer or
+a self-authorizing cleanup job.
+
+The implementation performs a default **dry run**, then checks GCP state
+again before each irreversible deletion and reads it back afterward. It
+refuses deletion unless the newly promoted revision is the latest-created
+**and** latest-ready, owns 100% formal traffic, and the named approved
+rollback target is exactly the second-newest revision. It also blocks if
+any third-or-older revision still has traffic (including tagged access),
+if metadata/permissions are missing, if fewer than two revisions exist,
+or if the current main SHA differs from the release SHA. Delete only the
+unreferenced older revisions, by explicit revision names; never delete
+the latest, rollback, serving, or tagged revision. If the policy cannot
+safely reach two revisions, status is BLOCKED and no unsafe attempt is
+made. The GCP API also independently prohibits deleting the latest,
+only, or traffic-serving revision.
+
+After cleanup, immediate Cloud Run traffic rollback is limited to the
+previous retained revision. Once the next accepted release replaces that
+revision, older recovery needs a **new deployment** of the archived
+immutable GHCR digest and acceptance again. Do not claim that retention
+lowers costs: Cloud Run idle revisions generally consume no resources
+unless minimum instances or tagged revision behavior incurs charges.
+
+**Integration status:** The GHCR workflow currently publishes images but
+does not contain a complete approved Cloud Run release/promotion path.
+The reusable cleanup workflow is deliberately **not attached to image
+publish**, since publication cannot prove live acceptance. Final release
+integration, WIF deletion IAM, and real GCP cleanup acceptance remain OPEN.
 
 ## Actions Logs → ChatGPT; optional old Build read-only diagnosis
 
