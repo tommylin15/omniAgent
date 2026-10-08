@@ -150,3 +150,14 @@ The 2026-10-07 credential/lakehouse decisions are `TARGET-DESIGN`, not completed
   - Project Hygiene `37633716460`: PASS.
   - GCP preflight `37633716553` attempt 1: FAIL at WIF token exchange with `invalid_target` before bootstrap.
   - GCP preflight `37633716553` attempt 2: PASS; tracked identifier validation, GitHub OIDC auth, `setup-gcloud`, and omniAgent resource readback all passed.
+
+## Shared Codex runtime (2026-10-08 checkpoint)
+
+- [x] **SOURCE + Node Core TEST PASS** — dedicated `services/shared-codex` reuses the omniAgent Codex App Server bridge and managed auth; bounded text-only `POST /v1/codex/execute`, Google-signed caller identity plus project-to-service-account match, per-request CODEX_HOME/thread/workspace, redacted failures. Node Core run `37706430070` PASS (source snapshot `203036be`).
+- [x] **GCP WIF authentication + protected deployment preflight executed** — candidate workflow `37706571279`; source gate PASS, WIF PASS, preflight **BLOCKED_AUTH** because `SHARED_CODEX_AUTH_RESOURCE` repository variable was not populated. No new runtime deployment or live model response may be claimed.
+- [ ] **Approved isolated Secret Manager auth** — prepare dedicated `omniagent-shared-codex-auth` auth material (or equivalent approved Secret) with valid current Codex auth, configure `SHARED_CODEX_AUTH_RESOURCE`; never migrate or delete an external system's Secret implicitly.
+- [ ] **Allowlisted cross-application callers** — configure `SHARED_CODEX_CALLERS_JSON` with both confirmed caller service account identities and project labels, then grant service-level `roles/run.invoker`. A shared default compute service account is not sufficient evidence of project separation.
+- [ ] **Dedicated Cloud Run deploy and real integration acceptance** — build/push image, verify dedicated runtime service account + private IAM/no-anonymous access, legitimate live Codex replies for each external consumer, forbidden cross-project request, credential refresh persistence, log redaction, timeout, account/quota diagnostics. Do not change existing Chat/Gateway routing or external callers before this gate.
+- [ ] **Post-MVP** — durable idempotent request tracking/replay, rate/quota policy, observability, retries, approvals/tools/code execution scoped per caller, optional asynchronous workflow.
+
+See [dedicated runtime integration runbook](../docs/shared-codex-runtime.md).
