@@ -12,8 +12,13 @@
   public-GHCR anonymous immutable digest receipts on a settled commit.
 - [ ] Confirm three GHCR packages Public and anonymously retrievable by digest,
   record observed Actions run and Docker image digest receipts.
-- [ ] Implement WIF-governed digest-pinned manual release, 0%-traffic
-  Cloud Run candidates, readback and all real integration/security gates.
+- [x] Source: `.github/workflows/omniagent-ghcr-cloudrun-candidate.yml`
+  now listens only to a successful own-repo GHCR workflow run and demands
+  exact-current-main, three anonymous public GHCR digests, WIF and
+  0%-traffic candidate config/traffic checks; actual execution OPEN.
+- [ ] Implement and validate full approved production promotion/release,
+  0%-candidate runtime probes, owner/browser and real integration/security
+  gates; candidate-only source does not imply deployment acceptance.
 - [ ] Implement serialized safe promotion/real traffic rollback, readback,
   budget controls, stale-SHA protection and recovery evidence.
 - [x] Source: post-release **keep latest 10 Cloud Run revisions per service**
