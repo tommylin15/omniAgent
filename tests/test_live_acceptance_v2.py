@@ -33,7 +33,7 @@ class OidcIdentitySafety(unittest.TestCase):
     def test_web_oauth_audience_retains_existing_approved_client_sa_path(self):
         email = "omniagent-codex-chat-client@example.iam.gserviceaccount.com"
         audience = "123456789-abcdefghijklmnopqrstuvwxyz.apps.googleusercontent.com"
-        with patch.object(v2, "gcloud", return_value="synthetic-web-id-token") as sdk, \\
+        with patch.object(v2, "gcloud", return_value="synthetic-web-id-token") as sdk, \
                 patch.object(v2.urllib.request, "urlopen") as http:
             self.assertEqual(v2.identity(email, audience), "synthetic-web-id-token")
         sdk.assert_called_once_with("auth", "print-identity-token",
