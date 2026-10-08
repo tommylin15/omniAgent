@@ -3,6 +3,7 @@ import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { extname, isAbsolute, relative, resolve } from "node:path";
 import { ChatConflict, ChatNotFound, type ChatStore, type ThreadInput } from "./storage.js";
+import type { ChatDispatcher } from "./gateway_dispatch.js";
 
 export type Principal = { issuer: string; subject: string };
 export type VerifyUser = (token: string) => Promise<Principal>;
@@ -85,7 +86,8 @@ function threadInput(value: Record<string, unknown>): ThreadInput {
     ...(value.parentThreadId === undefined ? {} : { parentThreadId: id(value.parentThreadId,"parent thread id") }) };
 }
 
-export function makeChatServer(store: ChatStore, verifyUser: VerifyUser, verifyService: VerifyService) {
+export function makeChatServer(store: ChatStore, verifyUser: VerifyUser, verifyService: VerifyService,
+                               dispatcher?: Pick<ChatDispatcher,"runOnce">) {
   return createServer(async (request, response) => {
     const url = new URL(request.url ?? "/", "http://localhost");
     if (request.method === "GET" && url.pathname === "/health") return send(response,200,{ status: "ok" });
@@ -102,6 +104,12 @@ export function makeChatServer(store: ChatStore, verifyUser: VerifyUser, verifyS
       const token = bearer(request);
       if (url.pathname.startsWith("/internal/v1/")) {
         await verifyService(token);
+        // A caller cannot select an owner: the dispatcher claims its own
+        // owner-bound work from PostgreSQL. This endpoint is disabled by default.
+        if (request.method === "POST" && url.pathname === "/internal/v1/chat/dispatch:once") {
+          if (!dispatcher) return send(response,404,{ error:"not_found" });
+          return send(response,200,await dispatcher.runOnce());
+        }
         const value = await body(request);
         const ownerId = id(value.ownerId,"owner id");
         const threadId = id(value.threadId,"thread id");
