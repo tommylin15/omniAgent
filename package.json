@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsc -p services/agent-gateway/tsconfig.json && tsc -p services/chat-api/tsconfig.json",
+    "build": "tsc -p services/agent-gateway/tsconfig.json && tsc -p services/chat-api/tsconfig.json && tsc -p services/shared-codex/tsconfig.json",
     "chat:start": "node services/chat-api/dist/services/chat-api/main.js",
     "test": "vitest run"
   },
