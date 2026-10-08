@@ -16,7 +16,7 @@ permissions:
 env:
   PROJECT: gen-lang-client-0593591102
   REGION: us-central1
-  TAG: ghcr-36fe37ea186a
+  TAG: ghcr-c37f132619da
 
 jobs:
   chat-web:
@@ -34,11 +34,22 @@ jobs:
         run: |
           set -euo pipefail
           gcloud run services describe omniagent-chat --project="$PROJECT" --region="$REGION" --format=json > "$RUNNER_TEMP/chat.json"
+          gcloud run revisions describe omniagent-chat-00028-ziw --project="$PROJECT" --region="$REGION" --format=json > "$RUNNER_TEMP/chat-revision.json"
+          python3 - "$RUNNER_TEMP/chat-revision.json" <<'PY'
+          import json,sys
+          revision=json.load(open(sys.argv[1]))
+          containers=(revision.get("spec") or {}).get("containers") or []
+          env=(containers[0].get("env") or []) if containers else []
+          flags=[row for row in env if row.get("name")=="CHAT_DISPATCH_ENABLED"]
+          if any(row.get("value")=="true" or row.get("valueFrom") for row in flags):
+              raise SystemExit("BLOCKED: Chat dispatcher unexpectedly enabled")
+          print("chat_candidate_dispatch_default_disabled=PASS")
+          PY
           python3 - "$RUNNER_TEMP/chat.json" <<'PY'
           import json,sys,urllib.request,urllib.error
           s=json.load(open(sys.argv[1])); routes=s.get("status",{}).get("traffic",[])
-          targets=[t for t in routes if t.get("tag")=="ghcr-36fe37ea186a"
-                   and t.get("revisionName")=="omniagent-chat-00026-vov" and t.get("percent",0)==0]
+          targets=[t for t in routes if t.get("tag")=="ghcr-c37f132619da"
+                   and t.get("revisionName")=="omniagent-chat-00028-ziw" and t.get("percent",0)==0]
           if len(targets)!=1: raise SystemExit("BLOCKED: Chat candidate identity/tag/traffic changed")
           origin=targets[0].get("url","").rstrip("/")
           if not origin.startswith("https://"): raise SystemExit("BLOCKED: invalid candidate url")
@@ -56,6 +67,17 @@ jobs:
                                "expected":expected,"observed":actual,
                                "pass":actual==expected},sort_keys=True))
               good &= actual==expected
+          # Unauthenticated negative test: no claim and no provider invocation.
+          path="/internal/v1/chat/dispatch:once"
+          req=urllib.request.Request(origin+path,data=b"{}",
+              headers={"Content-Type":"application/json"},method="POST")
+          try:
+              with urllib.request.urlopen(req,timeout=30) as resp: actual=resp.status
+          except urllib.error.HTTPError as e: actual=e.code
+          except Exception: actual="UNREACHABLE"
+          print(json.dumps({"target":"chat-candidate","route":path,"method":"POST",
+                            "expected":401,"observed":actual,"pass":actual==401},sort_keys=True))
+          good &= actual==401
           if not good: raise SystemExit("BLOCKED: Chat browser/protected-route smoke is not accepted")
           print("chat_browser_assets_and_api_auth_smoke=PASS")
           PY
@@ -68,10 +90,10 @@ jobs:
       matrix:
         include:
           - service: omniagent-agent-gateway
-            revision: omniagent-agent-gateway-00017-fey
+            revision: omniagent-agent-gateway-00019-sim
             caller: omniagent-chat
           - service: omniagent-shared-codex
-            revision: omniagent-shared-codex-00010-vih
+            revision: omniagent-shared-codex-00012-gej
             caller: omniagent-codex-chat-client
     steps:
       - uses: google-github-actions/auth@v2
