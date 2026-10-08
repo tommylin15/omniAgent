@@ -23,7 +23,12 @@ and `omniagent-shared-codex`. No new worker/Compute Engine service.
 explicitly push to Artifact Registry, or write CI/CD assets, logs, locks or
 evidence to GCS. It does not introduce Compute Engine. Cloud Run's *managed*
 image import/caching is not an explicit CI/CD write to Artifact Registry.
-Do not delete legacy GCS/Artifact Registry assets as part of this migration.
+Do not delete legacy GCS/Artifact Registry assets **until** the GHCR
+cutover has passed, real GCP dependencies have been inventoried, and the
+[one-time retirement gate](legacy-gcs-ar-retirement.md) has approved
+exact targets. That plan covers **AR Docker images, entire AR repositories,
+GCS objects and buckets**, excludes shared/unknown/runtime resources and
+is **not** a release job or the last-10-Cloud-Run-revision cleanup step.
 Separately approved runtime **application** GCS/Iceberg data storage is not
 changed by this CI/CD decision.
 
