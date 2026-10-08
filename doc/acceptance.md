@@ -13,6 +13,13 @@ results**; the old Cloud Build V2 checkpoint below is historical only.
 - [ ] Safe promotion, original traffic snapshot, actual rollback drill and traffic readback PASS; stale/partial release cannot alter serving allocation.
 - [ ] Final successful deployment job runs ten-revision retention separately for Chat, Gateway and Shared: keep newest 10 (or all if fewer), including the exact latest promoted 100%-traffic revision and previously recorded known-good rollback target. Dry-run, per-deletion state revalidation and final readback PASS; tagged/serving older revisions or rollback outside newest 10 BLOCK cleanup rather than force deletion. Confirm GHCR images unchanged and actual Cloud Run state/permissions.
 - [ ] Old Cloud Build push/release triggers disabled only after replacement success; verified new path does not run Cloud Build, explicitly write GCS/Artifact Registry or create Compute Engine.
+- [ ] Legacy GCS/Artifact Registry retirement gate: live inventory (all
+  buckets/objects and AR images/tags/digests/**repositories**) with owners,
+  runtime/service/job/execution dependencies and rollback source; classify
+  shared/unknown as BLOCKED; exact-target dry-run + owner-approved manifest
+  before deletion and post-delete readback/health. See
+  [retirement plan](../docs/legacy-gcs-ar-retirement.md).
+  No object, Docker image or repository deletion is claimed from documents.
 - [ ] Optional legacy Cloud Build read-only Actions bridge WIF, build status, failure steps and masked error summary tested; no mutation or raw secret exposure.
 
 See [policy](spec.md#8-cicd--github-actions--public-ghcr--cloud-run-2026-10-08)
