@@ -1,0 +1,62 @@
+# Read-only bridge for ChatGPT/GitHub connector: inspect an existing Cloud Build.
+# Does NOT trigger builds or access Secret payloads, GCS objects, or Artifact Registry.
+name: omniAgent Cloud Build status read-only
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_id:
+        description: 'Existing Cloud Build UUID in us-central1'
+        required: true
+        type: string
+  push:
+    branches: [main]
+    paths: ['.github/workflows/omniagent-cloudbuild-status-readonly.yml']
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  diagnose:
+    if: github.repository == 'tommylin15/omniAgent' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+          service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Read one existing Build status and failure step names
+        shell: bash
+        env:
+          BUILD_ID: ${{ inputs.build_id }}
+        run: |
+          set -euo pipefail
+          build="$BUILD_ID"
+          # Initial workflow-creation push checks the last known failed Build only.
+          if [[ -z "$build" ]]; then
+            build="9b8dfc2e-abc1-4a41-88d5-05d32ceaf46a"
+          fi
+          [[ "$build" =~ ^[0-9a-f]{8}-[0-9a-f-]{27,36}$ ]] || exit 2
+          gcloud builds describe "$build" \
+            --region=us-central1 --project=gen-lang-client-0593591102 \
+            --format=json > "$RUNNER_TEMP/build.json"
+          python3 - "$RUNNER_TEMP/build.json" <<'PY'
+          import json,sys
+          b=json.load(open(sys.argv[1],encoding="utf8"))
+          print("build_id="+str(b.get("id","UNKNOWN")))
+          print("build_status="+str(b.get("status","UNKNOWN")))
+          print("build_source_sha="+str((b.get("substitutions") or {}).get("COMMIT_SHA","UNKNOWN")))
+          print("build_mode="+str((b.get("substitutions") or {}).get("_MODE","UNKNOWN")))
+          failure=b.get("failureInfo") or {}
+          print("failure_class="+str(failure.get("type","UNKNOWN")))
+          for i,step in enumerate(b.get("steps",[])):
+              if step.get("status") in ("FAILURE","TIMEOUT","CANCELLED","SUCCESS"):
+                  ident=str(step.get("id") or "step-"+str(i))
+                  print("step="+ident+" status="+str(step.get("status")))
+          print("raw_logs=NOT_READ")
+          print("secret_values=NOT_READ")
+          print("cloudbuild_mutations=NONE")
+          PY
