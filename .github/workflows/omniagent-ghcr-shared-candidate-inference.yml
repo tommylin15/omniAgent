@@ -41,8 +41,8 @@ jobs:
           s=json.load(open(sys.argv[1])); iam=json.load(open(sys.argv[2]))
           routes=s.get("status",{}).get("traffic",[])
           active=[t for t in routes if t.get("percent",0)>0]
-          tagged=[t for t in routes if t.get("tag")=="ghcr-66775eb1364e"
-                  and t.get("revisionName")=="omniagent-shared-codex-00008-wot"
+          tagged=[t for t in routes if t.get("tag")=="ghcr-49a94edfbf12"
+                  and t.get("revisionName")=="omniagent-shared-codex-00009-qid"
                   and t.get("percent",0)==0]
           if len(tagged)!=1 or len(active)!=1 or active[0].get("percent")!=100:
               raise SystemExit("BLOCKED: candidate or live traffic drift")
@@ -53,7 +53,7 @@ jobs:
               raise SystemExit("BLOCKED: private invoker contract changed")
           c=s.get("spec",{}).get("template",{}).get("spec",{}).get("containers") or [{}]
           ref=c[0].get("image","")
-          if ref!="ghcr.io/tommylin15/omniagent-shared-codex@sha256:5a88ac1018033792d411b4fe1574d386631e7309d0459360c725ea352cb8dc0a":
+          if ref!="ghcr.io/tommylin15/omniagent-shared-codex@sha256:3bc7e9f442f277ccaeac27b1626547eeb51674ee2d6ab84e17040d90cbe18b37":
               raise SystemExit("BLOCKED: SHA-pinned GHCR image changed")
           tagurl=tagged[0].get("url","").rstrip("/")
           audience=s.get("status",{}).get("url","").rstrip("/")
@@ -97,14 +97,20 @@ jobs:
           approved={"auth_load","app_server_spawn","app_server_initialize",
                     "account_read","account_refresh","thread_start","turn_start","turn_events",
                     "auth_persist","unknown"}
+          reason="UNCLASSIFIED"
           try:
               d=json.load(open(sys.argv[1]))
               stage=d.get("failureStage") if d.get("error")=="codex_execution_failed" else None
+              value=d.get("failureReason") if d.get("error")=="codex_execution_failed" else None
+              if value in {"reauth_required","refresh_rejected","refresh_timeout",
+                           "refresh_network","account_unavailable","unknown"}:
+                  reason=value
           except Exception:
               stage=None
           if stage not in approved: stage="UNCLASSIFIED"
           print("real_candidate_inference=BLOCKED project="+os.environ["LABEL"]+
-                " http="+os.environ["STATUS"]+" safe_failure_stage="+stage)
+                " http="+os.environ["STATUS"]+" safe_failure_stage="+stage+
+                " safe_refresh_reason="+reason)
           PY
               exit 1
             fi
