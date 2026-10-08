@@ -12,6 +12,37 @@ if spec.loader and Path(spec.origin).exists():
 
 
 class ReleaseSafety(unittest.TestCase):
+    @staticmethod
+    def private_chat_service():
+        return {"spec": {"template": {
+            "metadata": {"annotations": {
+                "run.googleapis.com/vpc-access-egress": "private-ranges-only",
+                "run.googleapis.com/network-interfaces": '[{"network":"approved-private"}]'}},
+            "spec": {"containers": [{"env": [{
+                "name": "CHAT_DATABASE_URL",
+                "valueFrom": {"secretKeyRef": {"name": "omniagent-chat-db", "key": "latest"}}
+            }]}]}}}}
+
+    def test_chat_tls_requires_private_egress_and_dedicated_secret(self):
+        good = self.private_chat_service()
+        v2.require_private_chat_tls_target(good)
+        missing_vpc = self.private_chat_service()
+        del missing_vpc["spec"]["template"]["metadata"]["annotations"]["run.googleapis.com/network-interfaces"]
+        with self.assertRaisesRegex(RuntimeError, "private VPC"):
+            v2.require_private_chat_tls_target(missing_vpc)
+        old_secret = self.private_chat_service()
+        old_secret["spec"]["template"]["spec"]["containers"][0]["env"][0]["valueFrom"]["secretKeyRef"]["name"] = "historical-bundle"
+        with self.assertRaisesRegex(RuntimeError, "dedicated DB Secret"):
+            v2.require_private_chat_tls_target(old_secret)
+
+    def test_chat_candidate_tls_mode_must_be_read_back(self):
+        revision = {"spec": {"containers": [{"env": [{
+            "name": "CHAT_DATABASE_TLS_MODE", "value": "private-self-signed"}]}]}}
+        v2.require_chat_candidate_tls(revision)
+        revision["spec"]["containers"][0]["env"][0]["value"] = "default"
+        with self.assertRaisesRegex(RuntimeError, "TLS mode drift"):
+            v2.require_chat_candidate_tls(revision)
+
     def test_candidate_tag_fits_cloud_run_for_every_existing_service(self):
         def stop_at_deploy(*args):
             if args[:2] == ("run", "deploy"):
@@ -20,11 +51,15 @@ class ReleaseSafety(unittest.TestCase):
         for key, name in v2.SERVICES.items():
             state = {"sha": "a" * 40, "components": [key], "services": {key: {"image": "pkg@sha256:test"}}}
             with patch.object(v2, "fresh"), patch.object(v2, "cloud_json", return_value=[]), \
+                patch.object(v2, "service", return_value=self.private_chat_service()), \
                 patch.object(v2, "gcloud", side_effect=stop_at_deploy) as sdk:
                 with self.assertRaisesRegex(RuntimeError, "deployment boundary"):
                     v2.deploy(state)
             tag = next(arg.split("=", 1)[1] for arg in sdk.call_args.args if arg.startswith("--tag="))
             self.assertLessEqual(len(tag) + len(name), 46)
+            if key == "chat":
+                self.assertIn("--no-traffic", sdk.call_args.args)
+                self.assertIn("--update-env-vars=CHAT_DATABASE_TLS_MODE=private-self-signed", sdk.call_args.args)
 
     def test_missing_sha_image_builds_without_parsing_sdk_error_text(self):
         state = {"sha": "a" * 40, "components": ["chat"], "google_client_id": "existing",

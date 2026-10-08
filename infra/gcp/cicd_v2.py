@@ -71,6 +71,27 @@ def candidate_route(service, tag):
     return route
 
 
+def require_private_chat_tls_target(snapshot):
+    """Allow dev-only self-signed TLS mode only for the bounded private Chat DB."""
+    template = snapshot.get("spec", {}).get("template", {})
+    annotations = template.get("metadata", {}).get("annotations", {})
+    if annotations.get("run.googleapis.com/vpc-access-egress") != "private-ranges-only" or not annotations.get("run.googleapis.com/network-interfaces"):
+        raise RuntimeError("Chat TLS mode blocked: private VPC egress not verified")
+    containers = template.get("spec", {}).get("containers", [])
+    env = containers[0].get("env", []) if len(containers) == 1 else []
+    database = next((item for item in env if item.get("name") == "CHAT_DATABASE_URL"), {})
+    ref = database.get("valueFrom", {}).get("secretKeyRef", {})
+    if ref.get("name") != "omniagent-chat-db" or ref.get("key") != "latest":
+        raise RuntimeError("Chat TLS mode blocked: dedicated DB Secret not verified")
+
+
+def require_chat_candidate_tls(revision):
+    containers = revision.get("spec", {}).get("containers", [])
+    env = containers[0].get("env", []) if len(containers) == 1 else []
+    if not any(item.get("name") == "CHAT_DATABASE_TLS_MODE" and item.get("value") == "private-self-signed" for item in env):
+        raise RuntimeError("same-SHA candidate TLS mode drift")
+
+
 def historical_sha(image, rows):
     tags = {tag for row in rows if row.get("package", "") + "@" + row["version"] == image
         for tag in row.get("tags", []) if re.fullmatch(r"[0-9a-f]{40}", tag)}
@@ -330,12 +351,17 @@ def deploy(state):
                 raise RuntimeError("same-SHA candidate tag drift")
             runtime = cloud_json("run", "revisions", "describe", revision, f"--region={REGION}")
             require_digest(row["image"], runtime["status"]["imageDigest"])
+            if key == "chat":
+                require_chat_candidate_tls(runtime)
             row.update(candidate_url=route["url"], candidate_revision=revision, candidate_tag=tag)
             save(state)
             continue
         args = ["run", "deploy", SERVICES[key], f"--region={REGION}", "--image=" + row["image"],
             "--no-traffic", "--tag=" + tag, "--revision-suffix=" + revision[len(SERVICES[key]) + 1:],
             "--update-labels=cicd-v2-candidate-sha=" + state["sha"]]
+        if key == "chat":
+            require_private_chat_tls_target(service(SERVICES[key]))
+            args += ["--update-env-vars=CHAT_DATABASE_TLS_MODE=private-self-signed"]
         if key == "gateway":
             try:
                 gcloud("secrets", "describe", "omniagent-provider-bundle")
@@ -349,6 +375,8 @@ def deploy(state):
         route = candidate_route(after, tag)
         runtime = cloud_json("run", "revisions", "describe", route["revisionName"], f"--region={REGION}")
         require_digest(row["image"], runtime["status"]["imageDigest"])
+        if key == "chat":
+            require_chat_candidate_tls(runtime)
         if runtime["spec"]["serviceAccountName"] != row["runtime_sa"]:
             raise RuntimeError("candidate runtime identity changed")
         row.update(candidate_url=route["url"], candidate_revision=route["revisionName"], candidate_tag=tag)
