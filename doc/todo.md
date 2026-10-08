@@ -40,9 +40,15 @@
 - [x] Record separate **legacy GCS and Artifact Registry retirement plan**,
   including old AR Docker images **and entire AR repositories** (not just
   CI-only GCS objects/buckets): [retirement gate](../docs/legacy-gcs-ar-retirement.md).
-- [ ] Read-only inventory and classify all actual GCS buckets/objects, AR
-  repositories/images/digests, consumers, Cloud Run service revisions/jobs/
-  executions and recovery needs across regions; shared/unknown stays BLOCKED.
+- [x] First WIF **read-only GCP** inventory:
+  [run #37767798184](https://github.com/tommylin15/omniAgent/actions/runs/37767798184)
+  confirms three AR formal-traffic services and two enabled old Cloud Build
+  triggers; [run #37768217815](https://github.com/tommylin15/omniAgent/actions/runs/37768217815)
+  confirms four AR packages and 9/5/4 AR revisions. GCS list returns
+  NO_PERMISSION_OR_UNAVAILABLE; **no bucket deletion list is validated**.
+  [Live checkpoint](../docs/cicd-transition-runtime-evidence.md).
+- [ ] Obtain admin-scoped read-only GCS inventory, AR digest/consumer/Job
+  dependencies and recovery evidence across regions; shared/unknown stays BLOCKED.
 - [ ] After GHCR/Cloud Run cutover acceptance and old trigger retirement,
   capture one-time dry-run manifest, confirm owner authorization for exact
   assets and delete only demonstrably unreferenced **omniAgent-owned**
