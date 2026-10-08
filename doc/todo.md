@@ -8,17 +8,34 @@
 - [x] Source: expand `.github/workflows/omniagent-ghcr-publish.yml` to
   ordinary `main` code changes; quality [Actions #37767763854](https://github.com/tommylin15/omniAgent/actions/runs/37767763854)
   PASS, publish intentionally BLOCKED by stale main SHA before any GHCR image.
-- [ ] Observe exact-head main source quality and all three successful
-  public-GHCR anonymous immutable digest receipts on a settled commit.
-- [ ] Confirm three GHCR packages Public and anonymously retrievable by digest,
-  record observed Actions run and Docker image digest receipts.
+- [x] Observed exact-source-SHA `3cf40bc7a9223a5ce7efa630dbd837c4ff57a46a`
+  full quality + all three immutable GHCR image publishes
+  [#37768680175](https://github.com/tommylin15/omniAgent/actions/runs/37768680175).
+- [x] All three GHCR immutable digests anonymously retrieved, including
+  Shared Codex after package visibility was changed to Public; candidate
+  [#37768993666 attempt 2](https://github.com/tommylin15/omniAgent/actions/runs/37768993666).
 - [x] Source: `.github/workflows/omniagent-ghcr-cloudrun-candidate.yml`
   now listens only to a successful own-repo GHCR workflow run and demands
   exact-current-main, three anonymous public GHCR digests, WIF and
-  0%-traffic candidate config/traffic checks; actual execution OPEN.
+  0%-traffic candidate config/traffic checks. Three 0%-traffic Cloud Run
+  candidates actually created and pinned in [#37768993666 attempt 2](https://github.com/tommylin15/omniAgent/actions/runs/37768993666).
+- [x] Three candidate image/traffic/ready readbacks
+  [#37773167073](https://github.com/tommylin15/omniAgent/actions/runs/37773167073)
+  PASS; Chat homepage/JS/ready/auth and signed private health on Gateway
+  and Shared [#37773639139](https://github.com/tommylin15/omniAgent/actions/runs/37773639139)
+  PASS. No formal traffic promotion.
+- [ ] **BLOCKER:** Shared 0%-candidate real inference gave HTTP 502
+  [#37773850397](https://github.com/tommylin15/omniAgent/actions/runs/37773850397);
+  old 100%-serving AR Shared control also gave 502
+  [#37774120512](https://github.com/tommylin15/omniAgent/actions/runs/37774120512).
+  New GHCR Codex CLI 0.153.4 binary boot [#37774590569](https://github.com/tommylin15/omniAgent/actions/runs/37774590569)
+  PASS. Candidate logging not readable with current CI IAM; obtain sanitized
+  failure classification, resolve runtime/provider and repeat three signed
+  inference plus isolation cases. **Do not attribute this to GHCR alone**.
 - [ ] Implement and validate full approved production promotion/release,
-  0%-candidate runtime probes, owner/browser and real integration/security
-  gates; candidate-only source does not imply deployment acceptance.
+  human browser OAuth/two-owner, real Chat→Gateway/dispatcher/provider
+  integration and remaining security/approval/reconnect gates.
+  Candidate smoke does not imply production acceptance.
 - [ ] Implement serialized safe promotion/real traffic rollback, readback,
   budget controls, stale-SHA protection and recovery evidence.
 - [x] Source: post-release **keep latest 10 Cloud Run revisions per service**
