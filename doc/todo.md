@@ -161,3 +161,12 @@ The 2026-10-07 credential/lakehouse decisions are `TARGET-DESIGN`, not completed
 - [ ] **Post-MVP** — durable idempotent request tracking/replay, rate/quota policy, observability, retries, approvals/tools/code execution scoped per caller, optional asynchronous workflow.
 
 See [dedicated runtime integration runbook](../docs/shared-codex-runtime.md).
+
+### Shared Codex live checkpoint — 2026-10-08
+
+- **External application code is outside this work package**: do not modify any consumer repository. Consumer-side request/response adapter deployment is owned by separate agents after the shared endpoint is ready.
+- **Deployment image PASS**: GitHub Actions `37708000610` built and pushed `omniagent-shared-codex:dcea992f20be424048941e86ad85f11515b4d65f`, digest `sha256:55212af1496c3b0f284779f9c3f6a752f2eda1c469b7c2deec08fa52cd0cecbd`; container Codex version `0.153.4`.
+- **GCP deployment BLOCKED (IAM)**: `37707944086` source/build/GCP WIF PASS then `secretmanager.versions.get` denied for `omniagent-ci`; `37708023596` attempted standalone infrastructure bootstrap but `secretmanager.secrets.create` denied. No isolated Secret version or Cloud Run service deployment was evidenced by these runs.
+- **Owner approved legacy Secret retirement without waiting for consumer cutover**: do not require another agent to finish first. Nonetheless preserve the legacy Secret until *this* service has copied auth under a dedicated Secret, completed verified Codex live inference, and passed security/isolation deployment readback. Do not silently delete based on a code commit or a build. No legacy Secret delete has occurred.
+- **Required manual IAM bootstrap**: the GCP project administrator must provision the dedicated Secret, dedicated service accounts and necessary Secret access/version IAM; grant only read-only Secret metadata visibility to CI on its own resource, not project-wide Secret access. See `docs/shared-codex-runtime.md`.
+- **Next exact gates**: approved auth transfer/readback -> Secret/SA IAM -> gated Cloud Run deploy -> signed invocation + live provider output -> legacy Secret retire -> consumer teams receive endpoint contract. Reporting must not claim downstream consumer integration before their own acceptance.
