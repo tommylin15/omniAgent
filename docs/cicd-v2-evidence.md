@@ -59,3 +59,12 @@ unimplemented. Canonical release/full live acceptance/CLOSED are not claimed.
   Image step then failed before Docker build because the SDK returns `Image not found`
   instead of `NOT_FOUND`. Replaced message parsing with structured registry SHA-tag
   inventory. No candidate/traffic/live inference from this attempt is claimed.
+- Main `b8128b7bb5900a74ceb59c37b9a7f9b3748e4605` CI
+  `911e545e-3eb2-4520-955f-be9b7ad2b425` **SUCCESS**. Shadow
+  `07d182bd-a24b-4479-a6ce-7e7f02866d85` source gates PASS, then stopped because
+  Debian 13 separates `docker-cli` from `docker.io` (daemon); no candidate deployed.
+- Toolchain-only build `5d80441f-dff2-49a8-9319-030cc117966d` **SUCCESS**:
+  SDK slim + `docker-cli docker-buildx`, Python, Docker client/host daemon and real
+  hello-world container. Regional, existing CI SA, CLOUD_LOGGING_ONLY, no source
+  upload/staging or new Runtime. Five-minute timeout. Package source:
+  https://packages.debian.org/trixie/docker-cli.

@@ -61,7 +61,7 @@ steps:
   - id: immutable-docker-build-and-push
     name: gcr.io/google.com/cloudsdktool/google-cloud-cli:slim
     entrypoint: bash
-    args: [-ceu, 'if [[ "${_MODE}" != ci ]]; then apt-get update -qq && apt-get install -y -qq --no-install-recommends docker.io && python3 infra/gcp/cicd_v2.py build; fi']
+    args: [-ceu, 'if [[ "${_MODE}" != ci ]]; then apt-get update -qq && apt-get install -y -qq --no-install-recommends docker-cli docker-buildx && docker version && python3 infra/gcp/cicd_v2.py build; fi']
 
   - id: no-traffic-candidates
     name: gcr.io/google.com/cloudsdktool/google-cloud-cli:slim

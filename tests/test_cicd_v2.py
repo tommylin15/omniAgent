@@ -37,6 +37,8 @@ class ReleaseSafety(unittest.TestCase):
         config = (Path(__file__).parents[1] / "cloudbuild-v2.yaml").read_text()
         builder = config.split("- id: immutable-docker-build-and-push", 1)[1].split("- id:", 1)[0]
         self.assertIn("google-cloud-cli:slim", builder)
+        self.assertIn("docker-cli docker-buildx", builder)
+        self.assertNotIn("docker.io", builder)
 
     def test_cleanup_keeps_job_and_execution_images(self):
         state = {"services": {}}
