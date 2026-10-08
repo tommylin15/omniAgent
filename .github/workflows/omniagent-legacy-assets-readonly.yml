@@ -1,0 +1,73 @@
+# Legacy asset metadata only: no payload, object reads, delete, or policy updates.
+name: omniAgent scoped legacy asset inventory
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/omniagent-legacy-assets-readonly.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  inspect:
+    if: github.repository == 'tommylin15/omniAgent' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+          service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Enumerate only scoped metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          P=gen-lang-client-0593591102
+          R=us-central1
+          if gcloud storage buckets list --project="$P" --format=json > "$RUNNER_TEMP/buckets.json" 2>/dev/null; then
+            python3 - "$RUNNER_TEMP/buckets.json" <<'PY'
+          import json,sys
+          b=json.load(open(sys.argv[1]))
+          print("gcs_all_bucket_count="+str(len(b)))
+          for x in b:
+              n=str(x.get("name",""))
+              if "omniagent" in n.lower() or "cloudbuild" in n.lower():
+                  print("gcs_legacy_candidate="+json.dumps({"name":n,"location":x.get("location"),
+                    "hold":bool(x.get("retentionPolicy")),"soft_delete":bool(x.get("softDeletePolicy"))},sort_keys=True))
+          PY
+          else
+            echo "gcs_buckets_inventory=NO_PERMISSION_OR_UNAVAILABLE"
+          fi
+          if gcloud artifacts packages list --repository=omniagent --location="$R" --project="$P" --format=json > "$RUNNER_TEMP/packages.json" 2>/dev/null; then
+            python3 - "$RUNNER_TEMP/packages.json" <<'PY'
+          import json,sys
+          rows=json.load(open(sys.argv[1]))
+          print("ar_omniagent_package_count="+str(len(rows)))
+          for x in rows:
+              print("ar_omniagent_package_name="+str(x.get("name","")).split("/")[-1])
+          PY
+          else
+            echo "ar_omniagent_packages=NO_PERMISSION_OR_UNAVAILABLE"
+          fi
+          for svc in omniagent-chat omniagent-agent-gateway omniagent-shared-codex; do
+            if gcloud run revisions list --service="$svc" --project="$P" --region="$R" --format=json > "$RUNNER_TEMP/revisions.json" 2>/dev/null; then
+              python3 - "$RUNNER_TEMP/revisions.json" "$svc" <<'PY'
+          import json,sys
+          r=json.load(open(sys.argv[1]))
+          print("cloudrun_revision_count="+sys.argv[2]+" "+str(len(r)))
+          origins=set()
+          for x in r:
+              containers=(x.get("spec",{}) or {}).get("containers") or []
+              for c in containers:
+                  i=str(c.get("image",""))
+                  if i.startswith("ghcr.io/"): origins.add("GHCR")
+                  elif ".pkg.dev/" in i: origins.add("AR")
+                  else: origins.add("OTHER")
+          print("cloudrun_revision_registries="+sys.argv[2]+" "+",".join(sorted(origins)))
+          PY
+            else
+              echo "cloudrun_revisions=$svc NOT_READABLE"
+            fi
+          done
+          echo "deletion_performed=NONE"
