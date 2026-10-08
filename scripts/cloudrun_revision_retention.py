@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail-closed Cloud Run revision retention: keep the latest two revisions.
+"""Fail-closed Cloud Run revision retention: keep the latest ten revisions.
 
 Only call --apply AFTER real candidate acceptance, promotion, rollback rehearsal
 and readback; normally through the release pipeline's last gated job.
@@ -17,6 +17,7 @@ from dataclasses import dataclass
 
 PROJECT = "gen-lang-client-0593591102"
 REGION = "us-central1"
+RETAIN_COUNT = 10  # Per service; neither GHCR packages nor runtime traffic are deleted.
 SERVICES = (
     "omniagent-chat",
     "omniagent-agent-gateway",
@@ -30,7 +31,7 @@ class Blocked(ValueError):
 
 @dataclass(frozen=True)
 class RetentionPlan:
-    keep: tuple[str, str]
+    keep: tuple[str, ...]
     delete: tuple[str, ...]
 
 
@@ -61,7 +62,7 @@ def select_plan(
     promoted: str,
     rollback: str,
 ) -> RetentionPlan:
-    """Return delete targets only if exactly the newest two are rollback-safe."""
+    """Return delete targets only if the newest ten preserve the live and rollback revisions."""
     if service not in SERVICES:
         raise Blocked("unknown_service")
     promoted = _name(promoted, service)
@@ -87,9 +88,13 @@ def select_plan(
     if len(records) < 2:
         raise Blocked("rollback_revision_not_available")
     records.sort(reverse=True)
-    current_two = tuple(name for _, name in records[:2])
-    if current_two != (promoted, rollback):
-        raise Blocked("newest_two_do_not_match_approved_promotion_and_rollback")
+    retained = tuple(name for _, name in records[:RETAIN_COUNT])
+    if retained[0] != promoted:
+        raise Blocked("newest_revision_not_approved_promotion")
+    # Failed or unaccepted candidate revisions may be newer than the last
+    # healthy serving revision; protect the actual prior rollback target.
+    if rollback not in retained:
+        raise Blocked("rollback_revision_outside_latest_ten")
 
     status = service_json.get("status") or {}
     if not isinstance(status, dict):
@@ -116,12 +121,12 @@ def select_plan(
         if amount and rev != promoted:
             raise Blocked("traffic_on_non_promoted_revision")
         # Tags can still route explicit requests at 0% formal traffic.
-        # Never remove a revision with a live tag outside the retained two.
-        if entry.get("tag") and rev not in current_two:
+        # Never remove a revision with a live tag outside the retained ten.
+        if entry.get("tag") and rev not in retained:
             raise Blocked("older_revision_has_live_tag")
     if total != 100:
         raise Blocked("traffic_readback_not_100_percent")
-    return RetentionPlan(current_two, tuple(name for _, name in records[2:]))
+    return RetentionPlan(retained, tuple(name for _, name in records[RETAIN_COUNT:]))
 
 
 def gcloud_json(args: list[str]):
@@ -164,7 +169,7 @@ def cleanup(service: str, promoted: str, rollback: str, apply: bool) -> dict:
         after, remaining = snapshots(service)
         final_plan = select_plan(service, after, remaining, promoted, rollback)
         if final_plan.delete:
-            raise Blocked("post_cleanup_more_than_two_revisions")
+            raise Blocked("post_cleanup_more_than_ten_revisions")
         receipt["status"] = "PASS"
     else:
         receipt["status"] = "DRY_RUN"
@@ -185,7 +190,7 @@ def main() -> int:
     except (Blocked, subprocess.CalledProcessError, ValueError, OSError) as error:
         reason = str(error) if isinstance(error, Blocked) else type(error).__name__
         print(json.dumps({"service": args.service, "status": "BLOCKED", "reason": reason}))
-        return 1  # Fail closed: never report success when fewer than 2 cannot be guaranteed.
+        return 1  # Fail closed: never report success when safe retention cannot be guaranteed.
     print(json.dumps(receipt, sort_keys=True))
     return 0
 
