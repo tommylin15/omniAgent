@@ -31,7 +31,9 @@ describe("agent gateway cloud runtime POC", () => {
     vi.spyOn(mcp, "call").mockResolvedValue({ requestId: "request-1", toolName: "quotes__latest", result: { price: 100 } });
     const bridge = new CodexBridge("00000000-0000-4000-8000-000000000001", "/tmp/omniagent-turn", client, mcp);
 
-    await bridge.initialize();
+    const stages: string[] = [];
+    await bridge.initialize((stage) => stages.push(stage));
+    expect(stages).toEqual(["protocol", "account"]);
     await bridge.logout();
     await bridge.startDeviceLogin();
     await bridge.startThread("gpt-5.6-sol", [{ serverId: "quotes", configRef: "approved", toolGrants: ["quotes__latest"] }]);
