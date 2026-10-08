@@ -12,6 +12,19 @@ if spec.loader and Path(spec.origin).exists():
 
 
 class ReleaseSafety(unittest.TestCase):
+    def test_missing_sha_image_builds_without_parsing_sdk_error_text(self):
+        state = {"sha": "a" * 40, "components": ["chat"], "google_client_id": "existing",
+            "services": {"chat": {}}}
+        def sdk(*args):
+            if args[:4] == ("artifacts", "docker", "images", "describe"):
+                raise RuntimeError("Image not found")
+            return ""
+        with patch.object(v2, "fresh"), patch.object(v2, "save"), patch.object(v2, "cloud_json", return_value=[]), \
+            patch.object(v2, "gcloud", side_effect=sdk), patch.object(v2, "command") as docker:
+            with self.assertRaises(RuntimeError):
+                v2.build_images(state)
+        self.assertTrue(any(call.args[0][:2] == ["docker", "build"] for call in docker.call_args_list))
+
     def test_historical_runtime_digest_recovers_unique_source_sha(self):
         package = v2.REGISTRY + "/omniagent-shared-codex"
         rows = [{"package": package, "version": "sha256:active", "tags": ["a" * 40]},

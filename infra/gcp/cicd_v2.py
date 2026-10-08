@@ -292,12 +292,10 @@ def build_images(state):
     gcloud("auth", "configure-docker", f"{REGION}-docker.pkg.dev")
     for key in state["components"]:
         image = f"{REGISTRY}/{SERVICES[key]}:{state['sha']}"
-        try:
-            digest = gcloud("artifacts", "docker", "images", "describe", image, "--format=value(image_summary.digest)")
-        except RuntimeError as exc:
-            if "NOT_FOUND" not in str(exc):
-                raise
-            digest = ""
+        rows = cloud_json("artifacts", "docker", "images", "list", image.split(":")[0], "--include-tags", "--limit=10000")
+        if len(rows) >= 10000:
+            raise RuntimeError("image inventory may be truncated")
+        digest = next((row["version"] for row in rows if state["sha"] in row.get("tags", [])), "")
         if digest:
             state["services"][key]["image"] = image.split(":")[0] + "@" + digest
             save(state)

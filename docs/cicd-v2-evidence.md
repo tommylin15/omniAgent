@@ -52,3 +52,10 @@ unimplemented. Canonical release/full live acceptance/CLOSED are not claimed.
 - Existing own Gateway `omniagent-bundle:2` boolean-only schema preflight:
   Gemini/OpenRouter fields present, `mcp_owner_signing_key` absent. No values logged.
   Approved complete provider bundle reference is still required.
+- Real main Push `9c9ff712902bbce9485b7749a77b145c786bbf14`:
+  CI `7b4d93c5-7ab2-452d-af77-347b748586d5` **SUCCESS**, all source gates PASS.
+- Shadow `36f89d27-975b-43cb-924a-e9e818194c77` recovered Shared baseline
+  `ff282575...`, selected only Chat/Gateway and did not rebuild Shared.
+  Image step then failed before Docker build because the SDK returns `Image not found`
+  instead of `NOT_FOUND`. Replaced message parsing with structured registry SHA-tag
+  inventory. No candidate/traffic/live inference from this attempt is claimed.
