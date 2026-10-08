@@ -91,3 +91,25 @@ Scanning stays disabled. Existing shared buckets are never deleted by this task.
 Approved `omniagent-provider-bundle` is absent; do not substitute old credentials.
 Human Google Web two-owner evidence and durable Chat dispatcher remain OPEN.
 These prevent full canonical release. CI/image success is never CLOSED.
+
+## Administrator and human checkpoints
+
+- Existing project administrator must verify whether Secret Manager contains
+  `omniagent-provider-bundle` with an enabled current version and approved
+  JSON fields `gemini_api_key`, `openrouter_api_key`, and
+  `mcp_owner_signing_key` (minimum 32 characters), and grant only the
+  existing Gateway runtime service account the narrowly required access.
+  If it is missing, complete the already-approved administrator path.
+  Never paste credentials into chat, GitHub, evidence or build logs;
+  never substitute the historical unrelated bundle.
+- After a healthy Chat candidate exists, two distinct human Google identities
+  must complete genuine browser OAuth and owner/cross-owner isolation checks.
+  Signed CI service accounts do not replace this acceptance evidence.
+- The separate durable Chat-to-Gateway dispatcher and real gateway provider
+  integration remain engineering gates; neither should be marked PASS by
+  a Source/Node-CI build. Do not release while these gates are missing.
+- Candidate TLS mode is for the approved private dev VPC only. The deployment
+  code fails closed unless both direct private VPC egress and the dedicated
+  `omniagent-chat-db:latest` Secret reference are present. The source guard
+  is not evidence that post-deploy `/ready` succeeds; rerun a bounded 0%-traffic
+  candidate and inspect Cloud Run runtime before claiming remediation.

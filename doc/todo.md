@@ -11,8 +11,11 @@
   `400898cb-7bff-4a4f-8f94-08b89dc129e9`; full acceptance remains FAIL.
 - [x] Shared existing three identities: real responses/fresh threads/cross-project
   denial PASS; no unrelated rebuild or consumer repository changes.
-- [ ] Chat readiness 503; active/candidate DB Secret references differ. Precise
-  DB failure remains undiagnosed; formal active readiness 200/traffic unchanged.
+- [ ] Chat candidate /ready=503 remains unaccepted. Read-only live checks:
+  private DSN structure PASS, private-range VPC PASS, hostssl HBA rule present;
+  exact failure still unproven. Guarded candidate TLS source was committed and
+  21/21 V2 safety checks PASS, but **no post-fix live deployment/probe yet**.
+  Formal Chat traffic remains on the original revision at 100%.
 - [x] Recovery tag/readback and cleanup missing-digest source guards fixed;
   GitHub Node Core `37737346341` and 19/19 CI/CD V2 safety tests PASS.
 - [ ] Repeat live tagged recovery and cleanup dry-run; GitHub tests alone

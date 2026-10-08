@@ -140,3 +140,36 @@ This checkpoint preserves observed evidence; it does not resume cloud operations
   human browser OAuth and dispatcher work remain OPEN.
 - No evidence of a new canonical release, production promotion,
   successful live rollback, or image deletion was collected in this continuation.
+
+## Continued read-only diagnosis and guarded Chat candidate TLS — 2026-10-08
+
+- GitHub Actions workflow `37743601290` **SUCCESS**: Chat candidate
+  `omniagent-chat-v2-741b4e0c798bd3d8f569b39961c5e6b7` remains 0%; formal
+  Chat revision `omniagent-chat-00004-dzs` remains 100%. Candidate
+  `/health=200`, `/ready=503`. No runtime mutation by this diagnostic.
+- Dedicated PostgreSQL connection URI was **not printed**. A second read-only
+  workflow `37744057330` **SUCCESS** verified URI syntax, dedicated
+  `omniagent_chat_app` / `omniagent_chat` identity, password presence,
+  private IP, port 5432 and `sslmode=require`. Chat's Cloud Run template
+  has private-range VPC egress and a network-interfaces annotation. Candidate
+  `CHAT_DATABASE_TLS_MODE` remains UNSET; the dedicated DB Secret is referenced.
+- The CI identity could access the DB Secret payload for a local structural
+  check but could not describe the Secret version metadata. Those permissions
+  are distinct; a failed version-describe is **not** evidence of absence.
+  Gateway's approved `omniagent-provider-bundle` version remained
+  missing **or** unreadable from CI; admin verification is still necessary.
+- Cloud Logging read was denied to CI; no raw app logs were collected.
+  Read-only scoped PostgreSQL diagnostic `37743859960` **SUCCESS**:
+  an omniAgent-specific `hostssl` / `scram-sha-256` HBA rule exists;
+  no matching owner-specific authentication/HBA/TLS logs over six hours
+  and no live DB session were found. This does not establish the cause of 503.
+- Source commit `646e3e17ab571dfaf1890988e4d4e4a3e61dba18` adds a guarded
+  dev-only `CHAT_DATABASE_TLS_MODE=private-self-signed` to **no-traffic** Chat
+  deployment, requiring the approved dedicated DB Secret and private VPC
+  before use; same-SHA candidate reuse must read back that TLS mode.
+  GitHub Node Core `37744282689` **SUCCESS** (Node 33 PASS, 1 skipped;
+  V2 Python safety 21/21 PASS); Project Hygiene `37744282680` SUCCESS.
+- Self-signed TLS rejection is a **hypothesis**, not a proven cause.
+  The source fix has not yet been deployed or exercised against DB readiness.
+  No canonical release, traffic promotion, Secret/IAM modification, image
+  deletion, or real rollback was performed by this continuation.
