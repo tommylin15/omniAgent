@@ -1,5 +1,22 @@
 # omniAgent acceptance matrix
 
+## Replacement CI/CD — GitHub Actions / public GHCR / Cloud Run (OPEN)
+
+Owner decision 2026-10-08. These are acceptance requirements, **not PASSED
+results**; the old Cloud Build V2 checkpoint below is historical only.
+
+- [ ] Normal `main` push runs exact-SHA full Node/API/security, disposable PostgreSQL, Flutter, Python and hygiene gates; observed Actions PASS.
+- [ ] All three images published from that SHA, public GHCR visibility and anonymous digest retrieval demonstrated; no credentials embedded.
+- [ ] WIF identity/claim restrictions and least privilege GCP permissions read back.
+- [ ] Three existing Cloud Run candidate revisions from matching immutable digests, 0% formal traffic and runtime identity/Secret/ingress/VPC/OAuth readback PASS.
+- [ ] Live Chat/UI/browser two-owner/provider/dispatcher and Shared three-caller/integration gates PASS; no synthetic pass for unavailable components.
+- [ ] Safe promotion, original traffic snapshot, actual rollback drill and traffic readback PASS; stale/partial release cannot alter serving allocation.
+- [ ] Old Cloud Build push/release triggers disabled only after replacement success; verified new path does not run Cloud Build, explicitly write GCS/Artifact Registry or create Compute Engine.
+- [ ] Optional legacy Cloud Build read-only Actions bridge WIF, build status, failure steps and masked error summary tested; no mutation or raw secret exposure.
+
+See [policy](spec.md#8-cicd--github-actions--public-ghcr--cloud-run-2026-10-08)
+and [new release runbook](../docs/cicd-ghcr-actions-runbook.md).
+
 ## CI/CD V2 checkpoint — ACTIVE / PARTIAL
 
 Four paths: Chat API, Flutter bundled in Chat, Gateway, Shared Codex. Main Push
@@ -133,5 +150,5 @@ The project must not be called final-accepted or production-complete until expli
 - [x] Node Core run `37628904846` PASS after the ownership cleanup.
 - [ ] `OMNIAGENT_GCP_WIF_PROVIDER` configured and preflight PASS.
 - [ ] `OMNIAGENT_GCP_CI_SERVICE_ACCOUNT` configured and proven least-privilege.
-- [ ] `OMNIAGENT_ARTIFACT_REPOSITORY` configured and readable/writable by the approved build/deploy identity.
+- [ ] Historical Artifact Registry build/deploy gate (legacy checkpoint only; **not** required or to be granted for the new public GHCR path).
 - [ ] live Cloud Run configuration proves the provider bundle is injected without exposing its value.
