@@ -66,19 +66,13 @@ jobs:
           secret="${SHARED_CODEX_AUTH_RESOURCE##*/}"
           gcloud secrets versions describe latest --secret="$secret" --project="$GCP_PROJECT_ID" \
             --format='value(state)' | grep -Fx ENABLED
-      - name: Ensure isolated service account and secret IAM
+      - name: Verify separately provisioned runtime identity
         shell: bash
         run: |
           set -euo pipefail
-          if ! gcloud iam service-accounts describe "$SHARED_CODEX_RUNTIME_SA" --project="$GCP_PROJECT_ID" >/dev/null 2>&1; then
-            gcloud iam service-accounts create omniagent-shared-codex --project="$GCP_PROJECT_ID" \
-              --display-name="omniAgent Shared Codex Runtime"
-          fi
-          secret="${SHARED_CODEX_AUTH_RESOURCE##*/}"
-          for role in roles/secretmanager.secretAccessor roles/secretmanager.secretVersionManager; do
-            gcloud secrets add-iam-policy-binding "$secret" --project="$GCP_PROJECT_ID" \
-              --member="serviceAccount:$SHARED_CODEX_RUNTIME_SA" --role="$role" --quiet >/dev/null
-          done
+          gcloud iam service-accounts describe "$SHARED_CODEX_RUNTIME_SA" \
+            --project="$GCP_PROJECT_ID" --format='value(email)'
+          echo "identity_readback=PASS"
       - name: Build immutable runtime image
         shell: bash
         run: |
@@ -113,7 +107,7 @@ jobs:
           gcloud run services update "$SHARED_CODEX_SERVICE" --project="$GCP_PROJECT_ID" \
             --region="$GCP_REGION" --update-env-vars="SHARED_CODEX_AUDIENCE=$URL" --quiet
           echo "SHARED_CODEX_URL=$URL" >> "$GITHUB_ENV"
-      - name: Authorize configured consumer identities
+      - name: Verify authorized consumer identities
         shell: bash
         run: |
           set -euo pipefail
