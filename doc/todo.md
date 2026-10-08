@@ -5,9 +5,11 @@
 - [x] Formal owner design documented: Actions complete CI, three GHCR public
   digest images, Cloud Run 0% candidates, acceptance/traffic/rollback, optional
   read-only old Cloud Build status bridge. [SPEC §8](spec.md#8-cicd--github-actions--public-ghcr--cloud-run-2026-10-08).
-- [ ] Expand current `.github/workflows/omniagent-ghcr-publish.yml`: push
-  filter presently only matches its own workflow file, not general main changes.
-  Observe exact-SHA complete normal push CI.
+- [x] Source: expand `.github/workflows/omniagent-ghcr-publish.yml` to
+  ordinary `main` code changes; quality [Actions #37767763854](https://github.com/tommylin15/omniAgent/actions/runs/37767763854)
+  PASS, publish intentionally BLOCKED by stale main SHA before any GHCR image.
+- [ ] Observe exact-head main source quality and all three successful
+  public-GHCR anonymous immutable digest receipts on a settled commit.
 - [ ] Confirm three GHCR packages Public and anonymously retrievable by digest,
   record observed Actions run and Docker image digest receipts.
 - [ ] Implement WIF-governed digest-pinned manual release, 0%-traffic
