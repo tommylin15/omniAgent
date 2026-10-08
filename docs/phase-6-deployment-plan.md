@@ -1,5 +1,7 @@
 # Phase 6 — omniAgent deployment control
 
+> **CI/CD precedence as of 2026-10-08:** Historical Cloud Build or Artifact Registry image publication instructions below are superseded for **new releases** by [GitHub Actions + public GHCR + Cloud Run runbook](cicd-ghcr-actions-runbook.md) and [SPEC §8](../doc/spec.md#8-cicd--github-actions--public-ghcr--cloud-run-2026-10-08). Keep the existing runtime networking, identities, Secret and OAuth requirements. This documentation update is not deployment evidence.
+
 Status: active control document. Current state must be proven from this repository and omniAgent runtime evidence. Do not use another project's repository as a source of truth for omniAgent credentials, deployment wiring, runtime state or completion.
 
 ## Confirmed omniAgent resources / contracts
