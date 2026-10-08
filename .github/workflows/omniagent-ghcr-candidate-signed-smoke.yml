@@ -1,0 +1,134 @@
+# Read-only positive/negative authorization and runtime smoke tests for verified
+# 0% GHCR candidates. Provider execution deliberately NOT included in this
+# workflow: no new user records, no credential rotation, no traffic changes.
+name: omniAgent GHCR candidate signed smoke
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/omniagent-ghcr-candidate-signed-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  PROJECT: gen-lang-client-0593591102
+  REGION: us-central1
+  TAG: ghcr-3cf40bc7a922
+
+jobs:
+  chat-web:
+    if: github.repository == 'tommylin15/omniAgent' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    steps:
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+          service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Browser assets, readiness and unauthorized Chat API
+        shell: bash
+        run: |
+          set -euo pipefail
+          gcloud run services describe omniagent-chat --project="$PROJECT" --region="$REGION" --format=json > "$RUNNER_TEMP/chat.json"
+          python3 - "$RUNNER_TEMP/chat.json" <<'PY'
+          import json,sys,urllib.request,urllib.error
+          s=json.load(open(sys.argv[1])); routes=s.get("status",{}).get("traffic",[])
+          targets=[t for t in routes if t.get("tag")=="ghcr-3cf40bc7a922"
+                   and t.get("revisionName")=="omniagent-chat-00021-foz" and t.get("percent",0)==0]
+          if len(targets)!=1: raise SystemExit("BLOCKED: Chat candidate identity/tag/traffic changed")
+          origin=targets[0].get("url","").rstrip("/")
+          if not origin.startswith("https://"): raise SystemExit("BLOCKED: invalid candidate url")
+          cases=(("/health",200),("/ready",200),("/",200),
+                 ("/flutter_bootstrap.js",200),("/main.dart.js",200),
+                 ("/v1/threads",401))
+          good=True
+          for path,expected in cases:
+              req=urllib.request.Request(origin+path,headers={"User-Agent":"omniagent-live-smoke/1"})
+              try:
+                  with urllib.request.urlopen(req,timeout=30) as response: actual=response.status
+              except urllib.error.HTTPError as e: actual=e.code
+              except Exception: actual="UNREACHABLE"
+              print(json.dumps({"target":"chat-candidate","route":path,
+                               "expected":expected,"observed":actual,
+                               "pass":actual==expected},sort_keys=True))
+              good &= actual==expected
+          if not good: raise SystemExit("BLOCKED: Chat browser/protected-route smoke is not accepted")
+          print("chat_browser_assets_and_api_auth_smoke=PASS")
+          PY
+  private-invocation:
+    if: github.repository == 'tommylin15/omniAgent' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: omniagent-agent-gateway
+            revision: omniagent-agent-gateway-00012-pez
+            caller: omniagent-chat
+          - service: omniagent-shared-codex
+            revision: omniagent-shared-codex-00005-kih
+            caller: omniagent-codex-chat-client
+    steps:
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+          service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Prove tagged URL and service-level protection
+        env:
+          SERVICE: ${{ matrix.service }}
+          REVISION: ${{ matrix.revision }}
+          CALLER: ${{ matrix.caller }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gcloud run services describe "$SERVICE" --project="$PROJECT" --region="$REGION" --format=json > "$RUNNER_TEMP/service.json"
+          python3 - "$RUNNER_TEMP/service.json" "$SERVICE" "$REVISION" "$TAG" > "$RUNNER_TEMP/urls.tsv" <<'PY'
+          import json,sys
+          s=json.load(open(sys.argv[1]))
+          status=s.get("status",{})
+          active=[t for t in status.get("traffic",[]) if t.get("percent",0)>0]
+          tags=[t for t in status.get("traffic",[]) if t.get("revisionName")==sys.argv[3]
+                and t.get("tag")==sys.argv[4] and t.get("percent",0)==0]
+          if len(active)!=1 or active[0].get("percent")!=100 or len(tags)!=1:
+              raise SystemExit("BLOCKED: unexpected live traffic or missing zero-percent candidate")
+          url=tags[0].get("url","").rstrip("/")
+          audience=status.get("url","").rstrip("/")
+          if not (url.startswith("https://") and audience.startswith("https://")):
+              raise SystemExit("BLOCKED: unusable private candidate URLs")
+          print(url+"\t"+audience)
+          PY
+          IFS=$'\t' read -r URL AUDIENCE < "$RUNNER_TEMP/urls.tsv"
+          test -n "$URL" && test -n "$AUDIENCE"
+          # Private invocation remains restricted. Token never written to logs.
+          set +e
+          TOKEN="$(gcloud auth print-identity-token \
+            --impersonate-service-account="$CALLER@$PROJECT.iam.gserviceaccount.com" \
+            --audiences="$AUDIENCE" --include-email 2>/dev/null)"
+          rc=$?
+          set -e
+          if [ "$rc" -ne 0 ] || [ -z "$TOKEN" ]; then
+            echo "signed_identity_mint=$SERVICE BLOCKED_NO_PERMISSION"
+            exit 1
+          fi
+          # Do not print response bodies; private endpoint allows only authorized identity.
+          for endpoint in /health /ready; do
+            status="$(curl --silent --show-error --max-time 35 -o /dev/null -w '%{http_code}' \
+              -H "Authorization: Bearer $TOKEN" "$URL$endpoint")"
+            echo "signed_candidate_http=$SERVICE $endpoint status=$status"
+            if [[ "$SERVICE" == omniagent-agent-gateway && "$endpoint" == /ready ]]; then
+              continue
+            fi
+            # Gateway has no /ready route; its /health is mandatory.
+            if [[ "$SERVICE" == omniagent-agent-gateway && "$endpoint" == /ready ]]; then
+              continue
+            fi
+            [[ "$status" == 200 ]] || { echo "signed_private_health=BLOCKED"; exit 1; }
+          done
+          echo "signed_private_health=PASS service=$SERVICE"
+          # No POST inference or user data writes. Real provider integration remains OPEN.
