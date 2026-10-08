@@ -30,6 +30,17 @@
   failure summary; current workflow only prints status, failure class and steps.
 - [ ] Verify retirement of old Cloud Build triggers **after** replacement
   passes. Do not delete historical Artifact Registry/GCS assets or create VMs.
+- [x] Record separate **legacy GCS and Artifact Registry retirement plan**,
+  including old AR Docker images **and entire AR repositories** (not just
+  CI-only GCS objects/buckets): [retirement gate](../docs/legacy-gcs-ar-retirement.md).
+- [ ] Read-only inventory and classify all actual GCS buckets/objects, AR
+  repositories/images/digests, consumers, Cloud Run service revisions/jobs/
+  executions and recovery needs across regions; shared/unknown stays BLOCKED.
+- [ ] After GHCR/Cloud Run cutover acceptance and old trigger retirement,
+  capture one-time dry-run manifest, confirm owner authorization for exact
+  assets and delete only demonstrably unreferenced **omniAgent-owned**
+  legacy AR packages/repositories and CI-only GCS buckets/objects.
+  Final GCP/runtime readback required; nothing deleted from this doc update.
 - [ ] Evidence links and final acceptance; docs/source-only is not DONE.
   [New runbook](../docs/cicd-ghcr-actions-runbook.md) ·
   [acceptance](acceptance.md).
