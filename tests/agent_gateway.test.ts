@@ -132,6 +132,22 @@ describe("agent gateway cloud runtime POC", () => {
     ]);
   });
 
+  it("can defer account refresh without treating the local read as live token validation", async () => {
+    const client = {
+      initialize: vi.fn().mockResolvedValue({}),
+      request: vi.fn(async (method: string, params: Json) =>
+        method === "account/read" && (params as { refreshToken?: boolean }).refreshToken === false
+          ? { account: { type: "chatgpt" } } : { account: null }),
+      onMessage: vi.fn(), respond: vi.fn(),
+    };
+    const bridge = new CodexBridge("00000000-0000-4000-8000-000000000001", "/tmp/omniagent-turn", client, new McpHost());
+    const stages: string[] = [];
+    await expect(bridge.initialize((stage) => stages.push(stage), { refreshToken: false })).resolves.toHaveProperty("account");
+    expect(stages).toEqual(["protocol", "account"]);
+    expect(client.request).toHaveBeenCalledTimes(1);
+    expect(client.request).toHaveBeenCalledWith("account/read", { refreshToken: false }, 30_000);
+  });
+
   it("maps allowlisted owners without accepting a credential locator from requests", () => {
     const registry = OwnerAuthRegistry.parse(JSON.stringify({
       "00000000-0000-4000-8000-000000000001": "projects/p/secrets/codex-auth-a",

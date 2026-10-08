@@ -148,7 +148,7 @@ export async function executeCodex(body: RequestBody): Promise<Execution> {
     await bridge.initialize((step) => {
       stage = step === "account" ? "account_read"
         : step === "refresh" ? "account_refresh" : "app_server_initialize";
-    });
+    }, { refreshToken: false });
     stage = "auth_persist";
     await auth.persistIfChanged(home);
     stage = "thread_start";

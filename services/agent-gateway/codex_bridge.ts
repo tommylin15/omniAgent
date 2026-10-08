@@ -76,13 +76,24 @@ export class CodexBridge {
     client.onMessage((message) => this.receive(message));
   }
 
-  async initialize(onStep?: (step: "protocol" | "account" | "refresh") => void): Promise<Json> {
+  async initialize(
+    onStep?: (step: "protocol" | "account" | "refresh") => void,
+    options: { refreshToken?: boolean } = {},
+  ): Promise<Json> {
     // Shared-service callers opt in to a non-refreshing account probe so a
     // broken local account can be distinguished from an OAuth refresh failure.
     // Other gateway callers retain the original single refreshing read.
     onStep?.("protocol");
     await this.client.initialize(true);
     onStep?.("account");
+    // A non-refreshing read verifies that a local account is present, but it
+    // does not certify that the provider token is still valid. The subsequent
+    // real model turn remains the authoritative authorization check.
+    if (options.refreshToken === false) {
+      const account = record(await this.client.request("account/read", { refreshToken: false }, 30_000));
+      if (!account.account) throw new Error("Codex managed auth is unavailable");
+      return account;
+    }
     if (onStep) {
       const snapshot = record(await this.client.request("account/read", { refreshToken: false }, 30_000));
       if (!snapshot.account) throw new Error("Codex managed auth is unavailable");
