@@ -1,0 +1,134 @@
+# Candidate-only bounded live provider acceptance for three Shared Codex callers.
+# Uses existing dedicated Secret and caller IAM; does not promote production traffic.
+name: omniAgent GHCR Shared Codex candidate inference
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/omniagent-ghcr-shared-candidate-inference.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: omniagent-ghcr-shared-candidate-inference
+  cancel-in-progress: false
+
+jobs:
+  live:
+    if: github.repository == 'tommylin15/omniAgent' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      PROJECT: gen-lang-client-0593591102
+      REGION: us-central1
+      SERVICE: omniagent-shared-codex
+    steps:
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+          service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Read back approved 0% candidate and private IAM
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          gcloud run services describe "$SERVICE" --project="$PROJECT" --region="$REGION" --format=json > "$RUNNER_TEMP/service-before.json"
+          gcloud run services get-iam-policy "$SERVICE" --project="$PROJECT" --region="$REGION" --format=json > "$RUNNER_TEMP/service-iam.json"
+          python3 - "$RUNNER_TEMP/service-before.json" "$RUNNER_TEMP/service-iam.json" "$RUNNER_TEMP/config.tsv" <<'PY'
+          import json,sys
+          s=json.load(open(sys.argv[1])); iam=json.load(open(sys.argv[2]))
+          routes=s.get("status",{}).get("traffic",[])
+          active=[t for t in routes if t.get("percent",0)>0]
+          tagged=[t for t in routes if t.get("tag")=="ghcr-3cf40bc7a922"
+                  and t.get("revisionName")=="omniagent-shared-codex-00005-kih"
+                  and t.get("percent",0)==0]
+          if len(tagged)!=1 or len(active)!=1 or active[0].get("percent")!=100:
+              raise SystemExit("BLOCKED: candidate or live traffic drift")
+          members={x for b in iam.get("bindings",[]) if b.get("role")=="roles/run.invoker" for x in b.get("members",[])}
+          expected={"serviceAccount:omniagent-codex-"+n+"-client@gen-lang-client-0593591102.iam.gserviceaccount.com"
+                    for n in ("chat","market","life")}
+          if {"allUsers","allAuthenticatedUsers"} & members or not expected.issubset(members):
+              raise SystemExit("BLOCKED: private invoker contract changed")
+          c=s.get("spec",{}).get("template",{}).get("spec",{}).get("containers") or [{}]
+          ref=c[0].get("image","")
+          if ref!="ghcr.io/tommylin15/omniagent-shared-codex@sha256:7e4a00bdd438b3a6aa50d115a02171c42e38ef9cdc4e5bfc34f0135f5ffb8dfb":
+              raise SystemExit("BLOCKED: SHA-pinned GHCR image changed")
+          tagurl=tagged[0].get("url","").rstrip("/")
+          audience=s.get("status",{}).get("url","").rstrip("/")
+          if not(tagurl.startswith("https://") and audience.startswith("https://")):
+              raise SystemExit("BLOCKED: private URL missing")
+          with open(sys.argv[3],"w") as f:
+              f.write(tagurl+"\t"+audience+"\t"+active[0]["revisionName"]+"\n")
+          print("shared_candidate=READY_ZERO_TRAFFIC; private_invokers=PASS; immutable_ghcr=PASS")
+          PY
+      - name: Three real isolated inference calls with cross-project denial
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          IFS=$'\t' read -r URL AUDIENCE SERVING < "$RUNNER_TEMP/config.tsv"
+          anon="$(curl --silent --show-error --max-time 20 -o /dev/null -w '%{http_code}' \
+              -X POST -H 'Content-Type: application/json' -d '{}' "$URL/v1/codex/execute")"
+          [[ "$anon" == "403" ]] || { echo "anonymous_denial=BLOCKED http=$anon"; exit 1; }
+          echo "anonymous_denial=PASS"
+          previous_thread=""
+          for row in "omniagent omniagent-codex-chat-client life-assistant" \
+                     "market-mart omniagent-codex-market-client omniagent" \
+                     "life-assistant omniagent-codex-life-client market-mart"; do
+            read -r label identity wrong <<< "$row"
+            TOKEN="$(gcloud auth print-identity-token \
+                 --impersonate-service-account="$identity@$PROJECT.iam.gserviceaccount.com" \
+                 --audiences="$AUDIENCE" --include-email 2>/dev/null)"
+            test -n "$TOKEN"
+            PROJECT_LABEL="$label" python3 - <<'PY' > "$RUNNER_TEMP/request.json"
+          import json,os,uuid
+          print(json.dumps({"project":os.environ["PROJECT_LABEL"],"ownerId":str(uuid.uuid4()),
+                             "requestId":str(uuid.uuid4()),
+                             "prompt":"Respond with READY. Do not call tools."}))
+          PY
+            status="$(curl --silent --show-error --max-time 160 -o "$RUNNER_TEMP/response.json" \
+              -w '%{http_code}' -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+              --data-binary @"$RUNNER_TEMP/request.json" "$URL/v1/codex/execute")"
+            [[ "$status" == "200" ]] || { echo "real_candidate_inference=BLOCKED project=$label http=$status"; exit 1; }
+            LABEL="$label" PREVIOUS_THREAD="$previous_thread" python3 - "$RUNNER_TEMP/response.json" <<'PY' > "$RUNNER_TEMP/thread.txt"
+          import json,os,sys
+          d=json.load(open(sys.argv[1]))
+          if d.get("status")!="completed" or d.get("project")!=os.environ["LABEL"]:
+              raise SystemExit("BLOCKED: unexpected provider response envelope")
+          if not str((d.get("result") or {}).get("text") or "").strip():
+              raise SystemExit("BLOCKED: empty real provider output")
+          ids=d.get("providerIds") or {}
+          if not ids.get("threadId") or not ids.get("turnId") or ids.get("threadId")==os.environ["PREVIOUS_THREAD"]:
+              raise SystemExit("BLOCKED: thread isolation failed")
+          print(ids["threadId"])
+          PY
+            previous_thread="$(cat "$RUNNER_TEMP/thread.txt")"
+            PROJECT_LABEL="$wrong" python3 - <<'PY' > "$RUNNER_TEMP/cross.json"
+          import json,os,uuid
+          print(json.dumps({"project":os.environ["PROJECT_LABEL"],"ownerId":str(uuid.uuid4()),
+                             "requestId":str(uuid.uuid4()),
+                             "prompt":"This project assertion must be denied."}))
+          PY
+            cross="$(curl --silent --show-error --max-time 30 -o "$RUNNER_TEMP/denial.json" \
+              -w '%{http_code}' -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+              --data-binary @"$RUNNER_TEMP/cross.json" "$URL/v1/codex/execute")"
+            [[ "$cross" == "403" ]] || { echo "cross_project_denial=BLOCKED project=$label http=$cross"; exit 1; }
+            python3 - "$RUNNER_TEMP/denial.json" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1]))
+          if d.get("error")!="caller_project_mismatch":
+              raise SystemExit("BLOCKED: denial not proven at application boundary")
+          PY
+            echo "real_candidate_inference=PASS project=$label fresh_thread=PASS cross_project_denial=PASS"
+          done
+          gcloud run services describe "$SERVICE" --project="$PROJECT" --region="$REGION" --format=json > "$RUNNER_TEMP/service-after.json"
+          SERVING="$SERVING" python3 - "$RUNNER_TEMP/service-after.json" <<'PY'
+          import json,os,sys
+          r=json.load(open(sys.argv[1])).get("status",{}).get("traffic",[])
+          active=[x for x in r if x.get("percent",0)>0]
+          if len(active)!=1 or active[0].get("percent")!=100 or active[0].get("revisionName")!=os.environ["SERVING"]:
+              raise SystemExit("BLOCKED: active traffic changed during read-only runtime acceptance")
+          print("shared_candidate_3_callers_real_inference=PASS; production_traffic_preserved=PASS")
+          PY
