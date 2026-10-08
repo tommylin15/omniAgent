@@ -38,6 +38,9 @@ jobs:
           npm ci
           npm run build
           npm test -- tests/shared_codex.test.ts
+          # Packaging gate is independent of credentials and live provider access.
+          docker build -f services/shared-codex/Dockerfile -t omniagent-shared-codex:ci .
+          docker run --rm omniagent-shared-codex:ci /app/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/bin/codex --version
       - uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ env.WIF_PROVIDER }}
