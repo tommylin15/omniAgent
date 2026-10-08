@@ -200,3 +200,21 @@ This checkpoint preserves observed evidence; it does not resume cloud operations
   necessarily grants both Chat and Gateway access to the full payload;
   Secret Manager IAM cannot restrict access by JSON field. This was
   explicitly chosen by the owner. No claim of equivalent least privilege.
+
+## Consolidated-bundle exact-head verification — 2026-10-08
+
+- Source-only GitHub validation after changes to the tests and CI runners:
+  Node Core run `37746628539` SUCCESS; Project Hygiene `37746628464`
+  SUCCESS on main `13774154f2c99afe84bf493f10ba6f712ca9cb68`.
+- Read-only diagnostic run `37746628454` SUCCESS **as a diagnostic**:
+  observed formal Chat traffic 100% on old revision; historical candidate
+  `/health=200`, `/ready=503`; `db_dsn_contract=PASS` for the legacy
+  dedicated DSN; `unified_bundle_schema=NOT_READABLE` for the CI identity.
+  This does not prove Secret absence or Secret payload invalidity, only
+  that no verified current unified-bundle access/schema result exists.
+- Required manual administrator checkpoint: append a new validated JSON
+  version to the **existing `omniagent-bundle`**, and verify resource-scoped
+  `roles/secretmanager.secretAccessor` for three existing principals:
+  `omniagent-chat`, `omniagent-gateway`, `omniagent-ci`.
+  No such Secret Manager version or IAM operation was performed by these
+  source/diagnostic runs. Canonical promotion remains BLOCKED.

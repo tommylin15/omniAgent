@@ -113,11 +113,26 @@ the signing field is absent, and prompts for literal `YES` before writing a
 signing key are printed or checked into git. Temporary files are deleted on
 normal script exit. Do not enable shell tracing or share secret values.
 
-Next, verify both existing runtime identities have
+Next, verify all three existing identities have
 `roles/secretmanager.secretAccessor` **on the `omniagent-bundle`
-Secret only**: `omniagent-chat@gen-lang-client-0593591102.iam.gserviceaccount.com`
-and `omniagent-gateway@gen-lang-client-0593591102.iam.gserviceaccount.com`.
-No project-wide grant. The prior dedicated `omniagent-chat-db` is retained for
+Secret only**: `omniagent-chat@gen-lang-client-0593591102.iam.gserviceaccount.com`,
+`omniagent-gateway@gen-lang-client-0593591102.iam.gserviceaccount.com`,
+and `omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com`
+(the CI preflight and signed Gateway acceptance read the same bundle).
+No project-wide grant. One-time administrator commands:
+
+```bash
+PROJECT=gen-lang-client-0593591102
+for SA in omniagent-chat omniagent-gateway omniagent-ci; do
+  gcloud secrets add-iam-policy-binding omniagent-bundle \
+    --project="$PROJECT" \
+    --member="serviceAccount:${SA}@${PROJECT}.iam.gserviceaccount.com" \
+    --role="roles/secretmanager.secretAccessor" --quiet
+done
+```
+
+If the binding already exists, do not add broader roles. Do not log or
+share the Secret payload. The prior dedicated `omniagent-chat-db` is retained for
 rollback, and pinned historical `omniagent-bundle:2` is never destroyed.
 
 **Privilege consequence:** Cloud Secret Manager IAM operates on the whole

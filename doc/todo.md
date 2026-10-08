@@ -25,7 +25,7 @@
   GitHub Node and Python source tests require exact-head verification.
 - [ ] Administrator runs `infra/gcp/consolidate-omniagent-bundle.sh` from
   current GitHub main, adds a new version to the **existing** Secret and verifies
-  restricted Secret-level Chat/Gateway SA access. Do not create
+  restricted Secret-level Chat/Gateway/CI SA access. Do not create
   `omniagent-provider-bundle`; never disclose the generated signing key.
 - [ ] No-traffic Chat and Gateway candidates must verify the **new** Secret
   bindings; Chat DB /ready=200 and provider acceptance are NOT YET PROVEN.
