@@ -11,7 +11,7 @@ results**; the old Cloud Build V2 checkpoint below is historical only.
 - [ ] Three existing Cloud Run candidate revisions from matching immutable digests, 0% formal traffic and runtime identity/Secret/ingress/VPC/OAuth readback PASS.
 - [ ] Live Chat/UI/browser two-owner/provider/dispatcher and Shared three-caller/integration gates PASS; no synthetic pass for unavailable components.
 - [ ] Safe promotion, original traffic snapshot, actual rollback drill and traffic readback PASS; stale/partial release cannot alter serving allocation.
-- [ ] Final successful deployment job runs two-revision retention separately for Chat, Gateway, Shared: dry-run; exact latest promoted 100%, immediately previous rollback revision, no tagged/traffic-serving older revision; protected deletion/readback, BLOCKED on unknown state. Confirm GHCR images unchanged.
+- [ ] Final successful deployment job runs ten-revision retention separately for Chat, Gateway and Shared: keep newest 10 (or all if fewer), including the exact latest promoted 100%-traffic revision and previously recorded known-good rollback target. Dry-run, per-deletion state revalidation and final readback PASS; tagged/serving older revisions or rollback outside newest 10 BLOCK cleanup rather than force deletion. Confirm GHCR images unchanged and actual Cloud Run state/permissions.
 - [ ] Old Cloud Build push/release triggers disabled only after replacement success; verified new path does not run Cloud Build, explicitly write GCS/Artifact Registry or create Compute Engine.
 - [ ] Optional legacy Cloud Build read-only Actions bridge WIF, build status, failure steps and masked error summary tested; no mutation or raw secret exposure.
 
