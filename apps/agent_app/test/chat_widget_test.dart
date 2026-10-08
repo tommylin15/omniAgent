@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:omniagent_app/auth_session.dart';
 import 'package:omniagent_app/chat_api.dart';
 import 'package:omniagent_app/chat_page.dart';
 import 'package:omniagent_app/main.dart';
@@ -69,6 +72,53 @@ class FakeChatApi extends ChatApi {
 }
 
 void main() {
+  test('logout discards the previous Chat API session immediately', () async {
+    final sessions = <String?>[];
+    var failures = 0;
+    final controller = AuthSessionController(
+      onSession: (api) => sessions.add(api?.token),
+      onError: () => failures++,
+    );
+    await controller.update(() async => 'alice-token');
+    expect(controller.current?.token, 'alice-token');
+    await controller.update(null);
+    expect(controller.current, isNull);
+    expect(sessions, [null, 'alice-token', null]);
+    expect(failures, 0);
+    controller.dispose();
+  });
+
+  test('stale OAuth resolution cannot restore the previous user', () async {
+    final pendingAlice = Completer<String?>();
+    final changes = <String?>[];
+    final controller = AuthSessionController(
+      onSession: (api) => changes.add(api?.token),
+      onError: () => fail('unexpected token error'),
+    );
+    final alice = controller.update(() => pendingAlice.future);
+    await controller.update(() async => 'bob-token');
+    pendingAlice.complete('alice-token');
+    await alice;
+    expect(controller.current?.token, 'bob-token');
+    expect(changes, [null, null, 'bob-token']);
+    controller.dispose();
+  });
+
+  test('failed OAuth exchange leaves no prior owner session', () async {
+    final changes = <String?>[];
+    var errors = 0;
+    final controller = AuthSessionController(
+      onSession: (api) => changes.add(api?.token),
+      onError: () => errors++,
+    );
+    await controller.update(() async => 'alice-token');
+    await controller.update(() async => null);
+    expect(controller.current, isNull);
+    expect(errors, 1);
+    expect(changes.last, isNull);
+    controller.dispose();
+  });
+
   testWidgets('standalone login refuses missing API configuration',
       (tester) async {
     await tester.pumpWidget(const OmniAgentApp());

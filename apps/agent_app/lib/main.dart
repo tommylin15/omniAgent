@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
 import 'chat_api.dart';
+import 'auth_session.dart';
 import 'chat_page.dart';
 import 'omni_theme.dart';
 import 'twin_beast_mascot.dart';
@@ -24,28 +25,37 @@ class _OmniAgentAppState extends State<OmniAgentApp> {
   ChatApi? api;
   String? error;
   StreamSubscription<GoogleSignInAccount?>? auth;
+  late final AuthSessionController sessions;
 
   @override
   void initState() {
     super.initState();
+    sessions = AuthSessionController(
+      onSession: (current) {
+        if (mounted) setState(() {
+          api = current;
+          error = null;
+        });
+      },
+      onError: () {
+        if (mounted) setState(() => error = '登入失敗，請再試一次');
+      },
+    );
     if (clientId.isEmpty || ChatApi.base.isEmpty) return;
     final google = GoogleSignIn(clientId: clientId);
-    auth = google.onCurrentUserChanged.listen((account) async {
-      if (account == null) return;
-      try {
-        final token = (await account.authentication).idToken;
-        if (token == null) throw StateError('Google ID token 不可用');
-        if (mounted) setState(() => api = ChatApi(token));
-      } catch (_) {
-        if (mounted) setState(() => error = '登入失敗，請再試一次');
-      }
+    auth = google.onCurrentUserChanged.listen((account) {
+      // Invalidate the previous API immediately on logout or account switch.
+      // A late ID-token result from an earlier account must never restore it.
+      unawaited(sessions.update(
+        account == null ? null : () async => (await account.authentication).idToken,
+      ));
     });
   }
 
   @override
   void dispose() {
     auth?.cancel();
-    api?.close();
+    sessions.dispose();
     super.dispose();
   }
 
