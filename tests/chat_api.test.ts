@@ -4,12 +4,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { makeChatServer } from "../services/chat-api/server.js";
+import type { ChatDispatcher } from "../services/chat-api/gateway_dispatch.js";
 import { safeRecord, type ChatStore } from "../services/chat-api/storage.js";
 
 const servers: ReturnType<typeof makeChatServer>[] = [];
 afterEach(async () => Promise.all(servers.splice(0).map((server) => new Promise<void>((resolve) => server.close(() => resolve())))));
 
-async function app() {
+async function app(dispatcher?: Pick<ChatDispatcher,"runOnce">) {
   const store = {
     ready: vi.fn(async () => undefined),
     owner: vi.fn(async (_issuer: string, subject: string) => "owner-" + subject),
@@ -30,7 +31,7 @@ async function app() {
     async (token) => {
       if (token !== "alice" && token !== "bob") throw new Error("unauthorized");
       return { issuer: "https://accounts.google.com", subject: token };
-    }, async (token) => { if (token !== "service") throw new Error("unauthorized"); });
+    }, async (token) => { if (token !== "service") throw new Error("unauthorized"); }, dispatcher);
   servers.push(server);
   await new Promise<void>((resolve) => server.listen(0,"127.0.0.1",resolve));
   return { base: "http://127.0.0.1:" + (server.address() as AddressInfo).port, store };
@@ -114,6 +115,20 @@ describe("omniAgent Chat API ownership boundary", () => {
       headers:{Authorization:"Bearer alice"}})).status).toBe(401);
     expect((await fetch(url,{method:"POST",
       headers:{Authorization:"Bearer service"}})).status).toBe(404);
+  });
+
+  it("requires a verified service identity to trigger exactly one database-sourced dispatch", async () => {
+    const dispatcher = { runOnce:vi.fn(async () => ({status:"completed" as const,turnId:"turn-1"})) };
+    const { base } = await app(dispatcher);
+    const url=base + "/internal/v1/chat/dispatch:once";
+    expect((await fetch(url,{method:"POST",headers:{Authorization:"Bearer bob"}})).status).toBe(401);
+    expect(dispatcher.runOnce).not.toHaveBeenCalled();
+    const done=await fetch(url,{method:"POST",headers:{Authorization:"Bearer service"},
+      body:JSON.stringify({ownerId:"owner-bob",threadId:"injected"})});
+    expect(done.status).toBe(200);
+    expect(await done.json()).toEqual({status:"completed",turnId:"turn-1"});
+    expect(dispatcher.runOnce).toHaveBeenCalledOnce();
+    expect(dispatcher.runOnce).toHaveBeenCalledWith();
   });
 
   it("forks within the verified owner and only cancels queued turns", async () => {
