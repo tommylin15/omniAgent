@@ -4,7 +4,10 @@
 
 The existing Chat service now includes a service-authenticated POST endpoint
 `/internal/v1/chat/dispatch:once`. It is disabled unless the process starts
-with `CHAT_DISPATCH_ENABLED=true`. It uses the existing
+with `CHAT_DISPATCH_ENABLED=true` **and** a non-empty comma-separated
+`CHAT_DISPATCH_APPROVED_OWNER_IDS` set of verified owner UUIDs. The
+PostgreSQL claim itself filters on this allowlist so an unentitled OAuth
+user's work is not consumed or charged to platform keys. It uses the existing
 `CHAT_INTERNAL_ALLOWED_EMAILS` allowlist for the calling service identity;
 the HTTP caller cannot choose an owner, thread, model, or pending turn.
 
