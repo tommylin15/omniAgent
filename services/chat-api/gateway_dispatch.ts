@@ -12,10 +12,12 @@ const types = new Set(["text_delta", "item_upsert", "tool_request", "tool_result
 const terminal = new Set(["turn_completed", "turn_cancelled", "turn_error"]);
 
 export class ChatDispatcher {
-  constructor(private readonly store: Store, private readonly invoke: Invoke) {}
+  constructor(private readonly store: Store, private readonly invoke: Invoke,
+              private readonly approvedOwners: readonly string[]) {}
 
   async runOnce(): Promise<DispatchOutcome> {
-    const claim = await this.store.claimNextQueuedTurn();
+    if (!this.approvedOwners.length) throw new Error("dispatch approval not configured");
+    const claim = await this.store.claimNextQueuedTurn(this.approvedOwners);
     if (!claim) return { status: "idle" };
     let events: TurnEvent[];
     try {
