@@ -858,7 +858,7 @@ export function makeServer(mcp = new McpHost(), sessions = new OwnerSessionRegis
   });
 }
 
-if (process.env.NODE_ENV !== "test") {
+if (process.env.NODE_ENV !== "test" && process.env.OMNIAGENT_GATEWAY_ENTRYPOINT !== "shared-codex") {
   const port = Number(process.env.PORT || "8080");
   const mcp = new McpHost();
   const server = makeServer(mcp).listen(port, "0.0.0.0", () => console.log(`agent gateway listening on ${port}`));
