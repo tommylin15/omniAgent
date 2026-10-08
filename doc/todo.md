@@ -20,7 +20,17 @@
   GitHub Node Core `37737346341` and 19/19 CI/CD V2 safety tests PASS.
 - [ ] Repeat live tagged recovery and cleanup dry-run; GitHub tests alone
   do not confirm the old Cloud Run failures are resolved.
-- [ ] Approved provider bundle missing; human OAuth/dispatcher dependencies OPEN.
+- [x] Owner changed design to **single existing `omniagent-bundle`**
+  (Provider + signing + Chat DB); implementation/merge helper committed.
+  GitHub Node and Python source tests require exact-head verification.
+- [ ] Administrator runs `infra/gcp/consolidate-omniagent-bundle.sh` from
+  current GitHub main, adds a new version to the **existing** Secret and verifies
+  restricted Secret-level Chat/Gateway SA access. Do not create
+  `omniagent-provider-bundle`; never disclose the generated signing key.
+- [ ] No-traffic Chat and Gateway candidates must verify the **new** Secret
+  bindings; Chat DB /ready=200 and provider acceptance are NOT YET PROVEN.
+  Old `omniagent-chat-db` and pinned `omniagent-bundle:2` remain for rollback.
+- [ ] Human two-owner browser OAuth/dispatcher integration dependencies OPEN.
 - [ ] All mandatory candidate gates, canonical release/readback/recovery.
 - [ ] Safe image cleanup after dry-run and accepted release.
 - [ ] Final evidence reconciliation; CLOSED only after every required gate.

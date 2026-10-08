@@ -13,6 +13,12 @@ Status: **PARTIAL**. This file records only omniAgent evidence. Historical cross
 | UI v1 Slice 1 | Implementation `d0974f03d79aa959c1164dbcd35657784d2119b4`; Flutter run `37624738722` PASS. |
 | UI v1 Slice 2 | Implementation `3e84083bed8992b5f67bb32504956320fca05a18`; presentation fix `12a94018debd11f5b389aa2fdf325339782bb9d8`; Flutter run `37625912746` PASS. |
 
+> **Historical checkpoint notice (2026-10-08):** the owner has now
+> selected a single existing `omniagent-bundle`, containing Provider keys,
+> signing key and Chat DB URL. The older split-Secret credential instructions
+> below are historical evidence only and no longer the target design.
+> See [current SPEC](../doc/spec.md#7-deployment-credential-contract).
+
 ## Credential correction — 2026-10-07
 
 The active omniAgent contract is:

@@ -6,11 +6,19 @@ Status: active control document. Current state must be proven from this reposito
 
 - Cloud Run service recorded at the accepted checkpoint: `omniagent-agent-gateway`; recorded revision `omniagent-agent-gateway-00001-wav`. Live revision must be re-read before any new acceptance claim.
 - Runtime service accounts recorded for omniAgent: `omniagent-gateway@gen-lang-client-0593591102.iam.gserviceaccount.com` and `omniagent-chat@gen-lang-client-0593591102.iam.gserviceaccount.com`.
-- Secret Manager bundle: `omniagent-provider-bundle`.
-  - Gateway bundle contract expects `gemini_api_key`, `openrouter_api_key`, and `mcp_owner_signing_key`.
-  - `mcp_owner_signing_key` is loaded into `MCP_OWNER_SIGNING_KEY`.
-  - There is no separate `omniagent-internal-signing-key`; references to it are obsolete and must not be recreated.
-- Gateway runtime reads the bundle through `OMNIAGENT_PROVIDER_BUNDLE`.
+- Owner-updated Secret Manager contract (2026-10-08): use **existing**
+  `omniagent-bundle` for Gemini, OpenRouter, owner signing key and Chat DB DSN.
+  Do **not** create `omniagent-provider-bundle` or another signing Secret.
+- Required JSON keys: `gemini_api_key`, `openrouter_api_key`,
+  `mcp_owner_signing_key`, `chat_database_url`.
+  Gateway environment `OMNIAGENT_PROVIDER_BUNDLE` and Chat environment
+  `OMNIAGENT_BUNDLE` both reference `omniagent-bundle:latest`, with different
+  application-side field extraction. The old `CHAT_DATABASE_URL` binding
+  must be removed **from the no-traffic candidate only**.
+- Single-Secret IAM removes field-level isolation: both Chat and Gateway
+  runtime service accounts must be treated as having access to all four values.
+  `mcp_owner_signing_key` is loaded into `MCP_OWNER_SIGNING_KEY`.
+  No separate internal signing Secret is allowed.
 - Internal HMAC headers are `X-OmniAgent-Timestamp` and `X-OmniAgent-Signature`.
 - Dedicated Google Web OAuth client for omniAgent is recorded as `omniAgent Dev Web`.
 - Chat/UI image was previously built as `omniagent-chat`; current live deployment state must be verified before claiming it is deployed.
@@ -33,12 +41,21 @@ These identifiers are fixed in the preflight workflow so GitHub repository-varia
 
 ## Chat database secret and candidate networking
 
-- Provider credentials stay in `omniagent-provider-bundle`; database credentials must not be added to that bundle.
-- The current live Chat revision still references the historical `omniagent-bundle` for `CHAT_DATABASE_URL`. Do not update that Secret's `latest` value as part of candidate preparation because a restarted live instance could observe the new value before acceptance.
-- The new database contract uses the dedicated omniAgent Secret `omniagent-chat-db`, whose payload is a PostgreSQL DSN for role `omniagent_chat_app` and database `omniagent_chat`.
-- Dev reuses the approved PostgreSQL instance already running on the existing VM. omniAgent creates a separate logical database/role/schema inside that instance; it does not run a second PostgreSQL container.
-- Candidate deployment binds `CHAT_DATABASE_URL=omniagent-chat-db:latest` only on a no-traffic candidate revision.
-- Current live Chat has no VPC egress configuration. A private PostgreSQL endpoint therefore requires Direct VPC egress on the candidate revision before database readiness can pass.
+- The current active Chat revision was read back as referencing
+  `CHAT_DATABASE_URL=omniagent-bundle:2`. Version 2 is a pinned historical
+  Secret version and must be retained and never overwritten/destroyed.
+- The dedicated `omniagent-chat-db` currently contains the verified
+  PostgreSQL URL for `omniagent_chat_app` / `omniagent_chat`.
+  It is a **migration source and rollback reference**, not the future
+  candidate runtime dependency. Do not destroy it before accepted cutover.
+- The administrator-only migration script copies that URL and the approved
+  existing provider keys into a newly created **version of `omniagent-bundle`**,
+  generating only the missing owner signing key. No new Secret resource.
+- Dev reuses the approved shared PostgreSQL instance; no additional DB server.
+- The Chat no-traffic candidate binds `OMNIAGENT_BUNDLE=omniagent-bundle:latest`,
+  removes legacy `CHAT_DATABASE_URL`, checks the private VPC egress and uses
+  dev private self-signed TLS. Chat `/ready=200` must be proven live.
+- All active traffic remains untouched unless mandatory canonical gates pass.
 - `/health` remains process liveness; `/ready` is the database-backed readiness gate and must return 200 before candidate acceptance.
 - The P0 Chat candidate image is built directly on the GitHub runner and pushed to the omniAgent Artifact Registry. The previously prepared dedicated PostgreSQL image is superseded by the shared-instance decision and is not part of the active deployment path. Do not recreate or rely on the default Cloud Build source-staging bucket for this path.
 
@@ -49,7 +66,9 @@ Before deploying or promoting `omniagent-chat`:
 1. exact-head Node + Flutter CI PASS;
 2. omniAgent GCP preflight PASS;
 3. Chat database/role and migrations verified;
-4. `CHAT_DATABASE_URL`, `OMNIAGENT_GOOGLE_CLIENT_ID`, `CHAT_INTERNAL_AUDIENCE`, and `CHAT_INTERNAL_ALLOWED_EMAILS` resolved from approved omniAgent configuration;
+4. `chat_database_url` loaded from verified `OMNIAGENT_BUNDLE`;
+   `OMNIAGENT_GOOGLE_CLIENT_ID`, `CHAT_INTERNAL_AUDIENCE`, and
+   `CHAT_INTERNAL_ALLOWED_EMAILS` preserved from approved omniAgent configuration;
 5. Gateway URL and service-to-service invocation verified;
 6. immutable image digest recorded;
 7. health, UI, protected API, OAuth and two-owner isolation acceptance executed;

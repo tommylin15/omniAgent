@@ -43,7 +43,11 @@ Baseline `4a09faa8231a0e8e20d3b9279a89cb765965fddc`. Existing services:
 Flutter's existing release artifact is inside `services/chat-api/Dockerfile`.
 No standalone worker or Flutter hosting deployment was found.
 Connection installation COMPLETE; repo Private. Scanning disabled.
-`omniagent-provider-bundle` is absent: Gateway live provider gate BLOCKED.
+At the historical checkpoint `omniagent-provider-bundle` was absent.
+**Superseded by the 2026-10-08 owner decision:** use only the existing
+`omniagent-bundle` with Provider fields, `mcp_owner_signing_key`, and
+`chat_database_url`. Refer to SPEC §7 and the runbook; unified-bundle
+version creation and live acceptance remain OPEN.
 Durable Chat dispatcher and browser two-owner acceptance remain open in TODO.
 
 ## Execution ledger

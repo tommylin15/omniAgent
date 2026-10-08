@@ -173,3 +173,30 @@ This checkpoint preserves observed evidence; it does not resume cloud operations
   The source fix has not yet been deployed or exercised against DB readiness.
   No canonical release, traffic promotion, Secret/IAM modification, image
   deletion, or real rollback was performed by this continuation.
+
+## Owner-approved consolidated Secret source change — 2026-10-08
+
+- Explicit owner request overrides the earlier separate-Secret policy:
+  **only existing `omniagent-bundle`** is the future runtime credential source.
+  Four fields: `gemini_api_key`, `openrouter_api_key`, `mcp_owner_signing_key`,
+  and `chat_database_url`. The old `omniagent-chat-db` and pinned legacy
+  `omniagent-bundle:2` remain as migration and rollback references; no new
+  `omniagent-provider-bundle` Secret resource is authorized.
+- Source commit `903e58cecb8a16b093d9d9d51d48169efbe85bf7` adds Chat JSON-bundle
+  lookup (legacy DSN fallback for old revisions), 0%-traffic candidate bindings,
+  release preflight and Gateway acceptance against the same existing Secret,
+  and a privileged local merge helper generating only a missing random signing
+  key without printing payloads. Initial CI Node source tests passed but
+  Python safety had two test failures, corrected in the follow-up.
+- Follow-up commit `15519ce6a28513a2c7be54f14ae66400d3c0adc1` fixes the source
+  change-selection expectation, tightens DSN host checking to RFC1918 and adds
+  bundled migration tests to Node Core. GitHub Node Core `37746261469`
+  **SUCCESS** (35 PASS, 1 skipped; Python release/migration safety 26/26 PASS),
+  Project Hygiene `37746261407` **SUCCESS**.
+- Consolidation of actual Secret Manager payload, real Chat/Gateway IAM
+  readbacks, candidate deployment and DB/provider live acceptance **have not
+  yet occurred**. No actual signing key or credential value was printed.
+- Security tradeoff: combining provider credentials and DB DSN in one Secret
+  necessarily grants both Chat and Gateway access to the full payload;
+  Secret Manager IAM cannot restrict access by JSON field. This was
+  explicitly chosen by the owner. No claim of equivalent least privilege.

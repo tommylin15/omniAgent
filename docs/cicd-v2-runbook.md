@@ -86,30 +86,55 @@ and manual recovery tags. Only owned image packages are eligible. Apply requires
 accepted release, fresh SHA and renewed references/tags before each deletion.
 Scanning stays disabled. Existing shared buckets are never deleted by this task.
 
-## Current blockers
+## Single Secret owner decision and administrator action (2026-10-08)
 
-Approved `omniagent-provider-bundle` is absent; do not substitute old credentials.
-Human Google Web two-owner evidence and durable Chat dispatcher remain OPEN.
-These prevent full canonical release. CI/image success is never CLOSED.
+The owner explicitly approved using only the **existing** `omniagent-bundle`
+for Provider keys, `mcp_owner_signing_key` and the dedicated Chat PostgreSQL
+URI. Do not create `omniagent-provider-bundle`.
 
-## Administrator and human checkpoints
+**Administrator execution in trusted Cloud Shell**, from latest approved
+`tommylin15/omniAgent` main checkout (the helper performs no Cloud Run
+deployment, IAM change or traffic mutation):
 
-- Existing project administrator must verify whether Secret Manager contains
-  `omniagent-provider-bundle` with an enabled current version and approved
-  JSON fields `gemini_api_key`, `openrouter_api_key`, and
-  `mcp_owner_signing_key` (minimum 32 characters), and grant only the
-  existing Gateway runtime service account the narrowly required access.
-  If it is missing, complete the already-approved administrator path.
-  Never paste credentials into chat, GitHub, evidence or build logs;
-  never substitute the historical unrelated bundle.
-- After a healthy Chat candidate exists, two distinct human Google identities
-  must complete genuine browser OAuth and owner/cross-owner isolation checks.
-  Signed CI service accounts do not replace this acceptance evidence.
-- The separate durable Chat-to-Gateway dispatcher and real gateway provider
-  integration remain engineering gates; neither should be marked PASS by
-  a Source/Node-CI build. Do not release while these gates are missing.
-- Candidate TLS mode is for the approved private dev VPC only. The deployment
-  code fails closed unless both direct private VPC egress and the dedicated
-  `omniagent-chat-db:latest` Secret reference are present. The source guard
-  is not evidence that post-deploy `/ready` succeeds; rerun a bounded 0%-traffic
-  candidate and inspect Cloud Run runtime before claiming remediation.
+```bash
+git clone https://github.com/tommylin15/omniAgent.git
+cd omniAgent
+git pull --ff-only origin main
+bash infra/gcp/consolidate-omniagent-bundle.sh
+```
+
+Use an existing checkout instead of cloning if already present.
+The script reads only the existing `omniagent-bundle:latest` JSON and
+`omniagent-chat-db:latest` DSN into a temporary permission-restricted
+directory, validates provider key presence and RFC1918 PostgreSQL DSN,
+preserves every old JSON field, generates an independent 256-bit key only if
+the signing field is absent, and prompts for literal `YES` before writing a
+**new version to the same existing `omniagent-bundle`**. No secret values or
+signing key are printed or checked into git. Temporary files are deleted on
+normal script exit. Do not enable shell tracing or share secret values.
+
+Next, verify both existing runtime identities have
+`roles/secretmanager.secretAccessor` **on the `omniagent-bundle`
+Secret only**: `omniagent-chat@gen-lang-client-0593591102.iam.gserviceaccount.com`
+and `omniagent-gateway@gen-lang-client-0593591102.iam.gserviceaccount.com`.
+No project-wide grant. The prior dedicated `omniagent-chat-db` is retained for
+rollback, and pinned historical `omniagent-bundle:2` is never destroyed.
+
+**Privilege consequence:** Cloud Secret Manager IAM operates on the whole
+Secret; each of these service accounts can now read Provider keys and DB URI
+together. This is an owner-accepted departure from former field isolation.
+Minimize other access, audit Secret access and keep both services isolated.
+
+Source candidate wiring:
+- Chat `OMNIAGENT_BUNDLE=omniagent-bundle:latest`, no
+  `CHAT_DATABASE_URL` env binding, private-range VPC and verified dev TLS.
+- Gateway `OMNIAGENT_PROVIDER_BUNDLE=omniagent-bundle:latest` (variable
+  name maintained for compatibility; source Secret is the same).
+- Shared Codex service is not rebound to this Secret.
+- Full JSON shape/owner/TLS preflight **must pass before any candidate deploy**.
+  Candidate accepts only image digest + zero formal traffic + live
+  `/health=200` and `/ready=200`, then all remaining business gates.
+  Source tests cannot replace Cloud Run runtime evidence.
+
+Human Google Web two-owner evidence, provider integration and the durable
+Chat-to-Gateway dispatcher remain OPEN. No canonical release while blocked.

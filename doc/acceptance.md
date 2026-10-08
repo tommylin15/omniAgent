@@ -123,8 +123,12 @@ The project must not be called final-accepted or production-complete until expli
 
 ## 10. omniAgent credential/deployment wiring gate
 
-- [x] Gateway reads `OMNIAGENT_PROVIDER_BUNDLE`.
-- [x] provider bundle contract includes `mcp_owner_signing_key` → `MCP_OWNER_SIGNING_KEY`.
+- [x] Gateway source reads `OMNIAGENT_PROVIDER_BUNDLE` and maps
+  `mcp_owner_signing_key` → `MCP_OWNER_SIGNING_KEY`.
+- [ ] Owner-approved single `omniagent-bundle` must contain four fields
+  including `chat_database_url`; Cloud Run Chat and Gateway bindings,
+  new key/version and real signed provider calls need runtime acceptance.
+  Previous source implementation is not proof of deployed signing-key presence.
 - [x] no active config depends on `omniagent-internal-signing-key`.
 - [x] Node Core run `37628904846` PASS after the ownership cleanup.
 - [ ] `OMNIAGENT_GCP_WIF_PROVIDER` configured and preflight PASS.

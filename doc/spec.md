@@ -215,12 +215,26 @@ omniAgent final acceptance may be declared only after exact-head implementation/
 
 ## 7. Deployment credential contract
 
-- Secret bundle: `omniagent-provider-bundle`.
-- Gateway env: `OMNIAGENT_PROVIDER_BUNDLE`.
-- Expected bundle keys: `gemini_api_key`, `openrouter_api_key`, `mcp_owner_signing_key`.
-- `mcp_owner_signing_key` is mapped to runtime `MCP_OWNER_SIGNING_KEY`.
-- Internal HMAC transport uses `X-OmniAgent-Timestamp` and `X-OmniAgent-Signature`.
-- `omniagent-internal-signing-key` is not part of the current architecture and must not be recreated.
+- Owner-approved **single Secret Manager bundle**: the existing `omniagent-bundle`.
+  Do not create `omniagent-provider-bundle` or a separate internal signing Secret.
+- JSON fields: `gemini_api_key`, `openrouter_api_key`, `mcp_owner_signing_key`,
+  `chat_database_url`. Preserve the already-approved provider keys; generate a
+  cryptographically random 256-bit signing key when absent. The DB URL comes
+  from the previously provisioned dedicated `omniagent-chat-db` Secret.
+- Gateway env `OMNIAGENT_PROVIDER_BUNDLE=omniagent-bundle:latest` resolves provider
+  keys and sets runtime `MCP_OWNER_SIGNING_KEY`; Chat candidate env
+  `OMNIAGENT_BUNDLE=omniagent-bundle:latest` resolves only `chat_database_url`
+  at application startup. Remove `CHAT_DATABASE_URL` from that candidate.
+- This intentionally trades field-level least privilege for the owner's
+  requested single-bundle policy: Chat and Gateway runtime identities can each
+  read all fields when granted access to the same Secret. Both must be treated
+  as highly privileged and have only narrowly scoped Secret-level access.
+- Add a **new version** to the existing bundle after verifying old content
+  and owner-approved DB DSN; never overwrite/destroy pinned legacy versions,
+  the existing `omniagent-chat-db`, or active Cloud Run revisions during
+  migration. Retire legacy DB reference only after accepted runtime cutover.
+- Internal HMAC transport uses `X-OmniAgent-Timestamp` and
+  `X-OmniAgent-Signature`.
 - GitHub deployment identity and Artifact Registry target must be omniAgent-owned/configured; missing values fail closed.
 
 ## 8. CI/CD V2
