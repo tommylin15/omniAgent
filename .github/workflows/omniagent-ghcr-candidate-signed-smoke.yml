@@ -105,29 +105,49 @@ jobs:
           PY
           IFS=$'\t' read -r URL AUDIENCE < "$RUNNER_TEMP/urls.tsv"
           test -n "$URL" && test -n "$AUDIENCE"
-          # Private invocation remains restricted. Token never written to logs.
-          set +e
-          TOKEN="$(gcloud auth print-identity-token \
-            --impersonate-service-account="$CALLER@$PROJECT.iam.gserviceaccount.com" \
-            --audiences="$AUDIENCE" --include-email 2>/dev/null)"
-          rc=$?
-          set -e
-          if [ "$rc" -ne 0 ] || [ -z "$TOKEN" ]; then
-            echo "signed_identity_mint=$SERVICE BLOCKED_NO_PERMISSION"
+          # IAM Credentials generateIdToken needs only getOpenIdToken on this
+          # dedicated target, NOT getAccessToken / full TokenCreator.
+          # Never print access/identity tokens or error response bodies.
+          export SERVICE_ACCOUNT="$CALLER@$PROJECT.iam.gserviceaccount.com"
+          export ID_AUDIENCE="$AUDIENCE"
+          export ACCESS_TOKEN="$(gcloud auth print-access-token)"
+          if ! python3 - "$RUNNER_TEMP/identity-token" <<'PY'
+          import json,os,sys,urllib.request,urllib.error
+          from urllib.parse import quote
+          url=("https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/"
+               +quote(os.environ["SERVICE_ACCOUNT"],safe="")+":generateIdToken")
+          req=urllib.request.Request(url,
+              data=json.dumps({"audience":os.environ["ID_AUDIENCE"],"includeEmail":True}).encode(),
+              headers={"Authorization":"Bearer "+os.environ["ACCESS_TOKEN"],
+                       "Content-Type":"application/json"},method="POST")
+          try:
+              with urllib.request.urlopen(req,timeout=25) as response:
+                  token=json.load(response).get("token")
+              if not isinstance(token,str) or not token:
+                  raise ValueError("no token")
+              with open(sys.argv[1],"w") as out:
+                  out.write(token)
+          except Exception as error:
+              print("scoped_id_token_issue=BLOCKED class="+type(error).__name__)
+              raise SystemExit(1)
+          PY
+          then
+            echo "signed_identity_mint=$SERVICE BLOCKED_NO_PERMISSION_OR_PROVIDER_ERROR"
             exit 1
           fi
-          # Do not print response bodies; private endpoint allows only authorized identity.
-          for endpoint in /health /ready; do
+          unset ACCESS_TOKEN
+          TOKEN="$(cat "$RUNNER_TEMP/identity-token")"
+          rm -f "$RUNNER_TEMP/identity-token"
+          if [[ "$SERVICE" == omniagent-agent-gateway ]]; then
+            endpoints="/health"
+          else
+            endpoints="/health /ready"
+          fi
+          # Private endpoint allows only authorized identity; no response payloads printed.
+          for endpoint in $endpoints; do
             status="$(curl --silent --show-error --max-time 35 -o /dev/null -w '%{http_code}' \
               -H "Authorization: Bearer $TOKEN" "$URL$endpoint")"
             echo "signed_candidate_http=$SERVICE $endpoint status=$status"
-            if [[ "$SERVICE" == omniagent-agent-gateway && "$endpoint" == /ready ]]; then
-              continue
-            fi
-            # Gateway has no /ready route; its /health is mandatory.
-            if [[ "$SERVICE" == omniagent-agent-gateway && "$endpoint" == /ready ]]; then
-              continue
-            fi
             [[ "$status" == 200 ]] || { echo "signed_private_health=BLOCKED"; exit 1; }
           done
           echo "signed_private_health=PASS service=$SERVICE"
