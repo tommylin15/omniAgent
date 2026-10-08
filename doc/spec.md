@@ -235,27 +235,53 @@ omniAgent final acceptance may be declared only after exact-head implementation/
   migration. Retire legacy DB reference only after accepted runtime cutover.
 - Internal HMAC transport uses `X-OmniAgent-Timestamp` and
   `X-OmniAgent-Signature`.
-- GitHub deployment identity and Artifact Registry target must be omniAgent-owned/configured; missing values fail closed.
+- GitHub release WIF must be restricted to omniAgent GitHub main. New CI/CD publishes public GHCR images by immutable SHA-256 digest; no new Artifact Registry writer or repository is required. Missing WIF/public image/digest must fail closed.
 
-## 8. CI/CD V2
+## 8. CI/CD — GitHub Actions + public GHCR + Cloud Run (2026-10-08)
 
-Main Push runs affected Node/Flutter/API/contract/security CI in GCP and does not
-publish Cloud Run traffic. Explicit Release locks a full main SHA after reviewed
-implementation/tests/dependencies are Ready. Compare from each component's last
-successful release; no runtime change means no forced deployment.
+**Owner-approved TARGET-DESIGN; migration and runtime acceptance OPEN.** This
+section supersedes the historical Cloud Build V2 policy for **new releases**.
 
-Preserve the three existing services, bundled Flutter, OAuth, DB, Secret references,
-caller identities and external boundaries. Shared Codex needs compatible contracts,
-security/isolation acceptance and its own atomic lock; unrelated commits do not
-rebuild it. Breaking contracts need a compatible version. No external IAM/repo edits.
+Control loop: `ChatGPT → GitHub → GitHub Actions → GCP API → GitHub Actions
+Logs → ChatGPT`. GitHub Actions on the exact reviewed `main` SHA performs
+all Node/API/contract/security, disposable PostgreSQL, Flutter, Python and
+repository quality gates, then builds/publishes the Chat (bundled Flutter),
+Gateway and Shared Codex images to **GHCR**, retaining per-image immutable
+`sha256` digest receipts. GHCR packages must be explicitly **Public** and
+verified anonymously pullable before direct Cloud Run deployment; GitHub
+repository Public visibility is insufficient.
 
-Candidates have zero active traffic. Promote after affected mandatory live gates,
-dependency checks and recovery. Preserve previous usable versions; same SHA is
-idempotent and stale SHA cannot overwrite runtime/candidates. Bound build duration,
-attempts and provider calls. Only unreferenced owned images may be cleaned after
-dry-run. No paid scanning or unapproved resources.
+An explicitly gated Actions release uses omniAgent-scoped WIF and GCP APIs to
+create **0%-formal-traffic Cloud Run candidate revisions** from exact GHCR
+digests for the three **existing** services in `us-central1`. Preserve active
+revision traffic, runtime service accounts, Secrets, ingress, VPC, OAuth,
+database, provider and Shared Codex caller contracts. Require exact-SHA
+quality/artefact provenance, candidate revision/digest/config readback and
+real Chat/Gateway/Shared integration gates before any protected promotion.
+Snapshot original traffic first; fail closed on missing gates or stale SHA,
+prevent overlapping releases, read back each traffic change, and restore
+original percentages on partial failure. No synthetic approval, no mandatory
+gate skipped by manual release.
 
-Status is ACTIVE/PARTIAL until CI Push, explicit Release, all four actual paths,
-Shared compatibility, live acceptance, recovery/readback and old auto-deploy
-retirement have real evidence. [Runbook](../docs/cicd-v2-runbook.md) contains
-procedures; this control set remains the policy source.
+The **new delivery pipeline must not invoke Cloud Build/triggers, push Docker
+images to Artifact Registry, write CI/CD evidence/source/locks into GCS or
+create Compute Engine**. Managed Cloud Run image import/caching is not an
+explicit pipeline write. Historical Cloud Build/GCS/Artifact Registry resources
+remain audit/recovery history and are not deleted in this migration. Separately
+approved *application runtime* GCS/Iceberg data lifecycle is unaffected.
+
+A separate **optional read-only legacy diagnostic** Actions workflow may use
+WIF and least-privilege GCP build metadata read access to inspect *existing*
+Cloud Builds; publish actual `SUCCESS`/`FAILURE`/other status, failed step IDs,
+failure category and a bounded **redacted error summary** into Actions logs
+for ChatGPT. It may not create/retry builds, invoke triggers, dump raw logs,
+read Secrets or mutate GCS/Artifact Registry. This diagnostic does not make
+Cloud Build a new release dependency.
+
+**Acceptance stages:** exact-commit complete Actions quality; three verified
+public GHCR digests; WIF/IAM; 0%-candidate revisions/readbacks; live integration
+and real recovery; protected traffic/rollback readback; only then verified
+retirement of old push/release Cloud Build triggers. Until all are evidenced,
+status is **PARTIAL/OPEN**, not DONE. Source workflows are incomplete at
+this checkpoint. [New runbook](../docs/cicd-ghcr-actions-runbook.md),
+[acceptance](acceptance.md), and [TODO](todo.md) govern execution.
