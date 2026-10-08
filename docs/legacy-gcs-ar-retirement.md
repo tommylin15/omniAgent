@@ -9,6 +9,35 @@ and Cloud Run/runtime evidence are the sources of truth for current state.
 and [release runbook](cicd-ghcr-actions-runbook.md) take precedence over
 historical Cloud Build V2 plans.
 
+## Live checkpoint: 2026-10-09 (retirement NOT yet safe)
+
+[Read-only GitHub Actions audit #37860495082](https://github.com/tommylin15/omniAgent/actions/runs/37860495082)
+ran under the dedicated `omniagent-ci` Workload Identity principal.
+Results were retrieved from actual Cloud Run, Cloud Build, Artifact Registry
+and GCS APIs; no assets or IAM policies were mutated.
+
+| Item | Verified live condition | Deletion |
+| --- | --- | --- |
+| `omniagent-main-v2` and `omniagent-release-v2` | Both exact trigger IDs resolved and both `disabled=true` | Already manually disabled and verified |
+| Chat formal traffic | `omniagent-chat-00004-dzs` 100% | Legacy runtime dependencies KEEP |
+| Gateway formal traffic | `omniagent-agent-gateway-00003-k6t` 100% | Legacy runtime dependencies KEEP |
+| Shared formal traffic | `omniagent-shared-codex-00004-xmq` 100% | Legacy runtime dependencies KEEP |
+| Cloud Run revision count | Chat 17, Gateway 13, Shared 12 | No revision removal authorized here |
+| Per-revision image registry | `.pkg.dev` references on the listed revisions, including Google-managed imported GHCR images | Do NOT equate revision registry references with deprecated AR ownership |
+| Scoped AR `omniagent` | Repository exists; four packages: Chat, Gateway, Shared, **PostgreSQL** | KEEP/BLOCKED; verify rollback and PostgreSQL use |
+| Cloud Run Jobs in named omniAgent scope / region | Zero returned | Does not exclude VMs, other regions, or non-obvious references |
+| Project-wide AR repository listing | Not readable by CI service account | Unknown; no project-wide clean sweep |
+| GCS bucket enumeration | `NO_PERMISSION_OR_UNAVAILABLE` | BLOCKED; no verified deletion candidates |
+| Two historical Cloud Build bucket names | `NOT_READABLE_OR_NOT_FOUND` | Unknown (not proven nonexistent) |
+
+The requested cleanup can be inventoried before traffic cutover, but
+**destructive AR/rollback image removal cannot proceed while serving
+the old revisions**. For GCS, grant the dedicated audit identity only the
+read-only metadata/list permissions necessary for this inventory. Continue
+to exclude backups, application files, unrelated projects and unknown
+ownership; rerun the workflow and classify object-level CI-only dependency
+before authorizing any deletion.
+
 ## Requested eventual cleanup scope
 
 | Asset class | Action after verified cutover | Nonnegotiable exclusion |
