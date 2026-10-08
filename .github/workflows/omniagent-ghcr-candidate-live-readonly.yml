@@ -64,7 +64,23 @@ jobs:
           images=[str(x.get("image","")) for x in c]
           approved="ghcr.io/tommylin15/"+name+"@sha256:"+digest
           if approved not in images:
-              raise SystemExit("BLOCKED: revision's immutable image digest changed")
+              # Record only public image provenance hints, not env/config/Secrets.
+              import hashlib
+              template=(service.get("spec") or {}).get("template") or {}
+              template_images=[str(x.get("image","")) for x in
+                               ((template.get("spec") or {}).get("containers") or [])]
+              def hints(values):
+                  return [{"origin":"GHCR" if v.startswith("ghcr.io/") else
+                           "AR" if ".pkg.dev/" in v else "OTHER_OR_MISSING",
+                           "digest_match":digest in v,
+                           "has_sha256":("sha256:" in v),
+                           "reference_hash":hashlib.sha256(v.encode()).hexdigest()[:12]}
+                          for v in values]
+              print(json.dumps({"diagnostic":"IMAGE_READBACK_MISMATCH",
+                                "service":name,"revision_images":hints(images),
+                                "template_images":hints(template_images),
+                                "revision_spec_keys":sorted((rev.get("spec") or {}).keys())},sort_keys=True))
+              raise SystemExit("BLOCKED: revision's immutable image digest not directly evidenced")
           tagurl=str(matching[0].get("url","")).rstrip("/")
           if not tagurl.startswith("https://"):
               raise SystemExit("BLOCKED: candidate tag URL absent")
