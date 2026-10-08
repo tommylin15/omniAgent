@@ -36,7 +36,7 @@ jobs:
           if ! gcloud secrets describe "$DEDICATED_SECRET" --project="$GCP_PROJECT_ID" >/dev/null 2>&1; then
             gcloud secrets create "$DEDICATED_SECRET" --project="$GCP_PROJECT_ID" --replication-policy=automatic --quiet
           fi
-          for account in omniagent-shared-codex omniagent-codex-life-client; do
+          for account in omniagent-shared-codex omniagent-codex-life-client omniagent-codex-market-client; do
             email="$account@$GCP_PROJECT_ID.iam.gserviceaccount.com"
             if ! gcloud iam service-accounts describe "$email" --project="$GCP_PROJECT_ID" >/dev/null 2>&1; then
               gcloud iam service-accounts create "$account" --project="$GCP_PROJECT_ID" --display-name="$account"
