@@ -1,0 +1,84 @@
+name: Shared Codex Auth Diagnostic
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/shared-codex-auth-diagnostic.yml'
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  PROJECT: gen-lang-client-0593591102
+  REGION: us-central1
+  WIF: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+  CI: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+  SERVICE: omniagent-shared-codex
+  CALLER: omniagent-codex-life-client@gen-lang-client-0593591102.iam.gserviceaccount.com
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.WIF }}
+          service_account: ${{ env.CI }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Inspect exact Cloud Run IAM and signed caller
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL="$(gcloud run services describe "$SERVICE" --project="$PROJECT" --region="$REGION" --format='value(status.url)')"
+          test -n "$URL"
+          gcloud run services get-iam-policy "$SERVICE" --project="$PROJECT" --region="$REGION" --format=json > /tmp/policy.json
+          python3 - <<'PY'
+          import json,os
+          p=json.load(open("/tmp/policy.json"))
+          email="serviceAccount:"+os.environ["CALLER"]
+          has=any(b.get("role")=="roles/run.invoker" and email in b.get("members",[]) for b in p.get("bindings",[]))
+          print("caller_run_invoker="+("PASS" if has else "MISSING"))
+          if not has: raise SystemExit("missing Cloud Run invoker binding")
+          PY
+          TOKEN="$(gcloud auth print-identity-token --impersonate-service-account="$CALLER" --audiences="$URL" --include-email)"
+          TOKEN="$TOKEN" TARGET_URL="$URL" python3 - <<'PY'
+          import os,json,base64
+          parts=os.environ["TOKEN"].split(".")
+          if len(parts)!=3: raise SystemExit("unexpected token structure")
+          p=json.loads(base64.urlsafe_b64decode(parts[1]+"==="))
+          print("token_email_matches="+str(p.get("email","").lower()==os.environ["CALLER"]).lower())
+          print("token_audience_matches="+str(p.get("aud")==os.environ["TARGET_URL"]).lower())
+          print("token_email_verified="+str(p.get("email_verified")))
+          PY
+          python3 - <<'PY' > /tmp/request.json
+          import json,uuid
+          print(json.dumps({"project":"life-assistant","ownerId":str(uuid.uuid4()),"requestId":str(uuid.uuid4()),"prompt":"Reply with exactly READY."}))
+          PY
+          status="$(curl --silent --show-error --max-time 150 --retry 0 \
+            -D /tmp/response-headers -o /tmp/response-body -w '%{http_code}' \
+            -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+            -X POST --data-binary @/tmp/request.json "$URL/v1/codex/execute")"
+          echo "http_status=$status"
+          HTTP_STATUS="$status" python3 - <<'PY'
+          import os,json
+          body=open("/tmp/response-body","rb").read(262144).decode("utf-8","replace")
+          headers=open("/tmp/response-headers","r",encoding="utf8").read()
+          content_type=next((x.partition(":")[2].strip() for x in headers.splitlines() if x.lower().startswith("content-type:")),"")
+          print("response_type="+("json" if "json" in content_type else "cloud-run-or-proxy-nonjson"))
+          if "json" in content_type:
+              try:
+                  d=json.loads(body)
+                  if os.environ["HTTP_STATUS"]=="200":
+                      print("provider_response="+str(bool(((d.get("result") or {}).get("text") or "").strip())))
+                  else:
+                      print("safe_application_error="+str(d.get("error") or d.get("status") or "none")[:80])
+              except ValueError:
+                  print("response_json_invalid")
+          elif os.environ["HTTP_STATUS"]!="200":
+              print("ingress_or_proxy_denial_suspected")
+          PY
+          [[ "$status" == "200" ]] || exit 1
