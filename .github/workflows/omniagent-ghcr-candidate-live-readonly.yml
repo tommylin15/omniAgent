@@ -1,0 +1,126 @@
+# Read-only runtime acceptance of the 2026-10-08 public-GHCR candidates.
+# No traffic mutations, Cloud Build/AR/GCS writes, credential payload access, or data writes.
+name: omniAgent GHCR candidate live read-only acceptance
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/omniagent-ghcr-candidate-live-readonly.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  candidate-readback:
+    if: github.repository == 'tommylin15/omniAgent' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      PROJECT: gen-lang-client-0593591102
+      REGION: us-central1
+      SOURCE_SHA: 3cf40bc7a9223a5ce7efa630dbd837c4ff57a46a
+    steps:
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+          service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Verify pinned candidate revisions, 0% traffic and source digests
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/omniagent-probes"
+          for item in \
+            'omniagent-chat omniagent-chat-00021-foz 0581b80e7ad5684426c20323a1f90317e4a740687d1dbf0f2c9009ef7588bb10' \
+            'omniagent-agent-gateway omniagent-agent-gateway-00012-pez 9212f2280b183eb69772b3938f1b176386da499bdab6c5c734e85f6aea9c1ba9' \
+            'omniagent-shared-codex omniagent-shared-codex-00005-kih 7e4a00bdd438b3a6aa50d115a02171c42e38ef9cdc4e5bfc34f0135f5ffb8dfb'; do
+            read -r svc revision digest <<< "$item"
+            gcloud run services describe "$svc" --project="$PROJECT" --region="$REGION" \
+              --format=json > "$RUNNER_TEMP/omniagent-probes/$svc-service.json"
+            gcloud run revisions describe "$revision" --project="$PROJECT" --region="$REGION" \
+              --format=json > "$RUNNER_TEMP/omniagent-probes/$svc-revision.json"
+            python3 - "$RUNNER_TEMP/omniagent-probes/$svc-service.json" \
+              "$RUNNER_TEMP/omniagent-probes/$svc-revision.json" \
+              "$RUNNER_TEMP/omniagent-probes/$svc-urls.json" \
+              "$svc" "$revision" "$digest" "$SOURCE_SHA" <<'PY'
+          import json,sys
+          from pathlib import Path
+          service, rev = (json.load(open(p)) for p in sys.argv[1:3])
+          out, name, expected, digest, sha = sys.argv[3:]
+          status=service.get("status") or {}
+          routes=status.get("traffic") or []
+          active=[t for t in routes if t.get("percent",0)>0]
+          if len(active)!=1 or active[0].get("percent")!=100 or active[0].get("revisionName")==expected:
+              raise SystemExit("BLOCKED: formal traffic is not 100% on the prior serving revision")
+          matching=[t for t in routes if t.get("revisionName")==expected and t.get("tag")=="ghcr-"+sha[:12]]
+          if len(matching)!=1 or matching[0].get("percent",0)!=0:
+              raise SystemExit("BLOCKED: approved tagged candidate missing or serving production traffic")
+          if status.get("latestReadyRevisionName")!=expected:
+              raise SystemExit("BLOCKED: candidate not latest ready")
+          c=(rev.get("spec") or {}).get("containers") or []
+          images=[str(x.get("image","")) for x in c]
+          approved="ghcr.io/tommylin15/"+name+"@sha256:"+digest
+          if approved not in images:
+              raise SystemExit("BLOCKED: revision's immutable image digest changed")
+          tagurl=str(matching[0].get("url","")).rstrip("/")
+          if not tagurl.startswith("https://"):
+              raise SystemExit("BLOCKED: candidate tag URL absent")
+          baseurl=str(status.get("url","")).rstrip("/")
+          if not baseurl.startswith("https://"):
+              raise SystemExit("BLOCKED: active service URL absent")
+          Path(out).write_text(json.dumps({"tag_url":tagurl,"service_url":baseurl,"revision":expected}))
+          print(json.dumps({"service":name,"candidate":expected,"candidate_percent":0,
+                            "active_revision":active[0].get("revisionName"),
+                            "active_percent":100,"image_digest_verified":True,
+                            "candidate_ready":True},sort_keys=True))
+          PY
+          done
+      - name: HTTP candidate probes - status only, never log responses
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - "$RUNNER_TEMP/omniagent-probes" "$GITHUB_STEP_SUMMARY" <<'PY'
+          import json,sys,urllib.request,urllib.error,ssl
+          from pathlib import Path
+          root=Path(sys.argv[1])
+          summary=Path(sys.argv[2])
+          result=[]
+          summary_rows=["## GHCR candidate runtime probes (read-only)", "",
+                        "All candidate revisions remain at 0% formal traffic.", "",
+                        "| Service | Path | Anonymous HTTP | Gate |",
+                        "| --- | --- | --- | --- |"]
+          for name in ("omniagent-chat","omniagent-agent-gateway","omniagent-shared-codex"):
+              conf=json.loads((root/(name+"-urls.json")).read_text())
+              url=conf["tag_url"]
+              for path in ("/health","/ready") if name!="omniagent-agent-gateway" else ("/health",):
+                  req=urllib.request.Request(url+path,method="GET",
+                      headers={"User-Agent":"omniagent-ghcr-candidate-readonly/1"})
+                  try:
+                      with urllib.request.urlopen(req,timeout=25) as resp:
+                          status=resp.status
+                  except urllib.error.HTTPError as err:
+                      status=err.code
+                  except (urllib.error.URLError,TimeoutError,ssl.SSLError):
+                      status="UNREACHABLE"
+                  # Private services: 401/403 is expected unauthenticated denial,
+                  # not evidence of a healthy application. Never label them READY.
+                  if name=="omniagent-chat":
+                      gate="PASS" if status==200 else "BLOCKED"
+                  else:
+                      gate="PRIVATE_DENIAL_ONLY" if status in (401,403) else "UNVERIFIED"
+                  result.append((name,path,status,gate))
+                  summary_rows.append(f"| `{name}` | `{path}` | {status} | {gate} |")
+                  print(json.dumps({"service":name,"endpoint":path,"http_status":status,"gate":gate},sort_keys=True))
+          summary_rows.extend(["", "No public probe proves human browser OAuth, two-owner separation,",
+                               "Chat↔Gateway durable dispatch, signed caller inference, rollback or promotion.",
+                               "**Production promotion is NOT authorized by this workflow.**"])
+          with summary.open("a") as stream:
+              stream.write("\n".join(summary_rows)+"\n")
+          failed=[x for x in result if x[0]=="omniagent-chat" and x[3]!="PASS"]
+          if failed:
+              raise SystemExit("BLOCKED: Chat candidate health/readiness is not accepted")
+          print("anonymous_chat_health_and_ready=PASS; private_live_integration=OPEN")
+          PY
