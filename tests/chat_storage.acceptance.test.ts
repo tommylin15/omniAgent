@@ -74,7 +74,7 @@ describe.runIf(Boolean(dsn))("isolated PostgreSQL ChatStore acceptance", () => {
       const aliceQueued = await store.message(a,"thread-a","dispatch alice","dispatch-alice");
       const bobQueued = await store.message(b,"thread-b","dispatch bob","dispatch-bob");
       const [claimOne,claimTwo] = await Promise.all([
-        store.claimNextQueuedTurn(),store.claimNextQueuedTurn()
+        store.claimNextQueuedTurn([a,b]),store.claimNextQueuedTurn([a,b])
       ]);
       expect(claimOne).not.toBeNull();
       expect(claimTwo).not.toBeNull();
@@ -90,24 +90,25 @@ describe.runIf(Boolean(dsn))("isolated PostgreSQL ChatStore acceptance", () => {
         ownerId:b,threadId:"thread-b",runtime:"gemini",model:"test-model",
         content:"dispatch bob"
       });
-      expect(await store.claimNextQueuedTurn()).toBeNull();
+      expect(await store.claimNextQueuedTurn([a,b])).toBeNull();
       const statuses = await pool.query(`
         SELECT owner_id,status FROM omni_chat.turns
         WHERE turn_id=ANY($1::varchar[])`, [[claimOne!.turnId,claimTwo!.turnId]]);
       expect(statuses.rows).toHaveLength(2);
       expect(statuses.rows.every(row => row.status === "RUNNING")).toBe(true);
       // No automatic replay of in-flight provider effects after a crash.
-      expect(await store.claimNextQueuedTurn()).toBeNull();
+      expect(await store.claimNextQueuedTurn([a,b])).toBeNull();
 
       // Real ephemeral Postgres persists Gateway replies under the claimed
       // owner only. The provider is stubbed: GCP live integration is separate.
       const pending=await store.message(b,"thread-b","gateway hello","gateway-1");
+      expect(await store.claimNextQueuedTurn([a])).toBeNull();
       const executor=new ChatDispatcher(store,async task => ({events:[
         {type:"text_delta",threadId:task.threadId,turnId:task.turnId,
           payload:{text:"assistant reply"}},
         {type:"turn_completed",threadId:task.threadId,turnId:task.turnId,
           payload:{status:"completed"}}
-      ]}));
+      ]}),[b]);
       expect(await executor.runOnce()).toMatchObject({
         status:"completed",turnId:pending.turn.turn_id
       });
