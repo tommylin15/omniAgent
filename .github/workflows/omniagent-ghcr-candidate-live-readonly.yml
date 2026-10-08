@@ -21,7 +21,7 @@ jobs:
     env:
       PROJECT: gen-lang-client-0593591102
       REGION: us-central1
-      SOURCE_SHA: 3cf40bc7a9223a5ce7efa630dbd837c4ff57a46a
+      SOURCE_SHA: 36fe37ea186aa60e85a337d85d2ad8722889d339
     steps:
       - uses: google-github-actions/auth@v2
         with:
@@ -34,9 +34,9 @@ jobs:
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/omniagent-probes"
           for item in \
-            'omniagent-chat omniagent-chat-00021-foz 0581b80e7ad5684426c20323a1f90317e4a740687d1dbf0f2c9009ef7588bb10' \
-            'omniagent-agent-gateway omniagent-agent-gateway-00012-pez 9212f2280b183eb69772b3938f1b176386da499bdab6c5c734e85f6aea9c1ba9' \
-            'omniagent-shared-codex omniagent-shared-codex-00005-kih 7e4a00bdd438b3a6aa50d115a02171c42e38ef9cdc4e5bfc34f0135f5ffb8dfb'; do
+            'omniagent-chat omniagent-chat-00026-vov c024a6c99b03f2b67af71e7bf5288a4cdcf9800e2bc731e35d473b30e4af6e24' \
+            'omniagent-agent-gateway omniagent-agent-gateway-00017-fey 6df905119949707f7cbdb938216016d6cb7ba612b65b5fc82377fb106869fa0d' \
+            'omniagent-shared-codex omniagent-shared-codex-00010-vih 47dc418be61a4b6e93759a42e2af6403f5dae4ab8f0f6f792a8b648501c596dd'; do
             read -r svc revision digest <<< "$item"
             gcloud run services describe "$svc" --project="$PROJECT" --region="$REGION" \
               --format=json > "$RUNNER_TEMP/omniagent-probes/$svc-service.json"

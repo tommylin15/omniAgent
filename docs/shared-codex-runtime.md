@@ -1,6 +1,6 @@
 # Shared Codex runtime — integration and acceptance
 
-Status (2026-10-08): **Shared service LIVE ACCEPTED**, including independent repeat of three-caller live validation (GitHub Actions 37712312136). **Legacy credential retirement was NOT executed by the user in this follow-up; previous owner-reported-execution wording was an assistant misunderstanding and has been corrected.** Secret deletion is NOT verified or claimed. External consumer adapter cutovers remain OPEN and separately owned.
+Status (2026-10-08, latest checkpoint): **GHCR zero-traffic Shared Codex candidate three-caller live inference PASS** (Actions 37791333261, revision omniagent-shared-codex-00010-vih). The existing serving AR revision had a more recent HTTP 502 regression (Actions 37774120512); this new candidate is **not yet production-promoted**. The earlier independent three-caller AR service validation (37712312136) remains historical evidence, not a guarantee of current serving health. **Legacy credential retirement was NOT executed by the user; resource deletion remains unverified.** External consumer adapters, Chat OAuth/two-owner E2E, promotion, rollback and cleanup remain OPEN.
 
 ## Boundary
 
@@ -142,3 +142,11 @@ The script **has not been run by the user according to their explicit clarificat
 ## Operational cautions
 
 This initial synchronous endpoint is intended for bounded text tasks. Long-running code changes, GitHub write operations, interactive approvals, durable retry, async queues, idempotent replay, and model/provider usage accounting are **not implemented** by this slice. Repeated requests with the same requestId do not yet implement exactly-once semantics; consumer callers must avoid automatic unsafe retries. Scopes and entitlements must be reviewed before enabling more capable modes.
+
+
+## Current GHCR credential-refresh regression and candidate recovery — 2026-10-08
+
+- During the GHCR migration, both older AR serving and the GHCR 0% candidate returned HTTP 502 for real Codex inference. The old-serving control run [37774120512](https://github.com/tommylin15/omniAgent/actions/runs/37774120512) returned HTTP 502; Cloud Logging read was NOT_AUTHORIZED. The GHCR candidate's first sanitized failure stage was `account_read` ([37778043754](https://github.com/tommylin15/omniAgent/actions/runs/37778043754)). The non-refresh account probe succeeded, while the forced `account/read` with `refreshToken: true` failed at `account_refresh` ([37788811703](https://github.com/tommylin15/omniAgent/actions/runs/37788811703)); the safe reason was `account_unavailable` ([37790215693](https://github.com/tommylin15/omniAgent/actions/runs/37790215693)). This does **not** prove a revoked Refresh Token.
+- Remediation candidate: the Shared service uses an isolated home and performs `account/read` with `refreshToken: false` at startup; the real model turn remains responsible for validating its provider token. The default Gateway call path retains eager refresh. A changed credential is persisted before any turn begins, avoiding loss of refreshed auth on later turn failure. Do not interpret a non-refresh account probe alone as successful authorization.
+- After the change, the pinned 0% GHCR candidate `omniagent-shared-codex-00010-vih` using digest `sha256:47dc418be61a4b6e93759a42e2af6403f5dae4ab8f0f6f792a8b648501c596dd` passed all three **real** provider calls (`omniagent`, `market-mart`, `life-assistant`), isolated fresh threads, private IAM and cross-project denial in [37791333261](https://github.com/tommylin15/omniAgent/actions/runs/37791333261). Production traffic remained on the earlier serving revision. Candidate acceptance is **PASS**, formal rollout and cross-service/user E2E are **NOT YET ACCEPTED**.
+- Keep the exact revision/digest pinned in any subsequent signed/read-only smoke. This file records evidence, not permission to bypass Chat OAuth two-user, database, rollback or asset-retirement gates.

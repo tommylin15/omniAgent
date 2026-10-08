@@ -16,7 +16,7 @@ permissions:
 env:
   PROJECT: gen-lang-client-0593591102
   REGION: us-central1
-  TAG: ghcr-3cf40bc7a922
+  TAG: ghcr-36fe37ea186a
 
 jobs:
   chat-web:
@@ -37,8 +37,8 @@ jobs:
           python3 - "$RUNNER_TEMP/chat.json" <<'PY'
           import json,sys,urllib.request,urllib.error
           s=json.load(open(sys.argv[1])); routes=s.get("status",{}).get("traffic",[])
-          targets=[t for t in routes if t.get("tag")=="ghcr-3cf40bc7a922"
-                   and t.get("revisionName")=="omniagent-chat-00021-foz" and t.get("percent",0)==0]
+          targets=[t for t in routes if t.get("tag")=="ghcr-36fe37ea186a"
+                   and t.get("revisionName")=="omniagent-chat-00026-vov" and t.get("percent",0)==0]
           if len(targets)!=1: raise SystemExit("BLOCKED: Chat candidate identity/tag/traffic changed")
           origin=targets[0].get("url","").rstrip("/")
           if not origin.startswith("https://"): raise SystemExit("BLOCKED: invalid candidate url")
@@ -68,10 +68,10 @@ jobs:
       matrix:
         include:
           - service: omniagent-agent-gateway
-            revision: omniagent-agent-gateway-00012-pez
+            revision: omniagent-agent-gateway-00017-fey
             caller: omniagent-chat
           - service: omniagent-shared-codex
-            revision: omniagent-shared-codex-00005-kih
+            revision: omniagent-shared-codex-00010-vih
             caller: omniagent-codex-chat-client
     steps:
       - uses: google-github-actions/auth@v2
