@@ -78,6 +78,18 @@ jobs:
               else:
                   kind="NOT_FAILURE"
               print("gate_"+component+"_failure_class="+kind)
+              for label,marker in (
+                  ("getOpenIdToken","iam.serviceAccounts.getOpenIdToken"),
+                  ("getAccessToken","iam.serviceAccounts.getAccessToken"),
+                  ("actAs","iam.serviceAccounts.actAs"),
+                  ("runInvoke","run.routes.invoke"),
+                  ("secretAccess","secretmanager.versions.access"),
+                  ("runUpdate","run.services.update"),
+                  ("identityToken","print-identity-token"),
+                  ("impersonate","impersonate-service-account"),
+                  ("http403","HTTP 403"),
+                  ("PERMISSION_DENIED","PERMISSION_DENIED")):
+                  print("gate_"+component+"_marker_"+label+"="+str(marker.lower() in error.lower()))
           for component,result in sorted(s.get("recovery_probe",{}).items()):
               print("recovery_step_"+component+"="+("PASS" if str(result).startswith("PASS:") else "NOT_PASS"))
           for key,val in sorted(gates.items()):
