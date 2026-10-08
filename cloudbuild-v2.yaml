@@ -56,7 +56,7 @@ steps:
   - id: release-safety-checks
     name: gcr.io/google.com/cloudsdktool/google-cloud-cli:slim
     entrypoint: python3
-    args: [-m, unittest, discover, -s, tests, -p, test_cicd_v2.py]
+    args: [-m, unittest, discover, -s, tests, -p, 'test_*.py']
 
   - id: immutable-docker-build-and-push
     name: gcr.io/google.com/cloudsdktool/google-cloud-cli:slim
