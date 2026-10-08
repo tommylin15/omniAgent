@@ -1,0 +1,47 @@
+name: omniAgent V2 manual candidate or release
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: 'Full current main SHA; stale revisions are rejected'
+        required: true
+        type: string
+      mode:
+        description: 'shadow validates candidates; canonical requires every Ready gate'
+        required: true
+        default: shadow
+        type: choice
+        options: [shadow, canonical]
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: omniagent-v2-manual-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    steps:
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+          service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Explicit full-SHA Cloud Build execution
+        env:
+          RELEASE_SHA: ${{ inputs.sha }}
+          RELEASE_MODE: ${{ inputs.mode }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$RELEASE_MODE" == shadow || "$RELEASE_MODE" == canonical ]]
+          gcloud builds triggers run omniagent-release-v2 \
+            --project=gen-lang-client-0593591102 --region=us-central1 \
+            --sha="$RELEASE_SHA" --substitutions="_MODE=$RELEASE_MODE,_RELEASE_SHA=$RELEASE_SHA"

@@ -222,3 +222,26 @@ omniAgent final acceptance may be declared only after exact-head implementation/
 - Internal HMAC transport uses `X-OmniAgent-Timestamp` and `X-OmniAgent-Signature`.
 - `omniagent-internal-signing-key` is not part of the current architecture and must not be recreated.
 - GitHub deployment identity and Artifact Registry target must be omniAgent-owned/configured; missing values fail closed.
+
+## 8. CI/CD V2
+
+Main Push runs affected Node/Flutter/API/contract/security CI in GCP and does not
+publish Cloud Run traffic. Explicit Release locks a full main SHA after reviewed
+implementation/tests/dependencies are Ready. Compare from each component's last
+successful release; no runtime change means no forced deployment.
+
+Preserve the three existing services, bundled Flutter, OAuth, DB, Secret references,
+caller identities and external boundaries. Shared Codex needs compatible contracts,
+security/isolation acceptance and its own atomic lock; unrelated commits do not
+rebuild it. Breaking contracts need a compatible version. No external IAM/repo edits.
+
+Candidates have zero active traffic. Promote after affected mandatory live gates,
+dependency checks and recovery. Preserve previous usable versions; same SHA is
+idempotent and stale SHA cannot overwrite runtime/candidates. Bound build duration,
+attempts and provider calls. Only unreferenced owned images may be cleaned after
+dry-run. No paid scanning or unapproved resources.
+
+Status is ACTIVE/PARTIAL until CI Push, explicit Release, all four actual paths,
+Shared compatibility, live acceptance, recovery/readback and old auto-deploy
+retirement have real evidence. [Runbook](../docs/cicd-v2-runbook.md) contains
+procedures; this control set remains the policy source.

@@ -1,0 +1,85 @@
+substitutions:
+  _MODE: ci
+  _RELEASE_SHA: ''
+  _VERIFY_ALL_PATHS: 'false'
+
+timeout: 3600s
+options:
+  logging: CLOUD_LOGGING_ONLY
+  substitutionOption: MUST_MATCH
+
+steps:
+  - id: change-detection-and-serialization
+    name: gcr.io/google.com/cloudsdktool/google-cloud-cli:slim
+    entrypoint: python3
+    args: [infra/gcp/cicd_v2.py, prepare, '--sha=$COMMIT_SHA', '--build-id=$BUILD_ID', '--mode=${_MODE}', '--release-sha=${_RELEASE_SHA}']
+
+  - id: node-api-security-gates
+    name: node:22.20.0-bookworm
+    entrypoint: bash
+    args:
+      - -ceu
+      - |
+        npm ci
+        npm run build
+        npm test
+        bash -n setup-omniagent-db-dev.sh
+        for script in infra/gcp/*.sh; do bash -n "$$script"; done
+        forbidden="$$(printf '\152\141\156\165\163')"
+        if git ls-files | grep -i "$$forbidden"; then exit 1; fi
+        if git grep -n -i "$$forbidden" -- .; then exit 1; fi
+
+  - id: isolated-postgres-owner-acceptance
+    name: gcr.io/cloud-builders/docker
+    entrypoint: bash
+    args:
+      - -ceu
+      - |
+        docker run -d --name omniagent-v2-pg --network=cloudbuild \
+          -e POSTGRES_USER=omniagent_test -e POSTGRES_PASSWORD=isolated_ci_only \
+          -e POSTGRES_DB=omniagent_acceptance postgres:16-alpine
+        trap 'docker rm -f omniagent-v2-pg >/dev/null' EXIT
+        for attempt in $$(seq 1 30); do
+          if docker exec omniagent-v2-pg pg_isready -U omniagent_test -d omniagent_acceptance; then break; fi
+          sleep 1
+        done
+        docker run --rm --network=container:omniagent-v2-pg -v /workspace:/workspace -w /workspace \
+          -e PG_TEST_URL=postgres://omniagent_test:isolated_ci_only@127.0.0.1:5432/omniagent_acceptance \
+          node:22.20.0-bookworm npx vitest run tests/chat_storage.acceptance.test.ts
+
+  - id: flutter-web-gates
+    name: ghcr.io/cirruslabs/flutter:stable
+    entrypoint: bash
+    dir: apps/agent_app
+    args: [-ceu, 'flutter pub get && flutter analyze lib test && flutter test && flutter build web']
+
+  - id: release-safety-checks
+    name: gcr.io/google.com/cloudsdktool/google-cloud-cli:slim
+    entrypoint: python3
+    args: [-m, unittest, discover, -s, tests, -p, test_cicd_v2.py]
+
+  - id: immutable-docker-build-and-push
+    name: gcr.io/google.com/cloudsdktool/google-cloud-cli:stable
+    entrypoint: bash
+    args: [-ceu, 'if [[ "${_MODE}" != ci ]]; then apt-get update -qq && apt-get install -y -qq --no-install-recommends docker.io && python3 infra/gcp/cicd_v2.py build; fi']
+
+  - id: no-traffic-candidates
+    name: gcr.io/google.com/cloudsdktool/google-cloud-cli:slim
+    entrypoint: bash
+    args: [-ceu, 'if [[ "${_MODE}" != ci ]]; then python3 infra/gcp/cicd_v2.py deploy; fi']
+
+  - id: live-api-auth-owner-codex-integration-acceptance
+    name: gcr.io/google.com/cloudsdktool/google-cloud-cli:slim
+    entrypoint: bash
+    env: ['VERIFY_ALL_PATHS=${_VERIFY_ALL_PATHS}']
+    args: [-ceu, 'if [[ "${_MODE}" != ci ]]; then python3 infra/gcp/live_acceptance_v2.py; fi']
+
+  - id: image-cleanup-dry-run
+    name: gcr.io/google.com/cloudsdktool/google-cloud-cli:slim
+    entrypoint: bash
+    args: [-ceu, 'if [[ "${_MODE}" != ci ]]; then python3 infra/gcp/cicd_v2.py cleanup; fi']
+
+  - id: gated-promotion-and-runtime-readback
+    name: gcr.io/google.com/cloudsdktool/google-cloud-cli:slim
+    entrypoint: bash
+    args: [-ceu, 'if [[ "${_MODE}" == ci ]]; then python3 infra/gcp/cicd_v2.py record-ci; else python3 infra/gcp/cicd_v2.py release --mode=${_MODE}; fi']

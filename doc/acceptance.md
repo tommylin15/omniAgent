@@ -1,5 +1,15 @@
 # omniAgent acceptance matrix
 
+## CI/CD V2 checkpoint — ACTIVE / PARTIAL
+
+Four paths: Chat API, Flutter bundled in Chat, Gateway, Shared Codex. Main Push
+CI and explicit full-SHA Release are separate. Source safety checks are executable
+in `tests/test_cicd_v2.py`; cloud/live proof is pending. Existing provider Secret
+absence, human Google Web identity and durable dispatcher gates stay OPEN.
+No canonical release, image cleanup or CLOSED claim is made from source tests.
+
+Evidence and operator commands: [V2 runbook](../docs/cicd-v2-runbook.md).
+
 > Executable baseline validated through `main@d1769491ba41670e86222536ee129b94bbfba04f`; Node Core run `37628904846` PASS. UI source baseline `12a94018debd11f5b389aa2fdf325339782bb9d8`; Flutter run `37625912746` PASS.
 > Architecture revision: 2026-10-07.
 > Code/design presence cannot substitute for runtime evidence.

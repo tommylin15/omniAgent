@@ -1,5 +1,19 @@
 # omniAgent TODO
 
+## CI/CD V2 — ACTIVE / PARTIAL (2026-10-08)
+
+- [x] Inventory Chat, bundled Flutter, Gateway, Shared; reuse private 2nd Gen
+  repository and create separate us-central1 CI Push / manual Release triggers.
+- [x] Source: tested SHA/change/image safeguards, independent Shared lock,
+  bounded attempt/provider cost and recovery; manual V2 replaces old publishers.
+- [ ] Real CI Push and explicit bounded candidate Release evidence.
+- [ ] Approved provider bundle missing; human OAuth/dispatcher dependencies OPEN.
+- [ ] All mandatory candidate gates, canonical release/readback/recovery.
+- [ ] Safe image cleanup after dry-run and accepted release.
+- [ ] Final evidence reconciliation; CLOSED only after every required gate.
+
+See [operations](../docs/cicd-v2-runbook.md); CI success is not runtime acceptance.
+
 > Executable ownership-cleanup baseline validated through `main@d1769491ba41670e86222536ee129b94bbfba04f`; Node Core run `37628904846` PASS. UI source baseline `12a94018debd11f5b389aa2fdf325339782bb9d8`; Flutter run `37625912746` PASS.
 > Architecture revision: 2026-10-07.
 > Code/migration/infra work listed here must be executed through the approved development flow; documentation updates are not implementation.

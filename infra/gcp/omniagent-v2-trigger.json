@@ -1,0 +1,17 @@
+{
+  "name": "omniagent-main-v2",
+  "description": "omniAgent CI/CD V2 main Push CI only; no image publishing or Cloud Run mutation",
+  "disabled": true,
+  "filename": "cloudbuild-v2.yaml",
+  "repositoryEventConfig": {
+    "repository": "projects/gen-lang-client-0593591102/locations/us-central1/connections/tommy-github/repositories/tommylin15-omniAgent",
+    "push": {
+      "branch": "^main$"
+    }
+  },
+  "serviceAccount": "projects/gen-lang-client-0593591102/serviceAccounts/omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com",
+  "substitutions": {
+    "_MODE": "ci"
+  },
+  "id": "78b4219e-b65c-4e7f-9d75-0f12f7b87e05"
+}

@@ -1,0 +1,12 @@
+{
+  "name": "omniagent-release-v2",
+  "description": "Explicit SHA-pinned omniAgent release; gated candidate acceptance and promotion",
+  "filename": "cloudbuild-v2.yaml",
+  "sourceToBuild": {
+    "repository": "projects/gen-lang-client-0593591102/locations/us-central1/connections/tommy-github/repositories/tommylin15-omniAgent",
+    "ref": "refs/heads/main",
+    "repoType": "GITHUB"
+  },
+  "serviceAccount": "projects/gen-lang-client-0593591102/serviceAccounts/omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com",
+  "substitutions": {"_MODE": "canonical"}
+}
