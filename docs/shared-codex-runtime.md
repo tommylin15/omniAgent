@@ -64,13 +64,16 @@ Release workflow configuration is pinned in `.github/workflows/shared-codex-clou
 Operator procedure in a Google Cloud Shell already authenticated as an authorized project administrator:
 
 ```bash
-git clone https://github.com/tommylin15/omniAgent.git
+# This repository is private; authenticate GitHub access in Cloud Shell first.
+# If GitHub CLI is available:
+gh auth login --web
+gh repo clone tommylin15/omniAgent
 cd omniAgent
 SOURCE_CODEX_AUTH_SECRET="<the-approved-existing-Codex-auth-Secret-name>" \
   bash infra/gcp/bootstrap-shared-codex-iam.sh
 ```
 
-The script independently verifies the exact project number, creates the dedicated Secret and four restricted service accounts, transfers the approved existing Codex `auth.json` using temporary mode-0600 files, validates a byte-identical Secret Manager readback, grants only destination-Secret runtime access and metadata-only CI viewer permission, configures scoped runtime-account attachment and token-minting for the three low-privilege caller accounts, and leaves the source Secret intact. It is safe to rerun without replacing an existing enabled destination Secret version. Review its code before executing it. The CI-only `Shared Codex IAM bootstrap verification` action validates bash and shellcheck; it **does not run this administrator operation**.
+If GitHub CLI is unavailable, authenticate Git over HTTPS securely before cloning the private repository; do not place tokens in shell commands or history. The script independently verifies the exact project number, creates the dedicated Secret and four restricted service accounts, transfers the approved existing Codex `auth.json` using temporary mode-0600 files, validates a byte-identical Secret Manager readback, grants only destination-Secret runtime access and metadata-only CI viewer permission, configures scoped runtime-account attachment and token-minting for the three low-privilege caller accounts, and leaves the source Secret intact. It is safe to rerun without replacing an existing enabled destination Secret version. Review its code before executing it. The CI-only `Shared Codex IAM bootstrap verification` action validates bash and shellcheck; it **does not run this administrator operation**.
 
 After this one-time action, rerun `Shared Codex Cloud Run candidate` through GitHub Actions; a new Cloud Run revision is not accepted until the private ingress, credential verification and all three real inference calls pass. The old credential Secret is a separate retirement action requiring verified service acceptance, and is never deleted by the IAM bootstrap.
 
