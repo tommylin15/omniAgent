@@ -21,7 +21,7 @@ env:
   SHARED_CODEX_SERVICE: omniagent-shared-codex
   SHARED_CODEX_RUNTIME_SA: omniagent-shared-codex@gen-lang-client-0593591102.iam.gserviceaccount.com
   SHARED_CODEX_AUTH_RESOURCE: projects/gen-lang-client-0593591102/secrets/omniagent-shared-codex-auth
-  SHARED_CODEX_CALLERS_JSON: '{"market-mart":"intelligence-mart@gen-lang-client-0593591102.iam.gserviceaccount.com","life-assistant":"omniagent-codex-life-client@gen-lang-client-0593591102.iam.gserviceaccount.com","omniagent":"omniagent-chat@gen-lang-client-0593591102.iam.gserviceaccount.com"}'
+  SHARED_CODEX_CALLERS_JSON: '{"market-mart":"omniagent-codex-market-client@gen-lang-client-0593591102.iam.gserviceaccount.com","life-assistant":"omniagent-codex-life-client@gen-lang-client-0593591102.iam.gserviceaccount.com","omniagent":"omniagent-chat@gen-lang-client-0593591102.iam.gserviceaccount.com"}'
 
 jobs:
   candidate:
