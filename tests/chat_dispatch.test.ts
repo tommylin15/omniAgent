@@ -18,7 +18,7 @@ describe("Chat -> Gateway durable one-shot dispatch", () => {
   it("persists only the claimed owner turn and does not repeat provider effects", async () => {
     const db=store();
     const invoke=vi.fn(async () => response());
-    const worker=new ChatDispatcher(db,invoke);
+    const worker=new ChatDispatcher(db,invoke,["owner-a"]);
     expect(await worker.runOnce()).toEqual({status:"completed",turnId:"turn-a"});
     expect(await worker.runOnce()).toEqual({status:"idle"});
     expect(invoke).toHaveBeenCalledTimes(1);
@@ -32,7 +32,7 @@ describe("Chat -> Gateway durable one-shot dispatch", () => {
     const db=store();
     const worker=new ChatDispatcher(db,async () => ({ events:[
       {type:"turn_completed",threadId:"other-thread",payload:{status:"complete"}}
-    ] }));
+    ] }),["owner-a"]);
     expect(await worker.runOnce()).toEqual({
       status:"error",turnId:"turn-a",reason:"gateway_outcome_uncertain"
     });
@@ -49,7 +49,7 @@ describe("Chat -> Gateway durable one-shot dispatch", () => {
         {type:"turn_completed",payload:{status:"duplicate"}}]}
     ]) {
       const db=store();
-      expect((await new ChatDispatcher(db,async()=>fake).runOnce()).status).toBe("error");
+      expect((await new ChatDispatcher(db,async()=>fake,["owner-a"]).runOnce()).status).toBe("error");
       expect(db.appendEvent).toHaveBeenCalledTimes(1);
       expect(db.appendEvent.mock.calls[0][4]).toBe("turn_error");
     }
@@ -58,7 +58,7 @@ describe("Chat -> Gateway durable one-shot dispatch", () => {
   it("never resubmits a claimed turn after an ambiguous provider failure", async () => {
     const db=store();
     const invoke=vi.fn(async()=>{throw new Error("provider details must not leak");});
-    const worker=new ChatDispatcher(db,invoke);
+    const worker=new ChatDispatcher(db,invoke,["owner-a"]);
     expect((await worker.runOnce()).reason).toBe("gateway_outcome_uncertain");
     expect(await worker.runOnce()).toEqual({status:"idle"});
     expect(invoke).toHaveBeenCalledTimes(1);
@@ -67,7 +67,7 @@ describe("Chat -> Gateway durable one-shot dispatch", () => {
   it("fails closed on event persistence errors, requiring reconciliation", async () => {
     const db=store();
     db.appendEvent.mockRejectedValue(new Error("database down"));
-    await expect(new ChatDispatcher(db,async()=>response()).runOnce())
+    await expect(new ChatDispatcher(db,async()=>response(),["owner-a"]).runOnce())
       .rejects.toThrow("dispatch_persistence_needs_reconciliation");
   });
 
@@ -77,7 +77,7 @@ describe("Chat -> Gateway durable one-shot dispatch", () => {
     const worker=new ChatDispatcher(db,async()=>({events:[
       {type:"text_delta",threadId:"native-thread",turnId:"native-turn",payload:{delta:"test"}},
       {type:"turn_completed",threadId:"native-thread",turnId:"native-turn",payload:{status:"completed"}}
-    ]}));
+    ]}),["owner-a"]);
     expect((await worker.runOnce()).status).toBe("completed");
     expect(db.appendEvent).toHaveBeenNthCalledWith(1,"owner-a","thread-a","turn-a",
       "gateway-turn-a-0","text_delta",{delta:"test",text:"test"});
