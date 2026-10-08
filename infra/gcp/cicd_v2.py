@@ -321,7 +321,7 @@ def deploy(state):
     fresh(state)
     for key in state["components"]:
         row = state["services"][key]
-        tag = "v2-" + state["sha"]
+        tag = "v2-" + state["sha"][:16]
         revision = SERVICES[key] + "-v2-" + state["sha"][:32]
         existing = cloud_json("run", "revisions", "list", "--service=" + SERVICES[key], f"--region={REGION}", "--limit=1000")
         if any(r["metadata"]["name"] == revision for r in existing):

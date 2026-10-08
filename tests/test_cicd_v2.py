@@ -12,6 +12,20 @@ if spec.loader and Path(spec.origin).exists():
 
 
 class ReleaseSafety(unittest.TestCase):
+    def test_candidate_tag_fits_cloud_run_for_every_existing_service(self):
+        def stop_at_deploy(*args):
+            if args[:2] == ("run", "deploy"):
+                raise RuntimeError("deployment boundary")
+            return ""
+        for key, name in v2.SERVICES.items():
+            state = {"sha": "a" * 40, "components": [key], "services": {key: {"image": "pkg@sha256:test"}}}
+            with patch.object(v2, "fresh"), patch.object(v2, "cloud_json", return_value=[]), \
+                patch.object(v2, "gcloud", side_effect=stop_at_deploy) as sdk:
+                with self.assertRaisesRegex(RuntimeError, "deployment boundary"):
+                    v2.deploy(state)
+            tag = next(arg.split("=", 1)[1] for arg in sdk.call_args.args if arg.startswith("--tag="))
+            self.assertLessEqual(len(tag) + len(name), 46)
+
     def test_missing_sha_image_builds_without_parsing_sdk_error_text(self):
         state = {"sha": "a" * 40, "components": ["chat"], "google_client_id": "existing",
             "services": {"chat": {}}}

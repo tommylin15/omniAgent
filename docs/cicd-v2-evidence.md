@@ -68,3 +68,14 @@ unimplemented. Canonical release/full live acceptance/CLOSED are not claimed.
   hello-world container. Regional, existing CI SA, CLOUD_LOGGING_ONLY, no source
   upload/staging or new Runtime. Five-minute timeout. Package source:
   https://packages.debian.org/trixie/docker-cli.
+- Main `1e39f4659b1eeb63e555cd05f950e521a7cbe624` CI
+  `63f298f8-badf-4cd3-9d47-86d39d8e6c1a` **SUCCESS**. Shadow
+  `427f285b-60bd-427c-afed-07ac59220820` source + Docker build/push **PASS**:
+  Chat digest `sha256:5d348db409428b0b7a9b9f4fff52cd0bbef95b5cad0023acc56c3391298e86c4`;
+  Gateway digest `sha256:0dfab02f7533fd607454115afa26c8f740727e4b111b8e249ef86cd47cf4b2c8`.
+  Deployment rejected before candidate acceptance: combined traffic tag/service
+  name limit is 46 characters. URL tag now uses a 16-hex SHA prefix; full SHA stays
+  in image tag, revision identity and runtime label; digest is checked on reuse.
+  A regression checks the actual deploy arguments for all three existing services.
+- Owner selected administrator completion of the existing Provider bundle runbook.
+  No new Secret, key material or Secret/IAM admin grant was made by this task.
