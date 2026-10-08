@@ -192,7 +192,7 @@ export async function executeCodex(body: RequestBody): Promise<Execution> {
     error = failure;
     // Never leak a provider exception, auth payload or native RPC message.
     throw new CodexExecutionStageError(stage,
-      stage === "account_refresh" ? classifyCodexRefreshFailure(failure) : undefined);
+      (stage as CodexFailureStage) === "account_refresh" ? classifyCodexRefreshFailure(failure) : undefined);
   } finally {
     const outcomes = await Promise.allSettled([started ? client.stop() : Promise.resolve(), mcp.closeAll()]);
     await rm(root, { recursive: true, force: true });
