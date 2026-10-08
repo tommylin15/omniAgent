@@ -69,3 +69,121 @@ jobs:
             fi
           done
           echo "deletion_performed=NONE"
+
+      - name: Verify manually disabled legacy triggers by immutable IDs
+        shell: bash
+        run: |
+          set -euo pipefail
+          P=gen-lang-client-0593591102
+          for item in 'omniagent-main-v2 78b4219e-b65c-4e7f-9d75-0f12f7b87e05' 'omniagent-release-v2 14c90fda-6a46-4d04-ae0e-398f4be93fc4'; do
+            read -r name id <<< "$item"
+            if gcloud builds triggers describe "$id" --region=us-central1 --project="$P" --format=json > "$RUNNER_TEMP/trigger.json" 2>/dev/null; then
+              python3 - "$RUNNER_TEMP/trigger.json" "$name" "$id" <<'PY'
+          import json,sys
+          t=json.load(open(sys.argv[1]))
+          verified=t.get("id")==sys.argv[3] and t.get("name")==sys.argv[2]
+          print("legacy_trigger="+sys.argv[2]+" id_verified="+str(verified)+" disabled="+str(t.get("disabled",False)) if verified else
+                "legacy_trigger="+sys.argv[2]+" status=IDENTITY_MISMATCH")
+          PY
+            else
+              echo "legacy_trigger=$name status=NOT_READABLE_OR_NOT_FOUND"
+            fi
+          done
+      - name: Inventory Cloud Run AR references including retained revisions and jobs
+        shell: bash
+        run: |
+          set -euo pipefail
+          P=gen-lang-client-0593591102
+          R=us-central1
+          for svc in omniagent-chat omniagent-agent-gateway omniagent-shared-codex; do
+            if gcloud run revisions list --service="$svc" --project="$P" --region="$R" --format=json > "$RUNNER_TEMP/revisions.json" 2>/dev/null; then
+              python3 - "$RUNNER_TEMP/revisions.json" "$svc" <<'PY'
+          import json,sys
+          rows=json.load(open(sys.argv[1]))
+          ar=ghcr=other=0
+          for row in rows:
+              spec=(row.get("spec") or {})
+              for container in spec.get("containers") or []:
+                  img=str(container.get("image",""))
+                  if ".pkg.dev/" in img: ar+=1
+                  elif img.startswith("ghcr.io/"): ghcr+=1
+                  else: other+=1
+          print("revision_image_references service="+sys.argv[2]+
+                " ar="+str(ar)+" ghcr="+str(ghcr)+" other="+str(other)+
+                " total_revisions="+str(len(rows)))
+          PY
+            else
+              echo "revision_image_references service=$svc status=NOT_READABLE"
+            fi
+          done
+          if gcloud run jobs list --project="$P" --region="$R" --format=json > "$RUNNER_TEMP/jobs.json" 2>/dev/null; then
+            python3 - "$RUNNER_TEMP/jobs.json" <<'PY'
+          import json,sys
+          jobs=json.load(open(sys.argv[1]))
+          scoped=[x for x in jobs if "omniagent" in str(x.get("metadata",{}).get("name","")).lower()]
+          print("omniagent_cloudrun_jobs_count="+str(len(scoped)))
+          for job in scoped:
+              spec=job.get("spec") or {}
+              template=((spec.get("template") or {}).get("spec") or {}).get("template") or {}
+              containers=(template.get("spec") or {}).get("containers") or []
+              refs=[str(c.get("image","")) for c in containers]
+              if not refs: origin="UNKNOWN"
+              elif any(".pkg.dev/" in x for x in refs): origin="AR"
+              elif all(x.startswith("ghcr.io/") for x in refs): origin="GHCR"
+              else: origin="OTHER"
+              print("omniagent_job_image_origin="+str(job.get("metadata",{}).get("name","UNKNOWN"))+
+                    " origin="+origin)
+          PY
+          else
+            echo "omniagent_cloudrun_jobs=NOT_READABLE"
+          fi
+      - name: Scoped Artifact Registry and GCS deletion eligibility
+        shell: bash
+        run: |
+          set -euo pipefail
+          P=gen-lang-client-0593591102
+          R=us-central1
+          if gcloud artifacts packages list --project="$P" --location="$R" --repository=omniagent --format=json > "$RUNNER_TEMP/packages.json" 2>/dev/null; then
+            python3 - "$RUNNER_TEMP/packages.json" <<'PY'
+          import json,sys
+          pkgs=json.load(open(sys.argv[1]))
+          print("ar_scoped_package_count="+str(len(pkgs)))
+          for pkg in pkgs:
+              name=str(pkg.get("name","")).split("/")[-1]
+              if name in ("omniagent-chat","omniagent-agent-gateway","omniagent-shared-codex","omniagent-postgres"):
+                  print("ar_scoped_package="+name+" status=DEPENDENCY_REVIEW_REQUIRED")
+              else:
+                  print("ar_unknown_package_present=YES")
+          PY
+          else
+            echo "ar_scoped_packages=NOT_READABLE"
+          fi
+          if gcloud artifacts repositories list --project="$P" --format=json > "$RUNNER_TEMP/all-ar.json" 2>/dev/null; then
+            python3 - "$RUNNER_TEMP/all-ar.json" <<'PY'
+          import json,sys
+          repos=json.load(open(sys.argv[1]))
+          names=[x for x in repos if str(x.get("name","")).split("/")[-1]=="omniagent"]
+          print("ar_named_omniagent_repositories="+str(len(names)))
+          PY
+          else
+            echo "ar_repository_inventory=NOT_READABLE"
+          fi
+          if gcloud storage buckets list --project="$P" --format=json > "$RUNNER_TEMP/buckets.json" 2>/dev/null; then
+            python3 - "$RUNNER_TEMP/buckets.json" <<'PY'
+          import json,sys
+          rows=json.load(open(sys.argv[1]))
+          print("gcs_bucket_inventory=READABLE count="+str(len(rows)))
+          for b in rows:
+              name=str(b.get("name",""))
+              if "omniagent" in name.lower() or "cloudbuild" in name.lower():
+                  print("gcs_retirement_candidate="+name+
+                        " retention_configured="+str(bool(b.get("retentionPolicy")))+
+                        " hold_configured="+str(bool(b.get("defaultEventBasedHold")))+
+                        " versioning="+str(bool((b.get("versioning") or {}).get("enabled")))+
+                        " policy_review=REQUIRED")
+          PY
+          else
+            echo "gcs_bucket_inventory=NO_PERMISSION_OR_UNAVAILABLE"
+          fi
+          echo "retirement_decision=BLOCKED_UNTIL_DEPENDENCY_AND_APPROVED_MANIFEST"
+          echo "deletion_performed=NONE"
