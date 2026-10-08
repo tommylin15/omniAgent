@@ -27,8 +27,19 @@
   current GitHub main, adds a new version to the **existing** Secret and verifies
   restricted Secret-level Chat/Gateway/CI SA access. Do not create
   `omniagent-provider-bundle`; never disclose the generated signing key.
-- [ ] No-traffic Chat and Gateway candidates must verify the **new** Secret
-  bindings; Chat DB /ready=200 and provider acceptance are NOT YET PROVEN.
+- [x] First unified-bundle Shadow Cloud Build
+  `a6282825-fa74-4c4e-952e-b354e29a06b1`: nine pre-release
+  build/deploy/probe steps PASS, Chat/Gateway 0% candidate deployed,
+  Chat candidate `/health=200` and `/ready=200`; original Chat/Gateway/Shared
+  **formal traffic unchanged**. Final release Gate FAIL, no promotion.
+- [ ] Gateway/Recovery acceptance blocked on Chat service account
+  ID token creation; CI `getAccessToken` was denied. Source converted
+  to scoped IAM Credentials `generateIdToken` (3f8db1c9),
+  Node Core 37758880725 PASS / 30 Python PASS. Administrator must grant
+  `roles/iam.serviceAccountOpenIdTokenCreator` to omniagent-ci
+  **only on** omniagent-chat SA; exact-head Shadow runtime rerun PENDING.
+- [ ] Provider acceptance remains unproven (zero real provider calls);
+  recovery full path still FAIL, browser OAuth and dispatcher OPEN.
   Old `omniagent-chat-db` and pinned `omniagent-bundle:2` remain for rollback.
 - [ ] Human two-owner browser OAuth/dispatcher integration dependencies OPEN.
 - [ ] All mandatory candidate gates, canonical release/readback/recovery.

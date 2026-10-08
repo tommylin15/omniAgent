@@ -153,3 +153,36 @@ Source candidate wiring:
 
 Human Google Web two-owner evidence, provider integration and the durable
 Chat-to-Gateway dispatcher remain OPEN. No canonical release while blocked.
+
+## Shadow 2026-10-08: scoped OIDC IAM checkpoint
+
+First unified-bundle Shadow built and deployed 0%-traffic Chat and Gateway
+candidates successfully. Chat `/ready=200`; promotion intentionally
+failed for Gateway and Recovery auth, browser OAuth and dispatcher gates.
+CI had 0 actual provider calls; no live traffic or Secret mutation occurred
+during the build.
+
+The original `gcloud auth print-identity-token --impersonate-service-account`
+path required the overly broad `iam.serviceAccounts.getAccessToken` role
+on the Chat runtime service account. Source
+`3f8db1c922fd6468ff6222e25629ff12686d2bf6` switches to direct IAM
+Credentials `generateIdToken` using the **existing CI identity**, reducing
+the target permission to `iam.serviceAccounts.getOpenIdToken`.
+After exact-head Node CI SUCCESS, the GCP administrator must execute:
+
+```bash
+PROJECT=gen-lang-client-0593591102
+CHAT="omniagent-chat@$PROJECT.iam.gserviceaccount.com"
+CI="omniagent-ci@$PROJECT.iam.gserviceaccount.com"
+gcloud iam service-accounts add-iam-policy-binding "$CHAT" \
+  --project="$PROJECT" \
+  --member="serviceAccount:$CI" \
+  --role="roles/iam.serviceAccountOpenIdTokenCreator" \
+  --quiet
+```
+
+This is service-account-level, **not project-wide**, and is deliberately
+not `roles/iam.serviceAccountTokenCreator`. Do not assume Gateway runtime
+calls, provider mode, tag recovery or canonical promotion have passed until
+a later exact-head Shadow candidate proves them live. Runbook's
+`_MODE=shadow` example must use the *current* reviewed main SHA.

@@ -218,3 +218,47 @@ This checkpoint preserves observed evidence; it does not resume cloud operations
   `omniagent-chat`, `omniagent-gateway`, `omniagent-ci`.
   No such Secret Manager version or IAM operation was performed by these
   source/diagnostic runs. Canonical promotion remains BLOCKED.
+
+## Single-bundle first successful Shadow deploy and scoped-OIDC blocker — 2026-10-08
+
+- Owner created an additional version of the existing `omniagent-bundle` and
+  granted Secret Accessor on that one resource to omniagent-chat, omniagent-gateway
+  and omniagent-ci. CI read-only diagnostic `37755614373` verified
+  `unified_bundle_schema=PASS`, without printing payloads.
+- Attempt 1 of shadow GitHub workflow `37755837459` was denied
+  `iam.serviceAccounts.actAs` for the existing omniagent-ci Cloud Build trigger
+  service account. Owner applied narrowly scoped self serviceAccountUser IAM.
+- Attempt 2 submitted **Shadow** Cloud Build
+  `a6282825-fa74-4c4e-952e-b354e29a06b1` on source
+  `2d3ea20ad1c06bc068a8e82eebc37d5e0a5601d3`.
+  The Build status was **FAILURE**, not DONE. Read-only metadata diagnostics
+  `37758072024` established steps 1–9 SUCCESS including image builds,
+  zero-traffic Chat/Gateway candidate deployments, live probe execution
+  and cleanup dry-run. Final `gated-promotion-and-runtime-readback`
+  step FAIL: intentionally blocked on required live gates.
+- GCS gate evidence safely inspected by `37758269749` and
+  `37758455303`: `chat=PASS`, `flutter=PASS`,
+  candidate Chat `/health=200` and `/ready=200` after the previous
+  checkpoint's `/ready=503`. Recovery tagged Chat PASS while
+  Gateway and overall Recovery FAIL; no provider calls made
+  (`provider_calls=0`); human browser OAuth and durable Chat→Gateway
+  dispatcher remain BLOCKED. No release or formal traffic change.
+- Narrow read-only classifier `37758626452`: both Gateway and
+  Recovery failed during Cloud Build authentication while requesting
+  an ID token via `gcloud auth print-identity-token
+  --impersonate-service-account`, due to missing
+  `iam.serviceAccounts.getAccessToken` impersonation permission.
+  This is not a provider failure.
+- Source `3f8db1c922fd6468ff6222e25629ff12686d2bf6` switches
+  acceptance ID token minting to IAM Credentials `generateIdToken`;
+  it requires only `iam.serviceAccounts.getOpenIdToken` on target
+  service accounts rather than broader `getAccessToken`. Regression
+  tests include scoped issuance, HTTPS audience and redacted errors.
+  Node Core run `37758880725` **SUCCESS**:
+  Node 35 pass/1 skipped; Python 30/30 PASS.
+  Hygiene `37758880709` **SUCCESS**.
+- Admin must grant `roles/iam.serviceAccountOpenIdTokenCreator` to
+  `omniagent-ci` on **omniagent-chat service account only**, then
+  run a new *SHA-pinned Shadow* acceptance. Until the new probe passes,
+  this is only a source-level fix. Do not grant broad
+  `roles/iam.serviceAccountTokenCreator` merely for this ID token test.
