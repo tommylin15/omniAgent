@@ -38,6 +38,14 @@ if (process.env.CHAT_DISPATCH_ENABLED === "true") {
   if (typeof signingKey !== "string" || signingKey.length < 32 || !url || !audience) {
     throw new Error("Chat dispatch configuration unavailable");
   }
+  // Human OAuth authenticates identity, not platform model entitlement.
+  // Only explicitly approved owner UUIDs can be claimed or billed.
+  const approvedOwners = (process.env.CHAT_DISPATCH_APPROVED_OWNER_IDS ?? "")
+    .split(",").map(value => value.trim()).filter(Boolean);
+  if (!approvedOwners.length || approvedOwners.some(value =>
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value))) {
+    throw new Error("Chat dispatch owner entitlements unavailable");
+  }
   const auth = new GoogleAuth();
   dispatcher = new ChatDispatcher(store, makeSignedGatewayInvoker({
     url, audience, signingKey,
@@ -45,7 +53,7 @@ if (process.env.CHAT_DISPATCH_ENABLED === "true") {
       const client = await auth.getIdTokenClient(audience);
       return client.idTokenProvider.fetchIdToken(audience);
     }
-  }));
+  }),approvedOwners);
 }
 const server = makeChatServer(store,
   async (token) => {
