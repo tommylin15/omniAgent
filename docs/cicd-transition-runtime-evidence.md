@@ -47,6 +47,48 @@ required to distinguish absence from insufficient IAM.
 - No changes to formal traffic, Cloud Build triggers, GCS or AR were made
   by the inventory jobs. GHCR/Cloud Run cutover has not been proven.
 
+## GHCR candidate + integration gate results (same day)
+
+This supersedes the earlier *pre-GHCR* checkpoint above without erasing its
+historical asset inventory.
+
+| Gate | Observed result | Evidence |
+| --- | --- | --- |
+| Single-SHA Node, PostgreSQL, Python, Flutter and security build | **PASS**, SHA `3cf40bc7a9223a5ce7efa630dbd837c4ff57a46a` | [GHCR publisher #37768680175](https://github.com/tommylin15/omniAgent/actions/runs/37768680175) |
+| Three published immutable GHCR images, anonymous pull | **PASS** (Shared package manually made public) | [candidate #37768993666 attempt 2](https://github.com/tommylin15/omniAgent/actions/runs/37768993666) |
+| Three pinned 0%-traffic Cloud Run candidates | **PASS**; Chat `omniagent-chat-00021-foz`, Gateway `omniagent-agent-gateway-00012-pez`, Shared `omniagent-shared-codex-00005-kih` | same candidate run |
+| Runtime digest vs GHCR original | **PASS**; Cloud Run's revision may refer to a **Google-managed Artifact Registry imported image** with the identical digest, while Service template preserves the original GHCR URL | [read-only #37773167073](https://github.com/tommylin15/omniAgent/actions/runs/37773167073) |
+| Chat candidate health/readiness + Flutter assets + unauthorized API | **PASS**: `/health=200`, `/ready=200`, homepage and Flutter JS `200`, unauthorized `/v1/threads=401` | [signed smoke #37773639139](https://github.com/tommylin15/omniAgent/actions/runs/37773639139) |
+| Gateway Chat runtime identity scoped signed health | **PASS**, `/health=200` via narrow IAM `generateIdToken` (not broad SA TokenCreator) | same signed smoke |
+| Shared candidate signed private health/readiness | **PASS**, both `200`; anonymous `403` | same signed smoke |
+| Shared candidate **real** provider inference | **FAIL / BLOCKED**, first `omniagent` signed request returned application HTTP `502` before other two callers ran | [inference #37773850397](https://github.com/tommylin15/omniAgent/actions/runs/37773850397) |
+| Historical AR **serving** Shared revision provider control | **FAIL / BLOCKED**, signed `life-assistant` request also returned application HTTP `502`. **Not uniquely a GHCR-regression.** | [isolated control #37774120512](https://github.com/tommylin15/omniAgent/actions/runs/37774120512) |
+| New GHCR Shared image native CLI smoke | **PASS**, anonymous image pull and bundled `codex-cli 0.153.4 --version` without credentials/network | [binary #37774590569](https://github.com/tommylin15/omniAgent/actions/runs/37774590569) |
+| Candidate Cloud Logging diagnosis | **BLOCKED**: CI identity lacks read access; no raw logs/Secret data were exposed | [isolation #37774120512](https://github.com/tommylin15/omniAgent/actions/runs/37774120512) |
+| Human browser OAuth / two-owner persisted isolation; real Chat→Gateway dispatcher/provider E2E | **OPEN**, automated Web asset and private /health tests do not prove these gates | [acceptance](../doc/acceptance.md) |
+| 100%-traffic promotion, genuine rollback drill, automated keep-10 deletion/readback | **NOT RUN** because mandatory gates are not green | [runbook](cicd-ghcr-actions-runbook.md) |
+
+The formal allocations remain Chat `omniagent-chat-00004-dzs` 100%,
+Gateway `omniagent-agent-gateway-00003-k6t` 100%, Shared
+`omniagent-shared-codex-00004-xmq` 100% in the last three-service
+readback. The Shared serving traffic was reverified 100% in #37774120512.
+No production traffic was changed by this acceptance work; no Cloud Build
+trigger was disabled and **no GCS/AR image, repository, bucket or application
+data was deleted**.
+
+**Next technical blocker:** the real Codex execution layer returns 502 in
+both old and new runtime. Resolve using strictly scoped, Secret-redacted
+provider/credential/logging diagnostics. Do not assume that GHCR image
+format, an expired credential, or an external provider outage has been proven
+solely from these HTTP results. CI cannot access the candidate's Cloud
+Logging records under current permissions. Subsequent acceptance must rerun
+three *real* caller inferences and cross-project denials on the candidate.
+
+**Next administrative blocker:** GCS Bucket list returned
+`NO_PERMISSION_OR_UNAVAILABLE`; metadata and object-dependency inventory
+must precede any approved Bucket or object deletion. The old Cloud Build
+push/release triggers remain enabled until production cutover is accepted.
+
 ## Removal rule
 
 Follow [legacy GCS/AR retirement](legacy-gcs-ar-retirement.md): when exact
