@@ -43,3 +43,12 @@ unimplemented. Canonical release/full live acceptance/CLOSED are not claimed.
   Cleanup additionally protects retained Job/Execution images and refuses potentially
   truncated reference inventories. Both fixes have runnable regression checks.
 - Local runtime inventory JSON is a point-in-time dry-run only: no images deleted.
+- Shadow `e4e66bec-4c10-4024-b11d-9d2c865f6740` on `ffe7def61f77f023b8ed48a8f5c4f6ab4b335210`
+  was deliberately cancelled before image build/deploy: Cloud Run's normalized
+  digest hid historical SHA provenance and conservatively selected Shared.
+  Registry readback proves active Shared digest `sha256:b37b50f33329f29e400d5ca870310f48ae93c02ff2f44fc13235ca37784ad2bf`
+  retains unique tag `ff282575fb13163018827761b8bfee8e8789bcb3`.
+  Added exact-digest unique-SHA resolution; ambiguous/truncated tags stay unknown.
+- Existing own Gateway `omniagent-bundle:2` boolean-only schema preflight:
+  Gemini/OpenRouter fields present, `mcp_owner_signing_key` absent. No values logged.
+  Approved complete provider bundle reference is still required.

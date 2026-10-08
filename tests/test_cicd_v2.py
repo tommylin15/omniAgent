@@ -12,6 +12,14 @@ if spec.loader and Path(spec.origin).exists():
 
 
 class ReleaseSafety(unittest.TestCase):
+    def test_historical_runtime_digest_recovers_unique_source_sha(self):
+        package = v2.REGISTRY + "/omniagent-shared-codex"
+        rows = [{"package": package, "version": "sha256:active", "tags": ["a" * 40]},
+            {"package": package, "version": "sha256:other", "tags": ["b" * 40]}]
+        self.assertEqual(v2.historical_sha(package + "@sha256:active", rows), "a" * 40)
+        rows[0]["tags"].append("c" * 40)
+        self.assertIsNone(v2.historical_sha(package + "@sha256:active", rows))
+
     def test_image_builder_uses_python_enabled_sdk_image(self):
         config = (Path(__file__).parents[1] / "cloudbuild-v2.yaml").read_text()
         builder = config.split("- id: immutable-docker-build-and-push", 1)[1].split("- id:", 1)[0]

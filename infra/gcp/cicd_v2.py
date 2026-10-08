@@ -71,6 +71,12 @@ def candidate_route(service, tag):
     return route
 
 
+def historical_sha(image, rows):
+    tags = {tag for row in rows if row.get("package", "") + "@" + row["version"] == image
+        for tag in row.get("tags", []) if re.fullmatch(r"[0-9a-f]{40}", tag)}
+    return next(iter(tags)) if len(tags) == 1 else None
+
+
 def require_digest(expected, actual):
     if expected != actual:
         raise RuntimeError("runtime digest does not match built image")
@@ -225,6 +231,11 @@ def prepare(sha, build_id, mode, release_sha):
             image = revision["spec"]["containers"][0]["image"]
             tag = image.rsplit(":", 1)[-1] if "@" not in image else ""
             baseline = tag if re.fullmatch(r"[0-9a-f]{40}", tag) else None
+            if not baseline and image.startswith(REGISTRY + "/") and "@sha256:" in image:
+                rows = cloud_json("artifacts", "docker", "images", "list", image.split("@")[0],
+                    "--include-tags", "--limit=10000")
+                if len(rows) < 10000:
+                    baseline = historical_sha(image, rows)
         baselines[key] = baseline
         files = None
         if baseline:
