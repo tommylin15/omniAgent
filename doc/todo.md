@@ -2,6 +2,43 @@
 
 ## Actions + GHCR + Cloud Run migration — TARGET / OPEN (2026-10-08)
 
+### Latest GHCR dispatch checkpoint — PARTIAL (2026-10-08)
+
+- [x] Immutable three-image publish and exact-source quality at
+  `c37f132619da065786fa4f69ad125b86ba9356a9`:
+  [Actions #37808634713](https://github.com/tommylin15/omniAgent/actions/runs/37808634713)
+  PASS, including ephemeral PostgreSQL owner-bound event replay and Flutter Web.
+- [x] 0%-formal-traffic candidates at that same source SHA:
+  Chat `omniagent-chat-00028-ziw`, Gateway `omniagent-agent-gateway-00019-sim`,
+  Shared `omniagent-shared-codex-00012-gej`. Three live revisions READY, prior
+  Chat/Gateway/Shared AR serving revisions still 100%:
+  [#37809346292](https://github.com/tommylin15/omniAgent/actions/runs/37809346292).
+- [x] Pinned candidate browser/readiness/anonymous Chat API and private
+  Gateway/Shared signed health [#37809679507](https://github.com/tommylin15/omniAgent/actions/runs/37809679507)
+  PASS. Chat `CHAT_DISPATCH_ENABLED` is unset/disabled; anonymous
+  `POST /internal/v1/chat/dispatch:once` denied 401. This is **not**
+  proof of an authenticated dispatch execution.
+- [x] Source-only, opt-in Chat→Gateway one-shot worker:
+  PostgreSQL approved-owner UUID claim, scoped ID token, HMAC request,
+  bounded event validation and owner-bound persisted terminal replay.
+  It is deliberately **not auto-enabled**, has no durable trigger or
+  crash-recovery replay policy, and is not a completed production dispatcher.
+  [Dispatch contract](../docs/chat-gateway-dispatch.md).
+- [x] Previous Shared candidate `00010-vih` (different SHA) passed real
+  three-authorized-caller Codex inference, fresh-thread and wrong-project
+  denial [#37791333261](https://github.com/tommylin15/omniAgent/actions/runs/37791333261).
+  Earlier HTTP 502 is resolved **at that tested revision only**.
+- [ ] Latest Shared `00012-gej` real three-caller inference **NOT YET TESTED**;
+  updating the pinned real-inference workflow was blocked by tool safety
+  controls. Do not inherit real inference PASS from `00010-vih`.
+- [ ] Human Google OAuth with two separate real users, live signed
+  Chat→Gateway provider execution, entitlement policy by provider,
+  multi-turn history, durable wake-up, reconciliation/approval/cancel/reconnect,
+  recovery drill and traffic promotion remain OPEN.
+- [ ] Old Cloud Build triggers and unreferenced AR/GCS remain untouched.
+  No revision retention deletion until accepted cutover and rollback.
+
+
 - [x] Formal owner design documented: Actions complete CI, three GHCR public
   digest images, Cloud Run 0% candidates, acceptance/traffic/rollback, optional
   read-only old Cloud Build status bridge. [SPEC §8](spec.md#8-cicd--github-actions--public-ghcr--cloud-run-2026-10-08).
@@ -24,7 +61,7 @@
   PASS; Chat homepage/JS/ready/auth and signed private health on Gateway
   and Shared [#37773639139](https://github.com/tommylin15/omniAgent/actions/runs/37773639139)
   PASS. No formal traffic promotion.
-- [ ] **BLOCKER:** Shared 0%-candidate real inference gave HTTP 502
+- [x] **Historical 502 reproduced and resolved for tested `00010-vih` candidate:** Shared 0%-candidate real inference gave HTTP 502
   [#37773850397](https://github.com/tommylin15/omniAgent/actions/runs/37773850397);
   old 100%-serving AR Shared control also gave 502
   [#37774120512](https://github.com/tommylin15/omniAgent/actions/runs/37774120512).
