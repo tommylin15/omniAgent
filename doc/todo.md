@@ -2,6 +2,37 @@
 
 ## Actions + GHCR + Cloud Run migration — TARGET / OPEN (2026-10-08)
 
+### Live retirement inventory checkpoint — PARTIAL (2026-10-09)
+
+- [x] Two legacy Cloud Build triggers manually disabled and re-verified in
+  **GCP by exact IDs**, with `disabled=true` for `omniagent-main-v2` and
+  `omniagent-release-v2`: [read-only Actions #37860495082](https://github.com/tommylin15/omniAgent/actions/runs/37860495082).
+  This does **not** imply production GHCR traffic cutover.
+- [x] Scoped read-only retirement inventory run: production traffic remains
+  Chat `omniagent-chat-00004-dzs`, Gateway `omniagent-agent-gateway-00003-k6t`,
+  Shared `omniagent-shared-codex-00004-xmq`, each at **100%**.
+  The service templates currently name GHCR, but individual Cloud Run
+  revision image references still appear as `.pkg.dev` due to Google-managed
+  image importing; **do not classify these as disposable legacy AR images**.
+  Revisions counted Chat 17 / Gateway 13 / Shared 12. Scoped Cloud Run job
+  count returned 0, which alone cannot prove no other consumers.
+- [x] AR `us-central1/omniagent` exists and exposes exactly four packages:
+  `omniagent-chat`, `omniagent-agent-gateway`,
+  `omniagent-shared-codex`, `omniagent-postgres`. The entire repository
+  is **KEEP/BLOCKED** until the traffic/rollback/VM/PostgreSQL and other
+  dependencies are proven absent.
+- [ ] GCS inventory remains **BLOCKED BY IAM** under
+  `omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com`.
+  Project bucket listing was `NO_PERMISSION_OR_UNAVAILABLE`, and two
+  historical Cloud Build bucket names were `NOT_READABLE_OR_NOT_FOUND`;
+  neither absence nor ownership is established. Scoped AR repository-wide
+  listing was also `NOT_READABLE`. Grant only narrowly scoped read-only
+  metadata inventory capability, then rerun audit. No bucket/object/AR
+  package deletion is approved without an exact consumer/backup manifest.
+- [ ] **No deletion performed.** Post-cutover AR rollback protection and
+  exclusive GCS ownership must be validated before any destructive operation.
+  This is a safety BLOCK, not task completion.
+
 ### Latest GHCR dispatch checkpoint — PARTIAL (2026-10-08)
 
 - [x] Immutable three-image publish and exact-source quality at
@@ -89,8 +120,11 @@
   and keep more than ten instead of deleting unsafely.
 - [ ] Extend read-only legacy Cloud Build status workflow with bounded masked
   failure summary; current workflow only prints status, failure class and steps.
-- [ ] Verify retirement of old Cloud Build triggers **after** replacement
-  passes. Do not delete historical Artifact Registry/GCS assets or create VMs.
+- [x] Verify manual disablement of both old Cloud Build triggers using
+  immutable GCP IDs in [#37860495082](https://github.com/tommylin15/omniAgent/actions/runs/37860495082).
+  **Triggers are disabled ahead of accepted production cutover**; do not
+  misrepresent this as complete release/rollback acceptance. Do not delete
+  historical Artifact Registry/GCS assets or create VMs.
 - [x] Record separate **legacy GCS and Artifact Registry retirement plan**,
   including old AR Docker images **and entire AR repositories** (not just
   CI-only GCS objects/buckets): [retirement gate](../docs/legacy-gcs-ar-retirement.md).
