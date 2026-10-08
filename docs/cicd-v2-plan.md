@@ -1,5 +1,7 @@
 # OmniAgent CI/CD V2 execution plan
 
+> **HISTORICAL / SUPERSEDED 2026-10-08:** The Cloud Build V2 design and execution ledger below are preserved as past evidence, not instructions for the new release pipeline. Follow [new GitHub Actions / public GHCR runbook](cicd-ghcr-actions-runbook.md) and [SPEC §8](../doc/spec.md#8-cicd--github-actions--public-ghcr--cloud-run-2026-10-08). The former triggers may still exist; retirement must be verified after replacement succeeds.
+
 User-approved scope: private `tommylin15/omniAgent`, main push only, project
 `gen-lang-client-0593591102`, region `us-central1`. Execute inline; no additional
 design approval is required by the user's explicit execution instruction.
