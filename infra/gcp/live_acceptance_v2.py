@@ -2,6 +2,7 @@
 import hashlib
 import json
 import os
+import re
 import time
 import urllib.error
 import urllib.request
@@ -35,13 +36,21 @@ def request(url, path, token=None, body=None, headers=None, timeout=180):
 
 
 def identity(email, audience):
-    """Mint only an OIDC ID token; do not request broad SA impersonation rights.
+    """Use approved pre-existing Web-OAuth impersonation and scoped Run OIDC.
 
-    Cloud Build's own access token calls IAMCredentials generateIdToken. The
-    caller needs getOpenIdToken on the named service account, not getAccessToken
-    or Service Account Token Creator. No credential is written to evidence.
+    The Chat owner probes use an OAuth *client ID* as audience, not HTTPS.
+    Those existing CI→client-SA permissions already passed live acceptance.
+    Gateway/Recovery Cloud Run HTTPS audiences instead use narrowly scoped
+    IAM generateIdToken on the Chat SA. Never store or print returned tokens.
     """
-    if not email or not audience.startswith("https://"):
+    if not isinstance(email, str) or not re.fullmatch(
+            r"[A-Za-z0-9-]+@[A-Za-z0-9-]+\\.iam\\.gserviceaccount\\.com", email):
+        raise RuntimeError("invalid identity token request")
+    if isinstance(audience, str) and re.fullmatch(
+            r"[0-9]+-[A-Za-z0-9_-]+\\.apps\\.googleusercontent\\.com", audience):
+        return gcloud("auth", "print-identity-token", "--impersonate-service-account=" + email,
+            "--audiences=" + audience, "--include-email")
+    if not isinstance(audience, str) or not audience.startswith("https://"):
         raise RuntimeError("invalid identity token request")
     token = gcloud("auth", "print-access-token")
     url = ("https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/"

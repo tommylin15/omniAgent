@@ -30,6 +30,17 @@ class OidcIdentitySafety(unittest.TestCase):
         self.assertEqual(request.get_header("Authorization"), "Bearer synthetic-ci-access-token")
         self.assertEqual(http.call_args.kwargs["timeout"], 20)
 
+    def test_web_oauth_audience_retains_existing_approved_client_sa_path(self):
+        email = "omniagent-codex-chat-client@example.iam.gserviceaccount.com"
+        audience = "123456789-abcdefghijklmnopqrstuvwxyz.apps.googleusercontent.com"
+        with patch.object(v2, "gcloud", return_value="synthetic-web-id-token") as sdk, \\
+                patch.object(v2.urllib.request, "urlopen") as http:
+            self.assertEqual(v2.identity(email, audience), "synthetic-web-id-token")
+        sdk.assert_called_once_with("auth", "print-identity-token",
+            "--impersonate-service-account=" + email,
+            "--audiences=" + audience, "--include-email")
+        http.assert_not_called()
+
     def test_refuses_missing_token_and_reports_no_sensitive_error(self):
         with patch.object(v2, "gcloud", return_value="synthetic") as sdk, \
                 patch.object(v2.urllib.request, "urlopen") as http:
@@ -40,7 +51,8 @@ class OidcIdentitySafety(unittest.TestCase):
 
     def test_requires_https_audience_before_credentials(self):
         with patch.object(v2, "gcloud") as sdk:
-            for audience in ("http://example.org", "", "not-a-url"):
+            for audience in ("http://example.org", "", "not-a-url",
+                             "malicious.apps.googleusercontent.com"):
                 with self.assertRaisesRegex(RuntimeError, "invalid identity"):
                     v2.identity("omniagent-chat@example.iam.gserviceaccount.com", audience)
             sdk.assert_not_called()
