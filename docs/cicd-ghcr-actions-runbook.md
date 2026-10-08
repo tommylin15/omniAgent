@@ -55,11 +55,13 @@ supports direct deployment of **public** GHCR images; private GHCR requires
 Artifact Registry remote repositories and is therefore disallowed by this
 architecture: https://cloud.google.com/run/docs/deploying
 
-The existing `.github/workflows/omniagent-ghcr-publish.yml` has relevant
-quality + publish code, but its current push path filter only matches that
-workflow file. Do not treat normal main-source push CI as complete until the
-trigger and observed Actions execution prove it. A Docker build is not a
-deployed revision or production release.
+The `.github/workflows/omniagent-ghcr-publish.yml` now triggers on
+ordinary `main` source changes. Quality passed in [Actions run
+#37767763854](https://github.com/tommylin15/omniAgent/actions/runs/37767763854)
+but all publish jobs deliberately rejected a **stale main SHA** as later
+commits arrived. No successful exact-head three-image publish is yet
+recorded. A Docker build is not a deployed revision or production release.
+Read the [2026-10-08 live inventory](cicd-transition-runtime-evidence.md).
 
 ## Deployment identity and candidate contract
 
@@ -72,9 +74,15 @@ deployment/update/read permissions to intended services and
 `iam.serviceAccounts.actAs` to their *existing* runtime identities.
 Never rely on project Editor/Owner or log Secret payloads.
 
-Explicitly authorized release (`workflow_dispatch`) must verify exact
-current-main SHA, previously passed full quality run, approved GHCR digest and
-safe concurrency/stale-SHA/lock behavior. For each existing Cloud Run service,
+The **candidate-only** workflow
+`.github/workflows/omniagent-ghcr-cloudrun-candidate.yml` listens to a
+successful matching GHCR publication (`workflow_run`, same own repository
+and main SHA); it verifies exact current main, independently confirms all
+three published SHA tags are anonymously readable as public GHCR digests,
+and only then uses WIF to request **0%-traffic** revisions. It must
+read back formal traffic, immutable image digests and protected runtime
+configuration. An explicit, separately accepted formal release/promotion
+still requires all live gates and safe concurrency/stale-SHA/lock behavior. For each existing Cloud Run service,
 preserve active traffic and the current runtime SA, OAuth, ingress, VPC,
 database and Secret configuration, including existing `omniagent-bundle`
 constraints. Create **0%-formal-traffic** candidate with a pinned digest:
