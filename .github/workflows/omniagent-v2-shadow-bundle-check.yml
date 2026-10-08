@@ -1,0 +1,152 @@
+# One-shot owner-approved CI/CD V2 unified-bundle Shadow acceptance.
+# Triggered only when this workflow file is first committed to main.
+name: omniAgent V2 bundle shadow candidate check
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/omniagent-v2-shadow-bundle-check.yml'
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: omniagent-v2-bundle-shadow-once
+  cancel-in-progress: false
+
+jobs:
+  shadow:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    env:
+      PROJECT: gen-lang-client-0593591102
+      REGION: us-central1
+      TRIGGER: omniagent-release-v2
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+          service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Confirm source and unified Secret without printing values
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha="$(git rev-parse HEAD)"
+          test "$sha" = "$GITHUB_SHA"
+          current="$(git ls-remote https://github.com/tommylin15/omniAgent.git refs/heads/main | cut -f1)"
+          test "$sha" = "$current"
+          umask 077
+          file="$(mktemp)"
+          trap 'rm -f "$file"' EXIT
+          gcloud secrets versions access latest --secret=omniagent-bundle \
+            --project="$PROJECT" --out-file="$file" >/dev/null 2>&1
+          python3 - "$file" <<'PY'
+          import importlib.util,sys
+          from pathlib import Path
+          spec=importlib.util.spec_from_file_location("cicd_v2","infra/gcp/cicd_v2.py")
+          module=importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(module)
+          module.validate_unified_bundle(Path(sys.argv[1]).read_text(encoding="utf-8"))
+          print("unified_bundle_schema=PASS")
+          print("secret_values_logged=NO")
+          PY
+
+      - name: Preserve formal traffic snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          for key in omniagent-chat omniagent-agent-gateway omniagent-shared-codex; do
+            gcloud run services describe "$key" --project="$PROJECT" --region="$REGION" \
+              --format=json > "$RUNNER_TEMP/traffic-$key.json"
+          done
+          python3 - "$RUNNER_TEMP" <<'PY'
+          import json,sys
+          from pathlib import Path
+          for service in ("omniagent-chat","omniagent-agent-gateway","omniagent-shared-codex"):
+              data=json.loads((Path(sys.argv[1])/("traffic-"+service+".json")).read_text())
+              traffic={r["revisionName"]:r.get("percent",0)
+                  for r in data.get("status",{}).get("traffic",[]) if r.get("percent",0)}
+              print(service+"_formal_traffic_baseline="+json.dumps(traffic,sort_keys=True))
+          PY
+
+      - name: Start SHA-pinned Shadow only — zero traffic, no promotion
+        id: submit
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+          gcloud builds triggers run "$TRIGGER" \
+            --project="$PROJECT" --region="$REGION" \
+            --sha="$GITHUB_SHA" \
+            --substitutions="_MODE=shadow,_RELEASE_SHA=$GITHUB_SHA,_VERIFY_ALL_PATHS=false" \
+            --format=json > "$RUNNER_TEMP/trigger-response.json"
+          python3 - "$RUNNER_TEMP/trigger-response.json" "$GITHUB_OUTPUT" <<'PY'
+          import json,re,sys
+          response=json.load(open(sys.argv[1]))
+          build_id=response.get("id") or (response.get("metadata") or {}).get("build",{}).get("id")
+          if not isinstance(build_id,str) or not re.fullmatch(r"[0-9a-f-]{36}",build_id):
+              print("shadow_submission=ACCEPTED_BUILD_ID_NOT_PARSED")
+              raise SystemExit(1)
+          with open(sys.argv[2],"a") as out:
+              out.write("build_id="+build_id+"\n")
+          print("shadow_build_id="+build_id)
+          print("mode=shadow; formal_traffic_promotion=NOT_AUTHORIZED")
+          PY
+
+      - name: Wait for accepted Cloud Build terminal status
+        if: steps.submit.outputs.build_id != ''
+        shell: bash
+        env:
+          ID: ${{ steps.submit.outputs.build_id }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 110); do
+            state="$(gcloud builds describe "$ID" --project="$PROJECT" \
+              --region="$REGION" --format='value(status)')"
+            case "$state" in
+              SUCCESS) echo "shadow_build_status=SUCCESS"; exit 0 ;;
+              FAILURE|INTERNAL_ERROR|TIMEOUT|CANCELLED|EXPIRED)
+                echo "shadow_build_status=$state"
+                exit 1 ;;
+              PENDING|QUEUED|WORKING) sleep 30 ;;
+              *) echo "shadow_build_status=UNKNOWN"; exit 1 ;;
+            esac
+          done
+          echo "shadow_build_status=CHECK_TIMEOUT"
+          exit 1
+
+      - name: Verify formal traffic unchanged even on build failure
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - "$RUNNER_TEMP" <<'PY'
+          import json,subprocess,sys
+          from pathlib import Path
+          for service in ("omniagent-chat","omniagent-agent-gateway","omniagent-shared-codex"):
+              p=Path(sys.argv[1])/("traffic-"+service+".json")
+              if not p.is_file():
+                  print(service+"_traffic_verification=NOT_RUN_NO_BASELINE")
+                  continue
+              old=json.loads(p.read_text())
+              proc=subprocess.run(["gcloud","run","services","describe",service,
+                  "--project=gen-lang-client-0593591102","--region=us-central1",
+                  "--format=json"],stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,text=True)
+              if proc.returncode:
+                  print(service+"_traffic_verification=NOT_READABLE")
+                  continue
+              new=json.loads(proc.stdout)
+              def shares(data):
+                  return {r["revisionName"]:r.get("percent",0)
+                          for r in data.get("status",{}).get("traffic",[]) if r.get("percent",0)}
+              result="UNCHANGED" if shares(old)==shares(new) else "DRIFT"
+              print(service+"_formal_traffic="+result)
+              if result=="DRIFT":
+                  raise SystemExit("unexpected formal traffic drift: manual repair required")
+          PY
