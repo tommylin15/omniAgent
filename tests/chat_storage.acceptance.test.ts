@@ -114,7 +114,7 @@ describe.runIf(Boolean(dsn))("isolated PostgreSQL ChatStore acceptance", () => {
       });
       expect(await executor.runOnce()).toMatchObject({status:"idle"});
       expect((await store.events(b,"thread-b",-1,200)).map(row=>row.event_type))
-        .toEqual(["item_upsert","text_delta","turn_completed"]);
+        .toEqual(["item_upsert","item_upsert","text_delta","turn_completed"]);
       await expect(store.events(a,"thread-b",-1,200)).rejects.toBeInstanceOf(ChatNotFound);
       await expect(store.appendEvent(a,"thread-b",pending.turn.turn_id as string,
         "foreign","text_delta",{text:"not allowed"})).rejects.toBeInstanceOf(ChatNotFound);
