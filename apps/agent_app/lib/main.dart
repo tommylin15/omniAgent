@@ -32,13 +32,17 @@ class _OmniAgentAppState extends State<OmniAgentApp> {
     super.initState();
     sessions = AuthSessionController(
       onSession: (current) {
-        if (mounted) setState(() {
-          api = current;
-          error = null;
-        });
+        if (mounted) {
+          setState(() {
+            api = current;
+            error = null;
+          });
+        }
       },
       onError: () {
-        if (mounted) setState(() => error = '登入失敗，請再試一次');
+        if (mounted) {
+          setState(() => error = '登入失敗，請再試一次');
+        }
       },
     );
     if (clientId.isEmpty || ChatApi.base.isEmpty) return;
