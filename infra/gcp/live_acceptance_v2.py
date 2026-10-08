@@ -148,8 +148,9 @@ def gateway(state):
     token = identity(state["services"]["chat"]["runtime_sa"], row["url"])
     require(request(url, "/health", token)[0], 200)
     require(request(url, "/internal/v1/assistant/turn", token, {})[0], 400)
-    # Provider acceptance requires the approved bundle, never the legacy bundle.
-    bundle = json.loads(gcloud("secrets", "versions", "access", "latest", "--secret=omniagent-provider-bundle"))
+    # Approved single-bundle policy: this JSON also contains the Chat DSN.
+    # Never expose its contents in diagnostics.
+    bundle = json.loads(gcloud("secrets", "versions", "access", "latest", "--secret=omniagent-bundle"))
     signing = bundle.get("mcp_owner_signing_key", "")
     if not isinstance(signing, str) or len(signing.strip()) < 32:
         raise RuntimeError("invalid provider signing key")

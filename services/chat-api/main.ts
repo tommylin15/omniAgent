@@ -2,9 +2,9 @@ import { OAuth2Client } from "google-auth-library";
 import { Pool } from "pg";
 import { makeChatServer } from "./server.js";
 import { ChatStore } from "./storage.js";
-import { chatDatabasePoolConfig } from "./database.js";
+import { chatDatabasePoolConfig, chatDatabaseUrl } from "./database.js";
 
-const dsn = process.env.CHAT_DATABASE_URL;
+const dsn = chatDatabaseUrl(process.env);
 const userAudience = process.env.OMNIAGENT_GOOGLE_CLIENT_ID;
 const serviceAudience = process.env.CHAT_INTERNAL_AUDIENCE;
 const callers = new Set((process.env.CHAT_INTERNAL_ALLOWED_EMAILS ?? "").split(",").map((value) => value.trim().toLowerCase()).filter(Boolean));

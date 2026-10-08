@@ -1,5 +1,22 @@
 import { describe, expect, it } from "vitest";
-import { chatDatabasePoolConfig } from "../services/chat-api/database.js";
+import { chatDatabasePoolConfig, chatDatabaseUrl } from "../services/chat-api/database.js";
+
+describe("chatDatabaseUrl", () => {
+  it("loads only the dedicated database field from the unified JSON bundle", () => {
+    const dsn = "postgresql://omniagent_chat_app:fake@10.0.0.5:5432/omniagent_chat?sslmode=require";
+    const bundle = JSON.stringify({ gemini_api_key: "fake-key", openrouter_api_key: "fake-key",
+      mcp_owner_signing_key: "a".repeat(64), chat_database_url: dsn });
+    expect(chatDatabaseUrl({ OMNIAGENT_BUNDLE: bundle })).toBe(dsn);
+    expect(chatDatabaseUrl({ CHAT_DATABASE_URL: dsn })).toBe(dsn);
+  });
+
+  it("fails closed for malformed or incomplete bundle instead of using legacy fallback", () => {
+    const legacy = "postgresql://legacy:fake@localhost/db";
+    expect(() => chatDatabaseUrl({ OMNIAGENT_BUNDLE: "{", CHAT_DATABASE_URL: legacy })).toThrow(/invalid/);
+    expect(() => chatDatabaseUrl({ OMNIAGENT_BUNDLE: "{}", CHAT_DATABASE_URL: legacy })).toThrow(/not configured/);
+    expect(() => chatDatabaseUrl({ OMNIAGENT_BUNDLE: '{"chat_database_url":"not-a-url"}' })).toThrow(/not configured/);
+  });
+});
 
 describe("chatDatabasePoolConfig", () => {
   it("keeps the default PostgreSQL connection string unchanged", () => {

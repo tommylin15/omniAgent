@@ -20,10 +20,10 @@ class ReleaseSafety(unittest.TestCase):
                 "run.googleapis.com/network-interfaces": '[{"network":"approved-private"}]'}},
             "spec": {"containers": [{"env": [{
                 "name": "CHAT_DATABASE_URL",
-                "valueFrom": {"secretKeyRef": {"name": "omniagent-chat-db", "key": "latest"}}
+                "valueFrom": {"secretKeyRef": {"name": "omniagent-bundle", "key": "2"}}
             }]}]}}}}
 
-    def test_chat_tls_requires_private_egress_and_dedicated_secret(self):
+    def test_chat_tls_requires_private_egress_and_existing_db_source(self):
         good = self.private_chat_service()
         v2.require_private_chat_tls_target(good)
         missing_vpc = self.private_chat_service()
@@ -32,8 +32,35 @@ class ReleaseSafety(unittest.TestCase):
             v2.require_private_chat_tls_target(missing_vpc)
         old_secret = self.private_chat_service()
         old_secret["spec"]["template"]["spec"]["containers"][0]["env"][0]["valueFrom"]["secretKeyRef"]["name"] = "historical-bundle"
-        with self.assertRaisesRegex(RuntimeError, "dedicated DB Secret"):
+        with self.assertRaisesRegex(RuntimeError, "unknown legacy DB Secret"):
             v2.require_private_chat_tls_target(old_secret)
+
+    def test_unified_bundle_validation_fails_closed(self):
+        import json
+        bundle = {"gemini_api_key": "gemini-fake", "openrouter_api_key": "router-fake",
+                  "mcp_owner_signing_key": "a" * 64,
+                  "chat_database_url": "postgresql://omniagent_chat_app:secret@10.1.2.3:5432/omniagent_chat?sslmode=require"}
+        v2.validate_unified_bundle(json.dumps(bundle))
+        for field in bundle:
+            bad = dict(bundle)
+            bad[field] = ""
+            with self.assertRaisesRegex(RuntimeError, "schema validation failed"):
+                v2.validate_unified_bundle(json.dumps(bad))
+        bad = dict(bundle)
+        bad["chat_database_url"] = "postgresql://omniagent_chat_app:secret@203.0.113.1/omniagent_chat?sslmode=require"
+        with self.assertRaisesRegex(RuntimeError, "schema validation failed"):
+            v2.validate_unified_bundle(json.dumps(bad))
+
+    def test_unified_bundle_binding_rejects_legacy_database(self):
+        revision = {"spec": {"containers": [{"env": [
+            {"name": "OMNIAGENT_BUNDLE", "valueFrom": {"secretKeyRef": {"name": "omniagent-bundle", "key": "latest"}}}
+        ]}]}}
+        v2.require_candidate_bundle(revision, "chat")
+        with self.assertRaisesRegex(RuntimeError, "reference drift"):
+            v2.require_candidate_bundle(revision, "gateway")
+        revision["spec"]["containers"][0]["env"].append({"name": "CHAT_DATABASE_URL", "value": "old"})
+        with self.assertRaisesRegex(RuntimeError, "legacy raw"):
+            v2.require_candidate_bundle(revision, "chat")
 
     def test_chat_candidate_tls_mode_must_be_read_back(self):
         revision = {"spec": {"containers": [{"env": [{
@@ -60,6 +87,10 @@ class ReleaseSafety(unittest.TestCase):
             if key == "chat":
                 self.assertIn("--no-traffic", sdk.call_args.args)
                 self.assertIn("--update-env-vars=CHAT_DATABASE_TLS_MODE=private-self-signed", sdk.call_args.args)
+                self.assertIn("--remove-secrets=CHAT_DATABASE_URL", sdk.call_args.args)
+                self.assertIn("--update-secrets=OMNIAGENT_BUNDLE=omniagent-bundle:latest", sdk.call_args.args)
+            if key == "gateway":
+                self.assertIn("--update-secrets=OMNIAGENT_PROVIDER_BUNDLE=omniagent-bundle:latest", sdk.call_args.args)
 
     def test_missing_sha_image_builds_without_parsing_sdk_error_text(self):
         state = {"sha": "a" * 40, "components": ["chat"], "google_client_id": "existing",

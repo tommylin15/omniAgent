@@ -1,5 +1,6 @@
 """Regional, fail-closed release of the three existing omniAgent services."""
 import argparse
+import ipaddress
 import json
 from pathlib import Path
 import re
@@ -7,7 +8,7 @@ import subprocess
 import time
 import urllib.error
 import urllib.request
-from urllib.parse import quote
+from urllib.parse import quote, urlparse, parse_qs
 
 PROJECT = "gen-lang-client-0593591102"
 REGION = "us-central1"
@@ -20,6 +21,31 @@ BUCKET = f"{PROJECT}-cloudbuild-regional"
 PREFIX = "omniagent-cicd-v2/"
 
 
+def validate_unified_bundle(raw):
+    """Check the sole approved Secret contract, without printing credentials."""
+    try:
+        bundle = json.loads(raw)
+        if not isinstance(bundle, dict):
+            raise ValueError("JSON object required")
+        for name in ("gemini_api_key", "openrouter_api_key", "mcp_owner_signing_key"):
+            value = bundle.get(name)
+            if not isinstance(value, str) or len(value.strip()) < (32 if name == "mcp_owner_signing_key" else 1):
+                raise ValueError("missing " + name)
+        dsn = bundle.get("chat_database_url")
+        if not isinstance(dsn, str):
+            raise ValueError("missing chat_database_url")
+        uri = urlparse(dsn)
+        if (uri.scheme not in ("postgres", "postgresql") or uri.username != "omniagent_chat_app"
+                or uri.path != "/omniagent_chat" or not uri.password or uri.port not in (None, 5432)
+                or "require" not in parse_qs(uri.query).get("sslmode", [])):
+            raise ValueError("database identity/TLS contract mismatch")
+        if not ipaddress.ip_address(uri.hostname).is_private:
+            raise ValueError("Chat database host must be private")
+    except (ValueError, TypeError, AttributeError) as exc:
+        # No exception details: parsers and client libraries may embed credentials.
+        raise RuntimeError("unified omniagent-bundle schema validation failed") from None
+
+
 def changed_components(files):
     if files is None:
         return set(SERVICES)
@@ -27,6 +53,8 @@ def changed_components(files):
     for name in files:
         if name in ("package.json", "package-lock.json", "tsconfig.json"):
             return set(SERVICES)
+        if name in ("infra/gcp/cicd_v2.py", "infra/gcp/live_acceptance_v2.py"):
+            result.update(("chat", "gateway"))
         if name.startswith(("services/chat-api/", "apps/agent_app/", "infra/postgres/migrations/")):
             result.add("chat")
         if name.startswith("services/agent-gateway/"):
@@ -79,10 +107,28 @@ def require_private_chat_tls_target(snapshot):
         raise RuntimeError("Chat TLS mode blocked: private VPC egress not verified")
     containers = template.get("spec", {}).get("containers", [])
     env = containers[0].get("env", []) if len(containers) == 1 else []
-    database = next((item for item in env if item.get("name") == "CHAT_DATABASE_URL"), {})
-    ref = database.get("valueFrom", {}).get("secretKeyRef", {})
-    if ref.get("name") != "omniagent-chat-db" or ref.get("key") != "latest":
-        raise RuntimeError("Chat TLS mode blocked: dedicated DB Secret not verified")
+    # Existing live and candidate revisions may still refer to the pinned legacy
+    # direct DB DSN; the new JSON bundle binding is enforced after deployment.
+    database = next((item for item in env if item.get("name") == "CHAT_DATABASE_URL"), None)
+    bundle = next((item for item in env if item.get("name") == "OMNIAGENT_BUNDLE"), None)
+    if not database and not bundle:
+        raise RuntimeError("Chat TLS mode blocked: no existing Chat database source verified")
+    if database:
+        ref = database.get("valueFrom", {}).get("secretKeyRef", {})
+        if ref.get("name") not in ("omniagent-bundle", "omniagent-chat-db"):
+            raise RuntimeError("Chat TLS mode blocked: unknown legacy DB Secret")
+
+
+def require_candidate_bundle(revision, key):
+    containers = revision.get("spec", {}).get("containers", [])
+    env = containers[0].get("env", []) if len(containers) == 1 else []
+    expected = "OMNIAGENT_BUNDLE" if key == "chat" else "OMNIAGENT_PROVIDER_BUNDLE"
+    binding = next((item for item in env if item.get("name") == expected), {})
+    ref = binding.get("valueFrom", {}).get("secretKeyRef", {})
+    if ref.get("name") != "omniagent-bundle" or ref.get("key") != "latest":
+        raise RuntimeError("candidate unified bundle reference drift")
+    if key == "chat" and any(item.get("name") == "CHAT_DATABASE_URL" for item in env):
+        raise RuntimeError("candidate still exposes legacy raw database binding")
 
 
 def require_chat_candidate_tls(revision):
@@ -279,8 +325,8 @@ def prepare(sha, build_id, mode, release_sha):
             if not client_id:
                 raise RuntimeError("missing existing Google Web client ID")
             state["google_client_id"] = client_id
-    if mode == "canonical" and "gateway" in components:
-        gcloud("secrets", "versions", "describe", "latest", "--secret=omniagent-provider-bundle")
+    if mode != "ci" and components.intersection(("chat", "gateway")):
+        validate_unified_bundle(gcloud("secrets", "versions", "access", "latest", "--secret=omniagent-bundle"))
     save(state)
     if mode != "ci" and components:
         lock(state, "release")
@@ -351,6 +397,8 @@ def deploy(state):
                 raise RuntimeError("same-SHA candidate tag drift")
             runtime = cloud_json("run", "revisions", "describe", revision, f"--region={REGION}")
             require_digest(row["image"], runtime["status"]["imageDigest"])
+            if key in ("chat", "gateway"):
+                require_candidate_bundle(runtime, key)
             if key == "chat":
                 require_chat_candidate_tls(runtime)
             row.update(candidate_url=route["url"], candidate_revision=revision, candidate_tag=tag)
@@ -361,20 +409,18 @@ def deploy(state):
             "--update-labels=cicd-v2-candidate-sha=" + state["sha"]]
         if key == "chat":
             require_private_chat_tls_target(service(SERVICES[key]))
-            args += ["--update-env-vars=CHAT_DATABASE_TLS_MODE=private-self-signed"]
+            args += ["--remove-secrets=CHAT_DATABASE_URL",
+                     "--update-secrets=OMNIAGENT_BUNDLE=omniagent-bundle:latest",
+                     "--update-env-vars=CHAT_DATABASE_TLS_MODE=private-self-signed"]
         if key == "gateway":
-            try:
-                gcloud("secrets", "describe", "omniagent-provider-bundle")
-            except RuntimeError:
-                state["gates"]["gateway"] = "BLOCKED_PROVIDER_BUNDLE: approved omniagent-provider-bundle missing or inaccessible"
-                save(state)
-                continue
-            args += ["--update-secrets=OMNIAGENT_PROVIDER_BUNDLE=omniagent-provider-bundle:latest"]
+            args += ["--update-secrets=OMNIAGENT_PROVIDER_BUNDLE=omniagent-bundle:latest"]
         gcloud(*args)
         after = service(SERVICES[key])
         route = candidate_route(after, tag)
         runtime = cloud_json("run", "revisions", "describe", route["revisionName"], f"--region={REGION}")
         require_digest(row["image"], runtime["status"]["imageDigest"])
+        if key in ("chat", "gateway"):
+            require_candidate_bundle(runtime, key)
         if key == "chat":
             require_chat_candidate_tls(runtime)
         if runtime["spec"]["serviceAccountName"] != row["runtime_sa"]:
