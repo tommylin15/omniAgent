@@ -84,7 +84,7 @@ describe("shared Codex authenticated execution contract", () => {
     const server = makeSharedCodexServer({
       callers: new Map([["consumer-a", caller]]), audience: "https://example.run.app",
       verify: async () => caller,
-      execute: async () => { throw new CodexExecutionStageError("auth_load"); },
+      execute: async () => { throw new CodexExecutionStageError("account_read"); },
     });
     server.listen(0, "127.0.0.1");
     await new Promise<void>((resolve) => server.once("listening", resolve));
@@ -104,7 +104,7 @@ describe("shared Codex authenticated execution contract", () => {
       const result = await response.json() as Record<string, unknown>;
       expect(result).toEqual({
         status: "failed", requestId, error: "codex_execution_failed",
-        failureStage: "auth_load",
+        failureStage: "account_read",
       });
       expect(JSON.stringify(result)).not.toContain("sensitive");
     } finally {
