@@ -1,0 +1,72 @@
+# Read-only metadata diagnosis of exact failed Shadow Cloud Build.
+name: omniAgent V2 Shadow failure diagnostic
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/omniagent-v2-shadow-failure-readonly.yml'
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+          service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Diagnose Cloud Build metadata only; no raw logs or credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          project=gen-lang-client-0593591102
+          region=us-central1
+          build=a6282825-fa74-4c4e-952e-b354e29a06b1
+          gcloud builds describe "$build" --region="$region" \
+            --project="$project" --format=json > "$RUNNER_TEMP/target-build.json"
+          python3 - "$RUNNER_TEMP/target-build.json" <<'PY'
+          import json,sys
+          b=json.load(open(sys.argv[1],encoding="utf-8"))
+          print("cloud_build_id="+b.get("id","UNKNOWN"))
+          print("cloud_build_status="+b.get("status","UNKNOWN"))
+          print("cloud_build_trigger_id="+b.get("buildTriggerId","UNKNOWN"))
+          print("cloud_build_mode_shadow="+str(b.get("substitutions",{}).get("_MODE")=="shadow"))
+          print("cloud_build_source_sha="+b.get("substitutions",{}).get("COMMIT_SHA","UNKNOWN"))
+          print("cloud_build_failure_type="+str(b.get("failureInfo",{}).get("type","NONE")))
+          for i,step in enumerate(b.get("steps",[])):
+              ident=step.get("id",("step-"+str(i))).replace("\n"," ")
+              status=step.get("status","UNKNOWN")
+              print("step="+ident+" status="+status)
+          print("raw_cloud_build_logs=NOT_ACCESSED")
+          print("secret_payloads=NOT_ACCESSED")
+          PY
+
+      - name: Read zero-traffic candidate metadata and active traffic only
+        shell: bash
+        run: |
+          set -euo pipefail
+          project=gen-lang-client-0593591102
+          region=us-central1
+          for service in omniagent-chat omniagent-agent-gateway omniagent-shared-codex; do
+            gcloud run services describe "$service" --region="$region" \
+              --project="$project" --format=json > "$RUNNER_TEMP/$service.json"
+          done
+          python3 - "$RUNNER_TEMP" <<'PY'
+          import json,sys
+          from pathlib import Path
+          for name in ("omniagent-chat","omniagent-agent-gateway","omniagent-shared-codex"):
+              data=json.loads((Path(sys.argv[1])/(name+".json")).read_text())
+              traffic=data.get("status",{}).get("traffic",[])
+              print(name+"_active="+json.dumps([
+                  {"revision":r.get("revisionName"),"percent":r.get("percent",0)}
+                  for r in traffic if r.get("percent",0)>0],sort_keys=True))
+              print(name+"_shadow_tags="+json.dumps([
+                  {"revision":r.get("revisionName"),"percent":r.get("percent",0),"tag":r.get("tag")}
+                  for r in traffic if str(r.get("tag","")).startswith("v2-")],sort_keys=True))
+          PY
