@@ -95,7 +95,7 @@ jobs:
             gcloud run deploy "$svc" --project="$PROJECT" --region="$REGION" \
               --image="$image" --no-traffic --tag="$tag" --quiet > /dev/null
             gcloud run services describe "$svc" --project="$PROJECT" --region="$REGION" --format=json > "$RUNNER_TEMP/$svc-after.json"
-            python3 - "$RUNNER_TEMP/$svc-before.json" "$RUNNER_TEMP/$svc-after.json" "$svc" <<'PY'
+            python3 - "$RUNNER_TEMP/$svc-before.json" "$RUNNER_TEMP/$svc-after.json" "$svc" "$image" <<'PY'
           import json,sys
           before,after=(json.load(open(p)) for p in sys.argv[1:3])
           def serving(d):
@@ -111,9 +111,22 @@ jobs:
                 d.get("metadata",{}).get("annotations",{}).get("run.googleapis.com/ingress"))
           if protected(before)!=protected(after):
               raise SystemExit("BLOCKED: runtime identity/Secret/VPC/ingress changed")
+          def protected_annotations(d):
+              ann=d.get("spec",{}).get("template",{}).get("metadata",{}).get("annotations",{})
+              return {k:v for k,v in ann.items() if any(w in k.lower() for w in ("vpc","network","ingress"))}
+          if protected_annotations(before)!=protected_annotations(after):
+              raise SystemExit("BLOCKED: private networking annotations changed")
+          observed=(after.get("spec",{}).get("template",{}).get("spec",{}).get("containers") or [{}])[0].get("image")
+          if observed!=sys.argv[4]:
+              raise SystemExit("BLOCKED: immutable GHCR digest readback mismatch")
           expected=after.get("status",{}).get("latestCreatedRevisionName")
           if not expected or expected==before.get("status",{}).get("latestCreatedRevisionName"):
               raise SystemExit("BLOCKED: no verifiable candidate revision")
+          if after.get("status",{}).get("latestReadyRevisionName")!=expected:
+              raise SystemExit("BLOCKED: new candidate not ready")
+          tags=[row for row in after.get("status",{}).get("traffic",[]) if row.get("revisionName")==expected]
+          if not tags or any(row.get("percent",0)>0 for row in tags):
+              raise SystemExit("BLOCKED: new revision unexpectedly receives formal traffic")
           print("zero_traffic_candidate="+sys.argv[3]+" revision="+expected+" traffic_preserved=PASS")
           PY
           done < "$RUNNER_TEMP/image-receipts.tsv"
