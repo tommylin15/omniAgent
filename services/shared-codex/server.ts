@@ -14,6 +14,19 @@ type Execution = { text: string; threadId: string; turnId: string };
 type Execute = (request: RequestBody) => Promise<Execution>;
 type Verify = (token: string, audience: string) => Promise<string>;
 
+// Stable, non-secret failure stages. This is safe to expose only after signed
+// identity and project authorization; never return native exception messages.
+export type CodexFailureStage =
+  | "auth_load" | "app_server_spawn" | "app_server_initialize"
+  | "thread_start" | "turn_start" | "turn_events" | "auth_persist";
+
+export class CodexExecutionStageError extends Error {
+  constructor(readonly stage: CodexFailureStage) {
+    super("codex_execution_failed");
+    this.name = "CodexExecutionStageError";
+  }
+}
+
 const PROJECT = /^[a-z][a-z0-9-]{0,39}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const MODEL = /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/;
@@ -96,6 +109,7 @@ export async function executeCodex(body: RequestBody): Promise<Execution> {
   const mcp = new McpHost();
   let started = false;
   let error: unknown;
+  let stage: CodexFailureStage = "auth_load";
   try {
     await mkdir(workspace, { recursive: true, mode: 0o700 });
     await mkdir(home, { recursive: true, mode: 0o700 });
@@ -106,20 +120,25 @@ export async function executeCodex(body: RequestBody): Promise<Execution> {
       'multi_agent = false\nplugins = false\nhooks = false\nbrowser_use = false\ncomputer_use = false\n',
       { mode: 0o600 });
     await auth.load(home);
+    stage = "app_server_spawn";
     client.start();
     started = true;
     const bridge = new CodexBridge(body.ownerId, workspace, client, mcp);
     client.onFailure(() => bridge.processError());
+    stage = "app_server_initialize";
     await bridge.initialize();
+    stage = "thread_start";
     const created = record(await bridge.startThread(body.model));
     const threadId = record(created.thread).id;
     if (typeof threadId !== "string") throw new Error("missing_thread");
+    stage = "turn_start";
     const start = record(await bridge.startTurn(threadId, body.prompt));
     const turnId = record(start.turn).id;
     if (typeof turnId !== "string") throw new Error("missing_turn");
     let cursor = -1;
     let text = "";
     const deadline = Date.now() + TURN_TIMEOUT_MS;
+    stage = "turn_events";
     while (Date.now() < deadline) {
       const events = bridge.eventsAfter(cursor);
       cursor = events.cursor;
@@ -136,6 +155,7 @@ export async function executeCodex(body: RequestBody): Promise<Execution> {
         if (event.type === "turn_cancelled" || event.type === "turn_error") throw new Error("codex_turn_failed");
         if (event.type === "turn_completed") {
           if (!text.trim()) throw new Error("empty_output");
+          stage = "auth_persist";
           await auth.persist(home);
           return { text, threadId, turnId };
         }
@@ -146,7 +166,8 @@ export async function executeCodex(body: RequestBody): Promise<Execution> {
     throw new Error("codex_timeout");
   } catch (failure) {
     error = failure;
-    throw failure;
+    // Never leak a provider exception, auth payload or native RPC message.
+    throw new CodexExecutionStageError(stage);
   } finally {
     const outcomes = await Promise.allSettled([started ? client.stop() : Promise.resolve(), mcp.closeAll()]);
     await rm(root, { recursive: true, force: true });
@@ -206,10 +227,12 @@ export function makeSharedCodexServer(options: {
         status: "completed", durationMs: Date.now() - start }));
       return json(reply, 200, { status: "completed", project: body.project, ownerId: body.ownerId,
         requestId: body.requestId, result: { text: result.text }, providerIds: { threadId: result.threadId, turnId: result.turnId } });
-    } catch {
+    } catch (failure) {
+      const failureStage = failure instanceof CodexExecutionStageError ? failure.stage : "unknown";
       console.log(JSON.stringify({ kind: "shared_codex_request", project: body.project, requestId: body.requestId,
-        status: "failed", durationMs: Date.now() - start }));
-      return json(reply, 502, { status: "failed", requestId: body.requestId, error: "codex_execution_failed" });
+        status: "failed", failureStage, durationMs: Date.now() - start }));
+      return json(reply, 502, { status: "failed", requestId: body.requestId,
+        error: "codex_execution_failed", failureStage });
     } finally {
       busy = false;
     }
