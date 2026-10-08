@@ -1,4 +1,5 @@
-# One-shot owner-approved CI/CD V2 unified-bundle Shadow acceptance.
+# Owner-approved scoped-OIDC Shadow retest after Chat SA IAM OpenID grant.
+# One new push to this workflow dispatches one SHA-pinned 0%-traffic candidate check.
 # Triggered only when this workflow file is first committed to main.
 name: omniAgent V2 bundle shadow candidate check
 
