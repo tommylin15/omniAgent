@@ -76,12 +76,18 @@ export class CodexBridge {
     client.onMessage((message) => this.receive(message));
   }
 
-  async initialize(onStep?: (step: "protocol" | "account") => void): Promise<Json> {
-    // Optional non-secret progress hooks distinguish native RPC initialization
-    // from credential/account validation. No payload or exception is logged.
+  async initialize(onStep?: (step: "protocol" | "account" | "refresh") => void): Promise<Json> {
+    // Shared-service callers opt in to a non-refreshing account probe so a
+    // broken local account can be distinguished from an OAuth refresh failure.
+    // Other gateway callers retain the original single refreshing read.
     onStep?.("protocol");
     await this.client.initialize(true);
     onStep?.("account");
+    if (onStep) {
+      const snapshot = record(await this.client.request("account/read", { refreshToken: false }, 30_000));
+      if (!snapshot.account) throw new Error("Codex managed auth is unavailable");
+      onStep("refresh");
+    }
     const account = record(await this.client.request("account/read", { refreshToken: true }, 30_000));
     if (!account.account) throw new Error("Codex managed auth is unavailable");
     return account;

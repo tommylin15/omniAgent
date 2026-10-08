@@ -18,7 +18,7 @@ type Verify = (token: string, audience: string) => Promise<string>;
 // identity and project authorization; never return native exception messages.
 export type CodexFailureStage =
   | "auth_load" | "app_server_spawn" | "app_server_initialize"
-  | "account_read" | "thread_start" | "turn_start" | "turn_events"
+  | "account_read" | "account_refresh" | "thread_start" | "turn_start" | "turn_events"
   | "auth_persist";
 
 export class CodexExecutionStageError extends Error {
@@ -128,8 +128,11 @@ export async function executeCodex(body: RequestBody): Promise<Execution> {
     client.onFailure(() => bridge.processError());
     stage = "app_server_initialize";
     await bridge.initialize((step) => {
-      stage = step === "account" ? "account_read" : "app_server_initialize";
+      stage = step === "account" ? "account_read"
+        : step === "refresh" ? "account_refresh" : "app_server_initialize";
     });
+    stage = "auth_persist";
+    await auth.persistIfChanged(home);
     stage = "thread_start";
     const created = record(await bridge.startThread(body.model));
     const threadId = record(created.thread).id;

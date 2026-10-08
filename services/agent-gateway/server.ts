@@ -242,6 +242,16 @@ export class ManagedAuthStore {
     this.version = body.name;
   }
 
+  // Persist a rotated credential immediately after a successful refresh, before
+  // any later thread/turn failure can discard the one-use refresh state.
+  // Never prune Secret versions when the auth file has not changed.
+  async persistIfChanged(home: string): Promise<boolean> {
+    const raw = await readFile(join(home, "auth.json"));
+    const digest = createHash("sha256").update(raw).digest("hex");
+    if (digest === this.digest) return false;
+    return this.persist(home);
+  }
+
   async persist(home: string): Promise<boolean> {
     const raw = await readFile(join(home, "auth.json"));
     const auth = object(JSON.parse(raw.toString("utf8")) as Json);

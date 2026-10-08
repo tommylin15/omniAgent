@@ -33,7 +33,12 @@ describe("agent gateway cloud runtime POC", () => {
 
     const stages: string[] = [];
     await bridge.initialize((stage) => stages.push(stage));
-    expect(stages).toEqual(["protocol", "account"]);
+    expect(stages).toEqual(["protocol", "account", "refresh"]);
+    const accountReads = client.request.mock.calls.filter(([method]) => method === "account/read");
+    expect(accountReads).toEqual([
+      ["account/read", { refreshToken: false }, 30_000],
+      ["account/read", { refreshToken: true }, 30_000],
+    ]);
     await bridge.logout();
     await bridge.startDeviceLogin();
     await bridge.startThread("gpt-5.6-sol", [{ serverId: "quotes", configRef: "approved", toolGrants: ["quotes__latest"] }]);
@@ -90,6 +95,41 @@ describe("agent gateway cloud runtime POC", () => {
     expect(await auth.persist(home)).toBe(true);
     expect(fetcher.mock.calls[3][1].body).not.toContain("new");
     expect(fetcher.mock.calls.some(([url]) => String(url).endsWith("/versions/1:destroy"))).toBe(true);
+  });
+
+  it("skips Secret Manager mutations when refreshed auth is unchanged", async () => {
+    const home = await mkdtemp(join(tmpdir(), "omniagent-auth-noop-test-"));
+    homes.push(home);
+    const original = Buffer.from('{"tokens":"same"}').toString("base64");
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(response({ access_token: "metadata-token" }))
+      .mockResolvedValueOnce(response({ name: "projects/p/secrets/codex-auth/versions/1", payload: { data: original } }));
+    const auth = new ManagedAuthStore("projects/p/secrets/codex-auth", fetcher as typeof fetch);
+    await auth.load(home);
+    expect(await auth.persistIfChanged(home)).toBe(false);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it("distinguishes local account reads from refresh failures without disclosing credentials", async () => {
+    const client = {
+      initialize: vi.fn().mockResolvedValue({}),
+      request: vi.fn(async (method: string, params: Json) => {
+        if (method === "account/read" && (params as {refreshToken?: boolean}).refreshToken === false) {
+          return { account: { type: "chatgpt" } };
+        }
+        throw new Error("sensitive refresh token: invalid");
+      }),
+      onMessage: vi.fn(), respond: vi.fn(),
+    };
+    const mcp = new McpHost();
+    const bridge = new CodexBridge("00000000-0000-4000-8000-000000000001", "/tmp/omniagent-turn", client, mcp);
+    const stages: string[] = [];
+    await expect(bridge.initialize((stage) => stages.push(stage))).rejects.toThrow();
+    expect(stages).toEqual(["protocol", "account", "refresh"]);
+    expect(client.request.mock.calls).toEqual([
+      ["account/read", { refreshToken: false }, 30_000],
+      ["account/read", { refreshToken: true }, 30_000],
+    ]);
   });
 
   it("maps allowlisted owners without accepting a credential locator from requests", () => {
