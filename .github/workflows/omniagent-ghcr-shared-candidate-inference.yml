@@ -41,8 +41,8 @@ jobs:
           s=json.load(open(sys.argv[1])); iam=json.load(open(sys.argv[2]))
           routes=s.get("status",{}).get("traffic",[])
           active=[t for t in routes if t.get("percent",0)>0]
-          tagged=[t for t in routes if t.get("tag")=="ghcr-a88aa88c1b54"
-                  and t.get("revisionName")=="omniagent-shared-codex-00006-zeg"
+          tagged=[t for t in routes if t.get("tag")=="ghcr-8542c03752e4"
+                  and t.get("revisionName")=="omniagent-shared-codex-00007-tux"
                   and t.get("percent",0)==0]
           if len(tagged)!=1 or len(active)!=1 or active[0].get("percent")!=100:
               raise SystemExit("BLOCKED: candidate or live traffic drift")
@@ -53,7 +53,7 @@ jobs:
               raise SystemExit("BLOCKED: private invoker contract changed")
           c=s.get("spec",{}).get("template",{}).get("spec",{}).get("containers") or [{}]
           ref=c[0].get("image","")
-          if ref!="ghcr.io/tommylin15/omniagent-shared-codex@sha256:3f3353078876c79cd6b188e7678626f98d3637bf0677f2eaea9ff4a18f898119":
+          if ref!="ghcr.io/tommylin15/omniagent-shared-codex@sha256:bb95aa51d5af1b11a2fcc5512516c7f1897e3a187cb51856ddf7b8c3f1cbbf7d":
               raise SystemExit("BLOCKED: SHA-pinned GHCR image changed")
           tagurl=tagged[0].get("url","").rstrip("/")
           audience=s.get("status",{}).get("url","").rstrip("/")
@@ -95,7 +95,8 @@ jobs:
               LABEL="$label" STATUS="$status" python3 - "$RUNNER_TEMP/response.json" <<'PY'
           import json,os,sys
           approved={"auth_load","app_server_spawn","app_server_initialize",
-                    "thread_start","turn_start","turn_events","auth_persist","unknown"}
+                    "account_read","thread_start","turn_start","turn_events",
+                    "auth_persist","unknown"}
           try:
               d=json.load(open(sys.argv[1]))
               stage=d.get("failureStage") if d.get("error")=="codex_execution_failed" else None
