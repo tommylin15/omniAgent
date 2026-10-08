@@ -1,5 +1,14 @@
 # CI/CD V2 operations
 
+> **HISTORICAL / SUPERSEDED for new release operations (2026-10-08).**
+> The Cloud Build, Artifact Registry and GCS procedures below are retained to
+> interpret legacy execution evidence; **do not execute them as the new
+> release process**. Follow [GHCR Actions runbook](cicd-ghcr-actions-runbook.md)
+> and [current SPEC §8](../doc/spec.md#8-cicd--github-actions--public-ghcr--cloud-run-2026-10-08).
+> The existing old GCP triggers must be retired only after verified replacement;
+> editing these documents does not disable any trigger.
+
+
 Policy: [current SPEC §8](../doc/spec.md#8-cicd-v2). Work/evidence:
 [TODO](../doc/todo.md), [acceptance](../doc/acceptance.md).
 This runbook contains procedures, not a parallel policy.
