@@ -1,0 +1,98 @@
+# Evidence and HTTP diagnosis for a single completed, failed Shadow Build.
+# No Cloud Run mutations, no credentials, no raw Cloud Build logs.
+name: omniAgent V2 Shadow gate evidence
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/omniagent-v2-shadow-gate-readonly.yml'
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+          service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Read GCS final gate evidence safely
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          file="$(mktemp)"
+          trap 'rm -f "$file"' EXIT
+          if ! gcloud storage cp \
+            gs://gen-lang-client-0593591102-cloudbuild-regional/omniagent-cicd-v2/evidence/a6282825-fa74-4c4e-952e-b354e29a06b1.json \
+            "$file" --quiet >/dev/null 2>&1; then
+            echo "shadow_gate_evidence=NOT_READABLE_OR_MISSING"
+            exit 0
+          fi
+          python3 - "$file" <<'PY'
+          import json,sys
+          s=json.load(open(sys.argv[1],encoding="utf-8"))
+          print("shadow_gate_evidence=AVAILABLE")
+          print("shadow_mode="+str(s.get("mode")))
+          print("shadow_components="+json.dumps(s.get("components",[]),sort_keys=True))
+          print("shadow_released="+str(s.get("released",False)))
+          print("shadow_release_result="+str(s.get("release_result","UNSET")))
+          print("shadow_error_type="+("LIVE_GATES_BLOCKED" if str(s.get("error","")).startswith("LIVE_GATES_BLOCKED") else "OTHER_OR_NONE"))
+          gates=s.get("gates",{})
+          for key,val in sorted(gates.items()):
+              if not isinstance(val,str):
+                  status="NONSTRING_REDACTED"
+              elif val in ("PASS","FAIL","BLOCKED","PENDING","SKIPPED","SHADOW_ONLY"):
+                  status=val
+              elif val.startswith("BLOCKED_"):
+                  status=val.split(":",1)[0][:100]
+              elif val.startswith("FAIL"):
+                  status="FAIL_DETAIL_REDACTED"
+              else:
+                  status="OTHER_REDACTED"
+              print("gate="+key+" status="+status)
+          for key,row in sorted(s.get("services",{}).items()):
+              print("candidate_"+key+"_revision="+str(row.get("candidate_revision","NONE")))
+              print("candidate_"+key+"_configured="+str(bool(row.get("candidate_url"))))
+          print("provider_outputs_or_secret_payloads=NOT_PRINTED")
+          PY
+
+      - name: Read deployed Shadow candidate health and readiness status only
+        shell: bash
+        run: |
+          set -euo pipefail
+          gcloud run services describe omniagent-chat \
+            --project=gen-lang-client-0593591102 --region=us-central1 \
+            --format=json > "$RUNNER_TEMP/chat.json"
+          python3 - "$RUNNER_TEMP/chat.json" <<'PY'
+          import json,sys,urllib.request,urllib.error
+          service=json.load(open(sys.argv[1]))
+          rows=service.get("status",{}).get("traffic",[])
+          tag="v2-2d3ea20ad1c06bc0"
+          row=next((r for r in rows if r.get("tag")==tag and r.get("percent",0)==0),None)
+          if not row:
+              print("candidate_chat=NOT_FOUND_OR_NONZERO_TRAFFIC")
+              raise SystemExit(0)
+          print("candidate_chat=TAGGED_ZERO_TRAFFIC")
+          url=row.get("url","").rstrip("/")
+          if not url.startswith("https://"):
+              print("candidate_chat_url=INVALID")
+              raise SystemExit(0)
+          for endpoint in ("health","ready"):
+              try:
+                  with urllib.request.urlopen(url+"/"+endpoint,timeout=20) as resp:
+                      result=str(resp.status)
+              except urllib.error.HTTPError as e:
+                  result=str(e.code)
+              except Exception:
+                  result="UNREACHABLE"
+              print("candidate_chat_"+endpoint+"_http="+result)
+          print("http_response_bodies=NOT_READ")
+          PY
