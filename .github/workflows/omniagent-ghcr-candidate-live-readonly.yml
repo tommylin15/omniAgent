@@ -63,24 +63,21 @@ jobs:
           c=(rev.get("spec") or {}).get("containers") or []
           images=[str(x.get("image","")) for x in c]
           approved="ghcr.io/tommylin15/"+name+"@sha256:"+digest
-          if approved not in images:
-              # Record only public image provenance hints, not env/config/Secrets.
-              import hashlib
-              template=(service.get("spec") or {}).get("template") or {}
-              template_images=[str(x.get("image","")) for x in
-                               ((template.get("spec") or {}).get("containers") or [])]
-              def hints(values):
-                  return [{"origin":"GHCR" if v.startswith("ghcr.io/") else
-                           "AR" if ".pkg.dev/" in v else "OTHER_OR_MISSING",
-                           "digest_match":digest in v,
-                           "has_sha256":("sha256:" in v),
-                           "reference_hash":hashlib.sha256(v.encode()).hexdigest()[:12]}
-                          for v in values]
-              print(json.dumps({"diagnostic":"IMAGE_READBACK_MISMATCH",
-                                "service":name,"revision_images":hints(images),
-                                "template_images":hints(template_images),
-                                "revision_spec_keys":sorted((rev.get("spec") or {}).keys())},sort_keys=True))
-              raise SystemExit("BLOCKED: revision's immutable image digest not directly evidenced")
+          # Cloud Run imports public external images into a Google-managed
+          # Artifact Registry cache. Revision readback can show the managed
+          # mirror URI although the Service template retains the GHCR source.
+          template=(service.get("spec") or {}).get("template") or {}
+          template_images=[str(x.get("image","")) for x in
+                           ((template.get("spec") or {}).get("containers") or [])]
+          correct_source=template_images==[approved]
+          correct_binary=(len(images)==1 and images[0].endswith("@sha256:"+digest)
+               and (images[0]==approved or ".pkg.dev/" in images[0]))
+          if not correct_source or not correct_binary:
+              # Never print Secret fields. Only minimal public image evidence.
+              print(json.dumps({"diagnostic":"IMAGE_READBACK_MISMATCH","service":name,
+                                "ghcr_source_expected":correct_source,
+                                "managed_mirror_digest_matches":correct_binary},sort_keys=True))
+              raise SystemExit("BLOCKED: GHCR source or immutable revision content digest mismatch")
           tagurl=str(matching[0].get("url","")).rstrip("/")
           if not tagurl.startswith("https://"):
               raise SystemExit("BLOCKED: candidate tag URL absent")
