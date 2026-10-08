@@ -45,7 +45,41 @@ jobs:
           print("shadow_released="+str(s.get("released",False)))
           print("shadow_release_result="+str(s.get("release_result","UNSET")))
           print("shadow_error_type="+("LIVE_GATES_BLOCKED" if str(s.get("error","")).startswith("LIVE_GATES_BLOCKED") else "OTHER_OR_NONE"))
+          usage=s.get("usage",{})
+          print("shadow_provider_call_count="+str(usage.get("provider_calls","UNKNOWN")))
+          print("shadow_attempts_used="+str(usage.get("attempts","UNKNOWN")))
           gates=s.get("gates",{})
+          import re
+          for component in ("gateway","recovery"):
+              error=str(gates.get(component,""))
+              match=re.fullmatch(r"FAIL: HTTP ([1-5][0-9]{2}), expected ([1-5][0-9]{2})",error)
+              if match:
+                  kind="HTTP_"+match.group(1)+"_EXPECTED_"+match.group(2)
+              elif "provider completion failed" in error:
+                  kind="PROVIDER_COMPLETION"
+              elif "recovery tag revision/url mismatch" in error:
+                  kind="RECOVERY_TAG_REVISION_URL"
+              elif "recovery tag collision" in error:
+                  kind="RECOVERY_TAG_COLLISION"
+              elif "recovery changed active traffic" in error:
+                  kind="RECOVERY_TRAFFIC_DRIFT"
+              elif "candidate changed active traffic" in error:
+                  kind="CANDIDATE_TRAFFIC_DRIFT"
+              elif "recovery blocked" in error:
+                  kind="RECOVERY_CANDIDATE_MISSING"
+              elif "tag removal" in error:
+                  kind="RECOVERY_TAG_REMOVAL"
+              elif "permission" in error.lower() or "PERMISSION_DENIED" in error:
+                  kind="PERMISSION"
+              elif "unknown" in error.lower():
+                  kind="UNKNOWN_VALUE"
+              elif error.startswith("FAIL"):
+                  kind="OTHER_FAILURE_REDACTED"
+              else:
+                  kind="NOT_FAILURE"
+              print("gate_"+component+"_failure_class="+kind)
+          for component,result in sorted(s.get("recovery_probe",{}).items()):
+              print("recovery_step_"+component+"="+("PASS" if str(result).startswith("PASS:") else "NOT_PASS"))
           for key,val in sorted(gates.items()):
               if not isinstance(val,str):
                   status="NONSTRING_REDACTED"
