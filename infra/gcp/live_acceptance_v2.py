@@ -44,10 +44,10 @@ def identity(email, audience):
     IAM generateIdToken on the Chat SA. Never store or print returned tokens.
     """
     if not isinstance(email, str) or not re.fullmatch(
-            r"[A-Za-z0-9-]+@[A-Za-z0-9-]+\\.iam\\.gserviceaccount\\.com", email):
+            r"[A-Za-z0-9-]+@[A-Za-z0-9-]+\.iam\.gserviceaccount\.com", email):
         raise RuntimeError("invalid identity token request")
     if isinstance(audience, str) and re.fullmatch(
-            r"[0-9]+-[A-Za-z0-9_-]+\\.apps\\.googleusercontent\\.com", audience):
+            r"[0-9]+-[A-Za-z0-9_-]+\.apps\.googleusercontent\.com", audience):
         return gcloud("auth", "print-identity-token", "--impersonate-service-account=" + email,
             "--audiences=" + audience, "--include-email")
     if not isinstance(audience, str) or not audience.startswith("https://"):
