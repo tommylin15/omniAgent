@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { CodexExecutionStageError, makeSharedCodexServer, parseCallers, parseRequest } from "../services/shared-codex/server.js";
+import { CodexExecutionStageError, classifyCodexRefreshFailure, makeSharedCodexServer, parseCallers, parseRequest } from "../services/shared-codex/server.js";
 
 const ownerId = "00000000-0000-4000-8000-000000000001";
 const requestId = "00000000-0000-4000-8000-000000000002";
@@ -17,6 +17,15 @@ describe("shared Codex authenticated execution contract", () => {
       { prompt: "" }, { prompt: "x".repeat(17_000) }, { model: "model with spaces" },
       { credential: "forbidden" },
     ]) expect(() => parseRequest({ ...valid, ...patch })).toThrow();
+  });
+
+  it("classifies refresh failures without returning native exception or token text", () => {
+    expect(classifyCodexRefreshFailure(new Error("refresh_token_invalidated sensitive-value"))).toBe("reauth_required");
+    expect(classifyCodexRefreshFailure(new Error("401 Unauthorized sensitive-value"))).toBe("refresh_rejected");
+    expect(classifyCodexRefreshFailure(new Error("request timed out sensitive-value"))).toBe("refresh_timeout");
+    expect(classifyCodexRefreshFailure(new Error("ECONNRESET sensitive-value"))).toBe("refresh_network");
+    expect(classifyCodexRefreshFailure(new Error("Codex managed auth is unavailable"))).toBe("account_unavailable");
+    expect(classifyCodexRefreshFailure(new Error("sensitive-value"))).toBe("unknown");
   });
 
   it("validates signed caller identity before parsing body or executing", async () => {
@@ -80,6 +89,30 @@ describe("shared Codex authenticated execution contract", () => {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
   });
+  it("returns only a bounded refresh reason to an authorized caller", async () => {
+    const server = makeSharedCodexServer({
+      callers: new Map([["consumer-a", caller]]), audience: "https://example.run.app",
+      verify: async () => caller,
+      execute: async () => { throw new CodexExecutionStageError("account_refresh", "reauth_required"); },
+    });
+    server.listen(0, "127.0.0.1");
+    await new Promise<void>((resolve) => server.once("listening", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("address missing");
+    try {
+      const response = await fetch("http://127.0.0.1:" + address.port + "/v1/codex/execute", {
+        method: "POST", headers: { authorization: "Bearer signed" }, body: JSON.stringify(valid),
+      });
+      expect(response.status).toBe(502);
+      expect(await response.json()).toEqual({
+        status: "failed", requestId, error: "codex_execution_failed",
+        failureStage: "account_refresh", failureReason: "reauth_required",
+      });
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
   it("returns only allowlisted execution stage for signed authorized caller", async () => {
     const server = makeSharedCodexServer({
       callers: new Map([["consumer-a", caller]]), audience: "https://example.run.app",

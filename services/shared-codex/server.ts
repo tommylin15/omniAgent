@@ -21,8 +21,26 @@ export type CodexFailureStage =
   | "account_read" | "account_refresh" | "thread_start" | "turn_start" | "turn_events"
   | "auth_persist";
 
+export type CodexRefreshFailureReason =
+  | "reauth_required" | "refresh_rejected" | "refresh_timeout"
+  | "refresh_network" | "account_unavailable" | "unknown";
+
+// Never emit native RPC messages: they may contain authentication material.
+// Only a fixed vocabulary reaches an already authorized caller or Cloud Logging.
+export function classifyCodexRefreshFailure(failure: unknown): CodexRefreshFailureReason {
+  const message = failure instanceof Error ? failure.message.toLowerCase() : "";
+  if (/refresh_token_invalidated|invalid_grant|since logged out|signed in to another account|please sign in again/.test(message)) {
+    return "reauth_required";
+  }
+  if (/\b401\b|\b403\b|unauthorized|forbidden|token refresh rejected/.test(message)) return "refresh_rejected";
+  if (/timeout|timed out|deadline exceeded/.test(message)) return "refresh_timeout";
+  if (/econn|enotfound|dns|network|socket|tls|certificate/.test(message)) return "refresh_network";
+  if (/managed auth is unavailable|account unavailable/.test(message)) return "account_unavailable";
+  return "unknown";
+}
+
 export class CodexExecutionStageError extends Error {
-  constructor(readonly stage: CodexFailureStage) {
+  constructor(readonly stage: CodexFailureStage, readonly reason?: CodexRefreshFailureReason) {
     super("codex_execution_failed");
     this.name = "CodexExecutionStageError";
   }
@@ -173,7 +191,8 @@ export async function executeCodex(body: RequestBody): Promise<Execution> {
   } catch (failure) {
     error = failure;
     // Never leak a provider exception, auth payload or native RPC message.
-    throw new CodexExecutionStageError(stage);
+    throw new CodexExecutionStageError(stage,
+      stage === "account_refresh" ? classifyCodexRefreshFailure(failure) : undefined);
   } finally {
     const outcomes = await Promise.allSettled([started ? client.stop() : Promise.resolve(), mcp.closeAll()]);
     await rm(root, { recursive: true, force: true });
@@ -235,10 +254,14 @@ export function makeSharedCodexServer(options: {
         requestId: body.requestId, result: { text: result.text }, providerIds: { threadId: result.threadId, turnId: result.turnId } });
     } catch (failure) {
       const failureStage = failure instanceof CodexExecutionStageError ? failure.stage : "unknown";
+      const failureReason = failure instanceof CodexExecutionStageError && failureStage === "account_refresh"
+        ? failure.reason : undefined;
       console.log(JSON.stringify({ kind: "shared_codex_request", project: body.project, requestId: body.requestId,
-        status: "failed", failureStage, durationMs: Date.now() - start }));
+        status: "failed", failureStage, ...(failureReason ? { failureReason } : {}),
+        durationMs: Date.now() - start }));
       return json(reply, 502, { status: "failed", requestId: body.requestId,
-        error: "codex_execution_failed", failureStage });
+        error: "codex_execution_failed", failureStage,
+        ...(failureReason ? { failureReason } : {}) });
     } finally {
       busy = false;
     }
