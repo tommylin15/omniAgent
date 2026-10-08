@@ -1,6 +1,28 @@
 # omniAgent TODO
 
-## CI/CD V2 — ACTIVE / PARTIAL (2026-10-08)
+## Actions + GHCR + Cloud Run migration — TARGET / OPEN (2026-10-08)
+
+- [x] Formal owner design documented: Actions complete CI, three GHCR public
+  digest images, Cloud Run 0% candidates, acceptance/traffic/rollback, optional
+  read-only old Cloud Build status bridge. [SPEC §8](spec.md#8-cicd--github-actions--public-ghcr--cloud-run-2026-10-08).
+- [ ] Expand current `.github/workflows/omniagent-ghcr-publish.yml`: push
+  filter presently only matches its own workflow file, not general main changes.
+  Observe exact-SHA complete normal push CI.
+- [ ] Confirm three GHCR packages Public and anonymously retrievable by digest,
+  record observed Actions run and Docker image digest receipts.
+- [ ] Implement WIF-governed digest-pinned manual release, 0%-traffic
+  Cloud Run candidates, readback and all real integration/security gates.
+- [ ] Implement serialized safe promotion/real traffic rollback, readback,
+  budget controls, stale-SHA protection and recovery evidence.
+- [ ] Extend read-only legacy Cloud Build status workflow with bounded masked
+  failure summary; current workflow only prints status, failure class and steps.
+- [ ] Verify retirement of old Cloud Build triggers **after** replacement
+  passes. Do not delete historical Artifact Registry/GCS assets or create VMs.
+- [ ] Evidence links and final acceptance; docs/source-only is not DONE.
+  [New runbook](../docs/cicd-ghcr-actions-runbook.md) ·
+  [acceptance](acceptance.md).
+
+## Historical Cloud Build CI/CD V2 — retained evidence (2026-10-08)
 
 - [x] Inventory Chat, bundled Flutter, Gateway, Shared; reuse private 2nd Gen
   repository and create separate us-central1 CI Push / manual Release triggers.
