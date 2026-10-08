@@ -76,8 +76,12 @@ export class CodexBridge {
     client.onMessage((message) => this.receive(message));
   }
 
-  async initialize(): Promise<Json> {
+  async initialize(onStep?: (step: "protocol" | "account") => void): Promise<Json> {
+    // Optional non-secret progress hooks distinguish native RPC initialization
+    // from credential/account validation. No payload or exception is logged.
+    onStep?.("protocol");
     await this.client.initialize(true);
+    onStep?.("account");
     const account = record(await this.client.request("account/read", { refreshToken: true }, 30_000));
     if (!account.account) throw new Error("Codex managed auth is unavailable");
     return account;
