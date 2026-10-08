@@ -35,7 +35,24 @@ for account in omniagent-shared-codex omniagent-codex-life-client omniagent-code
     gcloud iam service-accounts create "$account" --project="$PROJECT" \
       --display-name="omniAgent dedicated shared Codex identity: $account" --quiet >/dev/null
   fi
-  gcloud iam service-accounts describe "$email" --project="$PROJECT" --format='value(email)'
+  # Newly created service accounts are eventually consistent in Google IAM.
+  # Creating them is not sufficient: retry until the read API confirms identity.
+  confirmed=0
+  for attempt in 1 2 3 4 5 6 7 8; do
+    if gcloud iam service-accounts describe "$email" --project="$PROJECT" \
+      --format='value(email)' 2>/dev/null; then
+      confirmed=1
+      break
+    fi
+    if (( attempt < 8 )); then
+      echo "service_account_propagation_wait account=$account attempt=$attempt"
+      sleep 5
+    fi
+  done
+  if [[ "$confirmed" != 1 ]]; then
+    echo "Service account did not become readable: $email; safe to rerun" >&2
+    exit 1
+  fi
 done
 
 if ! gcloud secrets describe "$DEST" --project="$PROJECT" >/dev/null 2>&1; then
