@@ -1,0 +1,105 @@
+# Reusable last-stage hook only. NOT a deployment pipeline or standalone cleanup trigger.
+# The release caller MUST call this only after successful real acceptance,
+# traffic promotion + readback, and a real rollback rehearsal.
+name: omniAgent Cloud Run retain latest two revisions
+on:
+  workflow_call:
+    inputs:
+      release_sha:
+        type: string
+        required: true
+      acceptance_and_promotion_passed:
+        type: boolean
+        required: true
+      chat_promoted:
+        type: string
+        required: true
+      chat_rollback:
+        type: string
+        required: true
+      gateway_promoted:
+        type: string
+        required: true
+      gateway_rollback:
+        type: string
+        required: true
+      shared_promoted:
+        type: string
+        required: true
+      shared_rollback:
+        type: string
+        required: true
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: omniagent-retain-two-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  retain-two:
+    name: Retain two - ${{ matrix.service }}
+    if: github.repository == 'tommylin15/omniAgent' && github.ref == 'refs/heads/main' && inputs.acceptance_and_promotion_passed
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - service: omniagent-chat
+            promoted: ${{ inputs.chat_promoted }}
+            rollback: ${{ inputs.chat_rollback }}
+          - service: omniagent-agent-gateway
+            promoted: ${{ inputs.gateway_promoted }}
+            rollback: ${{ inputs.gateway_rollback }}
+          - service: omniagent-shared-codex
+            promoted: ${{ inputs.shared_promoted }}
+            rollback: ${{ inputs.shared_rollback }}
+    env:
+      RELEASE_SHA: ${{ inputs.release_sha }}
+      PROMOTED: ${{ matrix.promoted }}
+      ROLLBACK: ${{ matrix.rollback }}
+      SERVICE: ${{ matrix.service }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Exact approved main SHA only
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$RELEASE_SHA" = "$GITHUB_SHA"
+          remote="$(git ls-remote https://github.com/tommylin15/omniAgent.git refs/heads/main | cut -f1)"
+          test "$remote" = "$RELEASE_SHA"
+      - name: Test retention policy before GCP authorization
+        run: python3 -m unittest discover -s tests -p test_cloudrun_revision_retention.py -v
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+          service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Dry-run latest-two retention
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/cloudrun_revision_retention.py \
+            --service "$SERVICE" \
+            --promoted-revision "$PROMOTED" \
+            --rollback-revision "$ROLLBACK"
+      - name: Delete only approved unreferenced older revisions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/cloudrun_revision_retention.py \
+            --service "$SERVICE" \
+            --promoted-revision "$PROMOTED" \
+            --rollback-revision "$ROLLBACK" \
+            --apply
+          {
+            echo "### $SERVICE — Cloud Run latest 2"
+            echo "Retention: successful; exact promoted $PROMOTED and rollback $ROLLBACK"
+            echo "All older revisions checked for live traffic and candidate tags before deletion."
+            echo "No GHCR/Cloud Build/GCS/Artifact Registry cleanup."
+          } >> "$GITHUB_STEP_SUMMARY"
