@@ -81,7 +81,7 @@ Recovery drills use an isolated tag candidate -> prior active revision -> candid
 preserving all active traffic. Partial promotion failure restores/readbacks prior
 percentages. A tag recovery drill is not an active-traffic rollback claim.
 
-Cleanup dry-run protects all extant runtime revisions across regions, candidates
+Cleanup dry-run protects all extant runtime revisions, Job/Execution image references across regions, candidates
 and manual recovery tags. Only owned image packages are eligible. Apply requires
 accepted release, fresh SHA and renewed references/tags before each deletion.
 Scanning stays disabled. Existing shared buckets are never deleted by this task.

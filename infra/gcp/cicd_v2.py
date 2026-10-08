@@ -416,19 +416,53 @@ def release(state, mode):
         raise
 
 
+def referenced_images(value):
+    if isinstance(value, dict):
+        if isinstance(value.get("image"), str):
+            yield value["image"]
+        for child in value.values():
+            yield from referenced_images(child)
+    elif isinstance(value, list):
+        for child in value:
+            yield from referenced_images(child)
+
+
 def cleanup(state, apply=False):
     protected = {r["image"] for r in state["services"].values() if r.get("image")}
     # Keep *all* extant revisions, including zero-traffic rollback revisions.
     all_services = cloud_json("run", "services", "list", "--platform=managed", "--limit=1000")
+    if len(all_services) >= 1000:
+        raise RuntimeError("cleanup refused: service inventory may be truncated")
     for runtime_service in all_services:
         name = runtime_service["metadata"]["name"]
         region = runtime_service["metadata"]["labels"]["cloud.googleapis.com/location"]
         revisions = cloud_json("run", "revisions", "list", "--service=" + name, "--region=" + region, "--limit=1000")
+        if len(revisions) >= 1000:
+            raise RuntimeError("cleanup refused: revision inventory may be truncated")
         for revision in revisions:
             digest = revision.get("status", {}).get("imageDigest")
             if not digest:
                 raise RuntimeError("cleanup refused: revision digest unavailable")
             protected.add(digest)
+    jobs = cloud_json("run", "jobs", "list", "--limit=1000")
+    if len(jobs) >= 1000:
+        raise RuntimeError("cleanup refused: job inventory may be truncated")
+    for job in jobs:
+        region = job["metadata"]["labels"]["cloud.googleapis.com/location"]
+        executions = cloud_json("run", "jobs", "executions", "list", "--job=" + job["metadata"]["name"],
+            "--region=" + region, "--limit=1000")
+        if len(executions) >= 1000:
+            raise RuntimeError("cleanup refused: execution inventory may be truncated")
+        if any(image.startswith(REGISTRY + "/") and "@sha256:" not in image for image in referenced_images(executions)):
+            raise RuntimeError("cleanup refused: retained execution uses unresolved image tag")
+        for image in referenced_images([job, executions]):
+            if image.startswith(REGISTRY + "/"):
+                if "@sha256:" not in image:
+                    digest = gcloud("artifacts", "docker", "images", "describe", image, "--format=value(image_summary.digest)")
+                    if not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
+                        raise RuntimeError("cleanup refused: job/execution digest unavailable")
+                    image = image.rsplit(":", 1)[0] + "@" + digest
+                protected.add(image)
     images = cloud_json("artifacts", "docker", "images", "list", REGISTRY, "--include-tags", "--limit=10000")
     plan = cleanup_candidates(images, protected)
     state["cleanup_dry_run"] = plan

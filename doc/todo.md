@@ -6,7 +6,10 @@
   repository and create separate us-central1 CI Push / manual Release triggers.
 - [x] Source: tested SHA/change/image safeguards, independent Shared lock,
   bounded attempt/provider cost and recovery; manual V2 replaces old publishers.
-- [ ] Real CI Push and explicit bounded candidate Release evidence.
+- [x] Real CI Push PASS: `7fa347db`, Cloud Build `3f228e9a-d4a9-4133-b9e3-f6a05d09af2d`.
+- [ ] Explicit bounded candidate Release: `d6925968-f5b6-473c-83b8-0cb5d6fc8073`
+  source gates PASS; image step failed before deployment (SDK stable lacks Python).
+  Python-enabled image fix and Job/Execution cleanup protection await new Push/release evidence.
 - [ ] Approved provider bundle missing; human OAuth/dispatcher dependencies OPEN.
 - [ ] All mandatory candidate gates, canonical release/readback/recovery.
 - [ ] Safe image cleanup after dry-run and accepted release.

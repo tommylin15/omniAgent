@@ -25,3 +25,21 @@
 
 Provider bundle absent, human OAuth two-owner evidence missing, durable dispatcher
 unimplemented. Canonical release/full live acceptance/CLOSED are not claimed.
+
+## Successful main Push and manual candidate attempt
+
+- Full SHA `7fa347dbf21df7fe82c07a02b4a6c3c3ccb92b07` real main Push:
+  Cloud Build `3f228e9a-d4a9-4133-b9e3-f6a05d09af2d` **SUCCESS**.
+  Node/API/contract/security, isolated PostgreSQL migration/owner isolation,
+  Flutter analyze/test/Web build and release safety checks PASS. CI-only;
+  no candidate or formal traffic mutation.
+- Manual shadow `d6925968-f5b6-473c-83b8-0cb5d6fc8073`: exact source SHA,
+  explicit release SHA and shadow mode verified. SHA/serialization/locks and
+  all source gates PASS, then step 5 failed with `python3: command not found`
+  in the stable SDK image. No image/candidate/promotion/live acceptance claimed.
+- Malformed PowerShell substitutions attempt `09fcc913-94f1-466d-9d45-7ddcd5f5356f`
+  failed at argument gate before deployment. Retry used a quoted single argument.
+- Fix: builder uses the same Python-enabled SDK slim image proven in other steps.
+  Cleanup additionally protects retained Job/Execution images and refuses potentially
+  truncated reference inventories. Both fixes have runnable regression checks.
+- Local runtime inventory JSON is a point-in-time dry-run only: no images deleted.

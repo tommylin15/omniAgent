@@ -12,6 +12,23 @@ if spec.loader and Path(spec.origin).exists():
 
 
 class ReleaseSafety(unittest.TestCase):
+    def test_image_builder_uses_python_enabled_sdk_image(self):
+        config = (Path(__file__).parents[1] / "cloudbuild-v2.yaml").read_text()
+        builder = config.split("- id: immutable-docker-build-and-push", 1)[1].split("- id:", 1)[0]
+        self.assertIn("google-cloud-cli:slim", builder)
+
+    def test_cleanup_keeps_job_and_execution_images(self):
+        state = {"services": {}}
+        package = v2.REGISTRY + "/omniagent-chat"
+        job = {"metadata": {"name": "existing-job", "labels": {"cloud.googleapis.com/location": "us-central1"}},
+            "spec": {"template": {"containers": [{"image": package + ":" + "a" * 40}]}}}
+        execution = {"spec": {"taskTemplate": {"containers": [{"image": package + "@sha256:" + "b" * 64}]}}}
+        images = [{"package": package, "version": "sha256:" + char * 64} for char in "abc"]
+        with patch.object(v2, "cloud_json", side_effect=[[], [job], [execution], images]), patch.object(v2, "save"), \
+            patch.object(v2, "gcloud", return_value="sha256:" + "a" * 64):
+            v2.cleanup(state)
+        self.assertEqual(state["cleanup_dry_run"], [package + "@sha256:" + "c" * 64])
+
     def test_repository_read_token_uses_the_rest_access_method(self):
         with patch.object(v2, "gcloud", return_value="redacted"), patch.object(v2, "api", return_value={"token": "ephemeral"}) as remote:
             self.assertEqual(v2.github_token(), "ephemeral")
