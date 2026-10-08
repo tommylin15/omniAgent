@@ -2,8 +2,19 @@
 
 ## Replacement CI/CD — GitHub Actions / public GHCR / Cloud Run (OPEN)
 
-Owner decision 2026-10-08. These are acceptance requirements, **not PASSED
-results**; the old Cloud Build V2 checkpoint below is historical only.
+Owner decision 2026-10-08. Requirements below are final production
+gates. Some source/build/candidate sub-gates now have observed PASS, while
+**Shared real inference, human/browser/dispatcher, promotion/rollback and
+CI/CD asset retirement remain OPEN**. Legacy Cloud Build V2 is historical.
+
+**2026-10-08 verified intermediate evidence** ([detail](../docs/cicd-transition-runtime-evidence.md)):
+
+- [x] Exact SHA `3cf40bc7a9223a5ce7efa630dbd837c4ff57a46a` Node/Python/PostgreSQL/Flutter quality and three public GHCR SHA-256 images: [publish #37768680175](https://github.com/tommylin15/omniAgent/actions/runs/37768680175).
+- [x] Three GHCR images anonymously readable and pinned 0%-traffic Cloud Run candidates created without formal traffic changes: [#37768993666 attempt 2](https://github.com/tommylin15/omniAgent/actions/runs/37768993666).
+- [x] Candidate image digest/current-serving traffic readback, Chat `/ready=200`, Flutter static Web and unauthenticated API rejection: [#37773167073](https://github.com/tommylin15/omniAgent/actions/runs/37773167073), [#37773639139](https://github.com/tommylin15/omniAgent/actions/runs/37773639139).
+- [x] Signed existing Chat identity can invoke Gateway candidate `/health=200` using only narrow IAM `generateIdToken`; signed Shared candidate `/health` and `/ready=200`: [#37773639139](https://github.com/tommylin15/omniAgent/actions/runs/37773639139).
+- [ ] **Shared candidate REAL inference remains BLOCKED**: HTTP 502 [#37773850397](https://github.com/tommylin15/omniAgent/actions/runs/37773850397); old AR serving runtime control also returned 502 [#37774120512](https://github.com/tommylin15/omniAgent/actions/runs/37774120512). Public GHCR native CLI binary 0.153.4 smoke PASS [#37774590569](https://github.com/tommylin15/omniAgent/actions/runs/37774590569). CI Cloud Logging diagnostic NOT_AUTHORIZED; do not claim root cause.
+- [ ] Full real browser identity/two-owner isolation, signed provider E2E and dispatcher, actual rollback and promotion, 10-revision deletion/readback, old triggers retirement and GCS/AR cleanup remain unaccepted.
 
 - [ ] Normal `main` push runs exact-SHA full Node/API/security, disposable PostgreSQL, Flutter, Python and hygiene gates; observed Actions PASS.
 - [ ] All three images published from that SHA, public GHCR visibility and anonymous digest retrieval demonstrated; no credentials embedded.
