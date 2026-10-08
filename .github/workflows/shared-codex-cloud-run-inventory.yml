@@ -1,0 +1,72 @@
+name: Shared Codex Cloud Run inventory
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/shared-codex-cloud-run-inventory.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  GCP_PROJECT_ID: gen-lang-client-0593591102
+  GCP_REGION: us-central1
+  OMNIAGENT_GCP_WIF_PROVIDER: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+  OMNIAGENT_GCP_CI_SERVICE_ACCOUNT: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.OMNIAGENT_GCP_WIF_PROVIDER }}
+          service_account: ${{ env.OMNIAGENT_GCP_CI_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Inventory Cloud Run services and jobs without secret values
+        shell: bash
+        run: |
+          set -euo pipefail
+          gcloud run services list --project="$GCP_PROJECT_ID" --region="$GCP_REGION" --format=json > /tmp/services.json
+          gcloud run jobs list --project="$GCP_PROJECT_ID" --region="$GCP_REGION" --format=json > /tmp/jobs.json
+          python3 - <<'PY'
+          import json,subprocess
+          for kind,source,command in [
+              ("service","/tmp/services.json",["gcloud","run","services","describe"]),
+              ("job","/tmp/jobs.json",["gcloud","run","jobs","describe"]),
+          ]:
+              rows=json.load(open(source))
+              print(f"{kind}_count={len(rows)}")
+              for row in rows:
+                  metadata=row.get("metadata") or {}
+                  name=metadata.get("name") or (row.get("name") or "").split("/")[-1]
+                  if not name: continue
+                  cmd=command+[name,"--project=gen-lang-client-0593591102","--region=us-central1","--format=json"]
+                  try:
+                      value=json.loads(subprocess.check_output(cmd,stderr=subprocess.DEVNULL,timeout=30))
+                  except Exception as exc:
+                      print(json.dumps({"kind":kind,"name":name,"readback":"unavailable","error_type":type(exc).__name__},sort_keys=True))
+                      continue
+                  spec=value.get("spec") or {}
+                  tmpl=spec.get("template") or {}
+                  if kind=="job":
+                      tmpl=tmpl.get("spec",{}).get("template",{}).get("spec",{})
+                  else:
+                      tmpl=tmpl.get("spec") or {}
+                  containers=tmpl.get("containers") or value.get("template",{}).get("containers") or []
+                  image_names=[v.get("image","") for v in containers]
+                  refs=[]
+                  names=[]
+                  for c in containers:
+                      for e in c.get("env") or []:
+                          names.append(e.get("name",""))
+                          src=e.get("valueFrom") or {}
+                          secret=(src.get("secretKeyRef") or {}).get("name")
+                          if secret: refs.append(secret)
+                  print(json.dumps({"kind":kind,"name":name,"service_account":tmpl.get("serviceAccountName") or tmpl.get("serviceAccount",""),
+                      "images":image_names,"env_keys":sorted(set(names)),"secret_references":sorted(set(refs)),"readback":"ok"},sort_keys=True))
+          PY
