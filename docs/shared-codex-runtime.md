@@ -116,6 +116,22 @@ The dedicated life and market caller accounts are **low privilege** and receive 
 - **Caller identity contract:** \`life-assistant\` -> \`omniagent-codex-life-client@gen-lang-client-0593591102.iam.gserviceaccount.com\`; \`market-mart\` -> \`omniagent-codex-market-client@gen-lang-client-0593591102.iam.gserviceaccount.com\`; \`omniagent\` -> \`omniagent-codex-chat-client@gen-lang-client-0593591102.iam.gserviceaccount.com\`. Each caller must mint an ID token for the exact Cloud Run URL and use the corresponding \`project\` in the body.
 - **No GitHub or consumer-source edits** outside the omniAgent repository occurred in this work package. This service exposes bounded read-only text operations, not arbitrary CLI shell or repository mutations.
 
+## Approved credential retirement procedure (operator-only)
+
+The owner separately authorized removing the previous external Codex auth Secret **after successful standalone shared-service acceptance**, even though the external consumer adapter may be migrated afterward. The service's own live acceptance is now PASS. The current connected GCP management capabilities cannot mutate Secret Manager allow policies or delete Secrets, so the final privileged deletion must run from authenticated Google Cloud Shell; do not misreport it as already done.
+
+`infra/gcp/retire-legacy-codex-auth.sh` performs an independent **read-only preflight** against the successful GitHub Actions live run, pinned deployed image, dedicated runtime identity, enabled dedicated auth Secret, exact audience, all three Cloud Run invoker bindings and no public access; only then calls Secret Manager delete on the explicitly named legacy Secret. It does not modify consumer code. Since existing consumers may still reference the legacy Secret, their old execution path may fail until the independently owned adapter cutover; this interruption was accepted by the owner.
+
+```bash
+cd ~/omniAgent
+git pull --ff-only origin main
+LEGACY_CODEX_AUTH_SECRET="<approved-legacy-secret-name>" \
+CONFIRM_LEGACY_CODEX_RETIREMENT=RETIRE_AFTER_LIVE_PASS \
+  bash infra/gcp/retire-legacy-codex-auth.sh
+```
+
+The script finishes with `legacy_secret_retirement=PASS` only when the GCP delete command succeeds. The procedure intentionally uses the operator's existing administrator access; routine GitHub WIF CI continues to have no permission to delete unrelated Secrets. This legacy Secret retirement is not a precondition to giving separate teams the new private endpoint contract.
+
 ## Operational cautions
 
 This initial synchronous endpoint is intended for bounded text tasks. Long-running code changes, GitHub write operations, interactive approvals, durable retry, async queues, idempotent replay, and model/provider usage accounting are **not implemented** by this slice. Repeated requests with the same requestId do not yet implement exactly-once semantics; consumer callers must avoid automatic unsafe retries. Scopes and entitlements must be reviewed before enabling more capable modes.
