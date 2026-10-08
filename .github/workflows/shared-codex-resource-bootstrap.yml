@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'infra/gcp/bootstrap-shared-codex-iam.sh'
+      - 'infra/gcp/retire-legacy-codex-auth.sh'
       - '.github/workflows/shared-codex-resource-bootstrap.yml'
   workflow_dispatch:
 
@@ -22,10 +23,14 @@ jobs:
         run: |
           set -euo pipefail
           bash -n infra/gcp/bootstrap-shared-codex-iam.sh
+          bash -n infra/gcp/retire-legacy-codex-auth.sh
           if command -v shellcheck >/dev/null; then
-            shellcheck -s bash infra/gcp/bootstrap-shared-codex-iam.sh
+            shellcheck -s bash infra/gcp/bootstrap-shared-codex-iam.sh infra/gcp/retire-legacy-codex-auth.sh
           fi
           grep -q 'scoped_iam_bootstrap=PASS' infra/gcp/bootstrap-shared-codex-iam.sh
           grep -q 'legacy_secret_retirement=NOT_PERFORMED' infra/gcp/bootstrap-shared-codex-iam.sh
+          grep -q 'live_acceptance_readback=PASS' infra/gcp/retire-legacy-codex-auth.sh
+          grep -q 'private_ingress_and_caller_iam=PASS' infra/gcp/retire-legacy-codex-auth.sh
           echo "operator_bootstrap_static_gate=PASS"
+          echo "legacy_retirement_static_gate=PASS"
           echo "live_resource_bootstrap=NOT_RUN_BY_CI"
