@@ -1,0 +1,118 @@
+# Compare one existing serving Shared Codex call with a failed GHCR candidate.
+# Read sanitized logs only; no secrets, raw prompts, model response or object data.
+name: omniAgent Shared Codex GHCR failure isolation
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/omniagent-shared-ghcr-failure-isolation.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  diagnose:
+    if: github.repository == 'tommylin15/omniAgent' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    env:
+      PROJECT: gen-lang-client-0593591102
+      REGION: us-central1
+      SERVICE: omniagent-shared-codex
+      CALLER: omniagent-codex-life-client
+    steps:
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+          service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Compare serving-runtime actual inference without printing payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          gcloud run services describe "$SERVICE" --project="$PROJECT" --region="$REGION" --format=json > "$RUNNER_TEMP/shared.json"
+          python3 - "$RUNNER_TEMP/shared.json" "$RUNNER_TEMP/url.txt" <<'PY'
+          import json,sys
+          s=json.load(open(sys.argv[1]))
+          routes=s.get("status",{}).get("traffic",[])
+          live=[v for v in routes if v.get("percent",0)>0]
+          if len(live)!=1 or live[0].get("percent")!=100 or live[0].get("revisionName")!="omniagent-shared-codex-00004-xmq":
+              raise SystemExit("BLOCKED: live serving revision changed")
+          tagged=[v for v in routes if v.get("tag")=="ghcr-3cf40bc7a922" and
+                  v.get("revisionName")=="omniagent-shared-codex-00005-kih" and v.get("percent",0)==0]
+          if len(tagged)!=1: raise SystemExit("BLOCKED: candidate changed")
+          url=s.get("status",{}).get("url","").rstrip("/")
+          if not url.startswith("https://"): raise SystemExit("BLOCKED: URL missing")
+          with open(sys.argv[2],"w") as f: f.write(url)
+          print("control_serving_revision=PINNED; candidate_zero_traffic=PINNED")
+          PY
+          URL="$(cat "$RUNNER_TEMP/url.txt")"
+          TOKEN="$(gcloud auth print-identity-token --impersonate-service-account="$CALLER@$PROJECT.iam.gserviceaccount.com" --audiences="$URL" --include-email 2>/dev/null)"
+          test -n "$TOKEN"
+          python3 - <<'PY' > "$RUNNER_TEMP/req.json"
+          import json,uuid
+          print(json.dumps({"project":"life-assistant","ownerId":str(uuid.uuid4()),
+                            "requestId":str(uuid.uuid4()),"prompt":"Reply with READY. Do not use tools."}))
+          PY
+          code="$(curl --silent --show-error --max-time 165 -o "$RUNNER_TEMP/result.json" -w '%{http_code}' \
+                  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+                  --data-binary @"$RUNNER_TEMP/req.json" "$URL/v1/codex/execute")"
+          echo "historical_ar_serving_real_inference_http=$code"
+          CODE="$code" python3 - "$RUNNER_TEMP/result.json" <<'PY'
+          import json,os,sys
+          try:
+              data=json.load(open(sys.argv[1]))
+          except Exception:
+              print("historical_ar_response_class=UNPARSEABLE")
+              raise SystemExit(1)
+          if os.environ["CODE"]=="200":
+              ok=(data.get("status")=="completed"
+                  and bool((data.get("result") or {}).get("text","").strip())
+                  and bool((data.get("providerIds") or {}).get("threadId")))
+              print("historical_ar_serving_provider_result="+("PASS" if ok else "BAD_ENVELOPE"))
+              if not ok: raise SystemExit(1)
+          else:
+              print("historical_ar_serving_failure_class="+str(data.get("error") or data.get("status") or "OTHER")[:60])
+          PY
+          gcloud run services describe "$SERVICE" --project="$PROJECT" --region="$REGION" --format=json > "$RUNNER_TEMP/after.json"
+          python3 - "$RUNNER_TEMP/after.json" <<'PY'
+          import json,sys
+          live=[x for x in json.load(open(sys.argv[1])).get("status",{}).get("traffic",[]) if x.get("percent",0)>0]
+          if len(live)!=1 or live[0].get("revisionName")!="omniagent-shared-codex-00004-xmq" or live[0].get("percent")!=100:
+              raise SystemExit("BLOCKED: production traffic drift")
+          print("production_traffic_unchanged=PASS")
+          PY
+      - name: Classify candidate error logs without emitting raw contents
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          filter='resource.type="cloud_run_revision" AND resource.labels.service_name="omniagent-shared-codex" AND resource.labels.revision_name="omniagent-shared-codex-00005-kih"'
+          if ! gcloud logging read "$filter" --project="$PROJECT" --freshness=2h --limit=250 --format=json > "$RUNNER_TEMP/logs.json" 2>/dev/null; then
+            echo "candidate_log_read=NOT_AUTHORIZED"
+            exit 0
+          fi
+          python3 - "$RUNNER_TEMP/logs.json" <<'PY'
+          import json,collections,sys
+          rows=json.load(open(sys.argv[1]))
+          counts=collections.Counter()
+          patterns={
+            "missing_executable":("enoent","not found","no such file"),
+            "execution_permission":("eacces","permission denied","operation not permitted"),
+            "auth_credentials":("authentication failed","unauthorized","invalid token","refresh token","expired"),
+            "provider_rate_limit":("rate limit","429","quota exceeded"),
+            "request_timeout":("timed out","timeout"),
+            "transport":("connection refused","econn","dns","proxy error","tls handshake"),
+            "codex_failure":("codex_execution_failed","codex app server exited","codex_turn_failed"),
+          }
+          for row in rows:
+              src=row.get("jsonPayload") or row.get("textPayload") or ""
+              txt=(json.dumps(src) if isinstance(src,dict) else str(src)).lower()
+              for name,needles in patterns.items():
+                  if any(x in txt for x in needles): counts[name]+=1
+              if "shared_codex_request" in txt and "failed" in txt: counts["application_request_failed"]+=1
+          print("candidate_log_records_scanned="+str(len(rows)))
+          print("candidate_safe_failure_class_counts="+json.dumps(dict(counts),sort_keys=True))
+          print("raw_logs_secret_prompt_or_provider_payload=NOT_EMITTED")
+          PY
