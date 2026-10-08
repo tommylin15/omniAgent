@@ -54,6 +54,13 @@ jobs:
               {"tag":r.get("tag"),"revision":r.get("revisionName"),"percent":r.get("percent",0)}
               for r in candidates],sort_keys=True))
           print("checkpoint_candidate="+("FOUND" if tagged else "NOT_FOUND"))
+          for label,annotations in (
+              ("service",service.get("metadata",{}).get("annotations") or {}),
+              ("template",service.get("spec",{}).get("template",{}).get("metadata",{}).get("annotations") or {})):
+              matched={k:v for k,v in annotations.items()
+                       if ("vpc" in k.lower() or "network" in k.lower())}
+              print(label+"_vpc_annotation_keys="+json.dumps(sorted(matched)))
+              print(label+"_private_egress="+str(any(v=="private-ranges-only" for v in matched.values())))
           if tagged and tagged.get("url", "").startswith("https://"):
               (root/"candidate-url.txt").write_text(tagged["url"])
               (root/"candidate-revision.txt").write_text(tagged["revisionName"])
@@ -100,6 +107,45 @@ jobs:
               echo "$secret=MISSING_OR_NOT_READABLE"
             fi
           done
+
+      - name: Validate dedicated DB DSN shape without revealing credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          path="$(mktemp)"
+          trap 'rm -f "$path"' EXIT
+          if ! gcloud secrets versions access latest --secret=omniagent-chat-db \
+            --project="$GCP_PROJECT_ID" > "$path" 2>/dev/null; then
+            echo "db_dsn_contract=NOT_READABLE_OR_MISSING"
+            exit 0
+          fi
+          python3 - "$path" <<'PY'
+          import ipaddress,sys
+          from urllib.parse import urlparse
+          try:
+              dsn=open(sys.argv[1],encoding="utf-8").read().strip()
+              url=urlparse(dsn)
+              valid_scheme=url.scheme in ("postgresql","postgres")
+              valid_owner=url.username=="omniagent_chat_app"
+              valid_db=(url.path or "").lstrip("/")=="omniagent_chat"
+              has_password=bool(url.password)
+              sslmode_require="sslmode=require" in url.query.split("&")
+              try:
+                  host_private=ipaddress.ip_address(url.hostname).is_private
+              except (ValueError,TypeError):
+                  host_private=False
+              valid_port=(url.port or 5432)==5432
+              print("db_dsn_valid_scheme="+str(valid_scheme))
+              print("db_dsn_expected_identity="+str(valid_owner and valid_db))
+              print("db_dsn_password_present="+str(has_password))
+              print("db_dsn_private_ip="+str(host_private))
+              print("db_dsn_port_expected="+str(valid_port))
+              print("db_dsn_sslmode_require="+str(sslmode_require))
+              print("db_dsn_contract="+("PASS" if all((valid_scheme,valid_owner,valid_db,has_password,host_private,valid_port,sslmode_require)) else "FAIL"))
+          except Exception:
+              print("db_dsn_contract=INVALID_FORMAT")
+          PY
 
       - name: Probe checkpoint candidate HTTP statuses only
         shell: bash
