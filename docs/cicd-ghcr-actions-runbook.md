@@ -1,6 +1,6 @@
 # omniAgent CI/CD: GitHub Actions → public GHCR → Cloud Run
 
-**Approved architecture, 2026-10-08. Status: TARGET-DESIGN / MIGRATION OPEN.** Policy owner: [SPEC §8](../doc/spec.md#8-cicd-v2); acceptance: [matrix](../doc/acceptance.md); backlog: [TODO](../doc/todo.md). This supersedes the legacy [Cloud Build V2 runbook](cicd-v2-runbook.md) for *new* releases, not its historical evidence.
+**Approved architecture, 2026-10-08. Status: GATE #1 AUTOMATIC CHAIN PASS; FORMAL RELEASE/PRODUCT INTEGRATION OPEN.** Policy owner: [SPEC §8](../doc/spec.md#8-cicd-v2); acceptance: [matrix](../doc/acceptance.md); backlog: [TODO](../doc/todo.md). This supersedes the legacy [Cloud Build V2 runbook](cicd-v2-runbook.md) for *new* releases, not its historical evidence.
 
 ## Control and trust flow
 
@@ -55,13 +55,17 @@ supports direct deployment of **public** GHCR images; private GHCR requires
 Artifact Registry remote repositories and is therefore disallowed by this
 architecture: https://cloud.google.com/run/docs/deploying
 
-The `.github/workflows/omniagent-ghcr-publish.yml` now triggers on
-ordinary `main` source changes. Quality passed in [Actions run
-#37767763854](https://github.com/tommylin15/omniAgent/actions/runs/37767763854)
-but all publish jobs deliberately rejected a **stale main SHA** as later
-commits arrived. No successful exact-head three-image publish is yet
-recorded. A Docker build is not a deployed revision or production release.
-Read the [2026-10-08 live inventory](cicd-transition-runtime-evidence.md).
+The `.github/workflows/omniagent-ghcr-publish.yml` triggers on
+ordinary `main` source changes. Verified 2026-10-09 fully automatic
+chain for code SHA `c7f32b23d4ac4b60d43b3108e69e5b4019e31321`:
+[CI + 3 public immutable GHCR #37894051418](https://github.com/tommylin15/omniAgent/actions/runs/37894051418)
+→ [3 real 0% Cloud Run candidates #37894312427](https://github.com/tommylin15/omniAgent/actions/runs/37894312427)
+→ [automatically triggered signed live Smoke #37894440766](https://github.com/tommylin15/omniAgent/actions/runs/37894440766),
+all **SUCCESS**, original serving traffic preserved. Gate #1 PASS
+is not a production promotion, live owner/browser/provider acceptance,
+Shared real inference or tested rollback.
+[Transition runtime evidence](cicd-transition-runtime-evidence.md)
+describes earlier historical checkpoints.
 
 ## Deployment identity and candidate contract
 
@@ -101,6 +105,25 @@ or a new service. Read back the candidate revision, digest, 0%-traffic
 allocation, service identity, Secret references, ingress, VPC and OAuth.
 A restricted authenticated candidate tag may route **test** requests while
 formal traffic stays at 0%; tag-only tests are not production rollback proof.
+
+### Nonzero CLI but successful new Ready Revision
+
+The 2026-10-09 Gateway candidate had a historical FAILED, tagged revision
+`omniagent-agent-gateway-00021-boq` that still references destroyed Secret
+`omniagent-bundle:2`. Cloud Run's CLI returned nonzero referring to this
+*previous* revision even when the new Gateway revision had been created,
+became Ready, had the approved `omniagent-bundle:latest` setting and
+received zero formal traffic.
+
+The new candidate workflow logs the CLI exit code; it **must NOT**
+convert a nonzero CLI result into success without independently proving
+all of: a newly created **and Ready** revision different from before,
+the exact approved public GHCR image digest in the service template,
+correct new revision tag, unchanged formal serving allocation,
+approved Secret and unchanged protected runtime identity/VPC/ingress.
+The downstream read-only signed smoke must also pass. Do not remove
+historical tags/revisions or authorize formal promotion as a workaround.
+The anomaly is tracked separately for future safe revision retention.
 
 ## Acceptance → traffic promotion → rollback
 
