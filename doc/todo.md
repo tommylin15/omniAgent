@@ -1,5 +1,27 @@
 # omniAgent TODO
 
+## 2026-10-09 正式流量已切換；產品驗收仍未完成
+
+依使用者明確授權，GHCR release `1a8e575bb9f6224e698765d268c6e823e94ba55a` 已固定為三服務 100% 正式流量：Chat `00039-rik`、Gateway `00030-coy`、Shared `00019-puf`，live readback 均 Ready=True。正式 Chat health/ready/UI 資產 200，匿名 API 401。Gateway 一個指向 DESTROYED Secret 的失效歷史標籤已移除以完成路由更新；未刪 revision、Secret 或資料。
+
+[完整發布證據與前後快照](../docs/production-promotion-2026-10-09.md)。這次是使用者授權的流量切換，未完成既有全部 release gates；真實 Chat provider dispatch、持久化 SSE replay、owner Codex mapping、approval/cancel/reconnect 與正式 rollback 演練仍 OPEN。舊紀錄中的「正式流量未變更」僅適用其各自歷史 checkpoint。不得因此啟用 retention 或舊資源清理。
+
+
+## 2026-10-09 固定 preview 發布規則：文件回寫／實作缺口
+
+規則與狀態：[GHCR runbook 固定 preview](../docs/cicd-ghcr-actions-runbook.md#固定-preview-網址與每次發布規則2026-10-09)。
+本次只更新文件；本機未提交 preview workflow/helper 草稿未視為部署完成。
+
+- [ ] 完成並驗證 preview 草稿的 CI／真實候選發布與正式流量、設定、其他標籤保護。
+- [ ] 更新後失敗恢復上一個已驗證 preview；驗證恢復成功與恢復失敗回報。
+- [ ] 補齊固定網址 health/ready、UI 資產與未授權拒絕驗證。
+- [ ] 候選部署與 preview 更新共用併發防護；阻止檢查後的 stale SHA／revision 競態。
+- [ ] 每次保存完整 SHA、revision、digest、固定網址、驗證與恢復結果，包括失敗紀錄。
+- [ ] 由操作者確認固定來源 OAuth 設定及真人登入；不因 revision 更換重設 OAuth。
+
+preview 通過不授權正式發布；既有正式 acceptance／recovery gates 持續適用。
+
+
 **2026-10-09 model selection implementation:** Searchable editable model suggestions
 now cover Codex sol/luna/astra/terra, Gemini text models, OpenRouter free models,
 and Groq preview only. Gemini dispatch uses the thread model; OpenRouter IDs

@@ -8,3 +8,5 @@ omniAgent is the authoritative project for its own source, API, schema, migratio
 - omniAgent may modify its own code, tests, migrations, CI/CD, infra and deployment config, commit/push main, deploy candidates and run acceptance.
 - Completion requires implementation -> tests -> CI -> deployment -> runtime/integration evidence. Partial success is not DONE.
 - Missing values must remain explicit; never fabricate credentials, resource names, runtime state or acceptance results.
+
+- This project may access only `tommylin15/omniAgent` on GitHub. Do not read or modify other project repositories.

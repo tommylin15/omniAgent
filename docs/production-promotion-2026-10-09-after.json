@@ -1,0 +1,391 @@
+[
+  {
+    "metadata": {
+      "name": "omniagent-chat"
+    },
+    "status": {
+      "conditions": [
+        {
+          "lastTransitionTime": "2026-10-09T13:49:18.100294Z",
+          "status": "True",
+          "type": "Ready"
+        },
+        {
+          "lastTransitionTime": "2026-10-09T12:53:36.976849Z",
+          "status": "True",
+          "type": "ConfigurationsReady"
+        },
+        {
+          "lastTransitionTime": "2026-10-09T13:49:18.067873Z",
+          "status": "True",
+          "type": "RoutesReady"
+        }
+      ],
+      "traffic": [
+        {
+          "revisionName": "omniagent-chat-00002-hig",
+          "tag": "phase6b-candidate",
+          "url": "https://phase6b-candidate---omniagent-chat-2oo7qbkd5q-uc.a.run.app"
+        },
+        {
+          "revisionName": "omniagent-chat-00006-ron",
+          "tag": "candidate-27b2809",
+          "url": "https://candidate-27b2809---omniagent-chat-2oo7qbkd5q-uc.a.run.app"
+        },
+        {
+          "revisionName": "omniagent-chat-00021-foz",
+          "tag": "ghcr-3cf40bc7a922",
+          "url": "https://ghcr-3cf40bc7a922---omniagent-chat-2oo7qbkd5q-uc.a.run.app"
+        },
+        {
+          "revisionName": "omniagent-chat-00022-lok",
+          "tag": "ghcr-a88aa88c1b54",
+          "url": "https://ghcr-a88aa88c1b54---omniagent-chat-2oo7qbkd5q-uc.a.run.app"
+        },
+        {
+          "revisionName": "omniagent-chat-00023-buc",
+          "tag": "ghcr-8542c03752e4",
+          "url": "https://ghcr-8542c03752e4---omniagent-chat-2oo7qbkd5q-uc.a.run.app"
+        },
+        {
+          "revisionName": "omniagent-chat-00024-loz",
+          "tag": "ghcr-66775eb1364e",
+          "url": "https://ghcr-66775eb1364e---omniagent-chat-2oo7qbkd5q-uc.a.run.app"
+        },
+        {
+          "revisionName": "omniagent-chat-00025-qeb",
+          "tag": "ghcr-49a94edfbf12",
+          "url": "https://ghcr-49a94edfbf12---omniagent-chat-2oo7qbkd5q-uc.a.run.app"
+        },
+        {
+          "revisionName": "omniagent-chat-00026-vov",
+          "tag": "ghcr-36fe37ea186a",
+          "url": "https://ghcr-36fe37ea186a---omniagent-chat-2oo7qbkd5q-uc.a.run.app"
+        },
+        {
+          "revisionName": "omniagent-chat-00027-wek",
+          "tag": "ghcr-20bea005394d",
+          "url": "https://ghcr-20bea005394d---omniagent-chat-2oo7qbkd5q-uc.a.run.app"
+        },
+        {
+          "revisionName": "omniagent-chat-00028-ziw",
+          "tag": "ghcr-c37f132619da",
+          "url": "https://ghcr-c37f132619da---omniagent-chat-2oo7qbkd5q-uc.a.run.app"
+        },
+        {
+          "revisionName": "omniagent-chat-00029-nux",
+          "tag": "ghcr-e3475d3aade0",
+          "url": "https://ghcr-e3475d3aade0---omniagent-chat-2oo7qbkd5q-uc.a.run.app"
+        },
+        {
+          "revisionName": "omniagent-chat-00030-puq",
+          "tag": "ghcr-7937447dd85e",
+          "url": "https://ghcr-7937447dd85e---omniagent-chat-2oo7qbkd5q-uc.a.run.app"
+        },
+        {
+          "revisionName": "omniagent-chat-00031-ciw",
+          "tag": "ghcr-6fe2e0401d36",
+          "url": "https://ghcr-6fe2e0401d36---omniagent-chat-2oo7qbkd5q-uc.a.run.app"
+        },
+        {
+          "revisionName": "omniagent-chat-00032-cap",
+          "tag": "ghcr-1e70c7c9276f",
+          "url": "https://ghcr-1e70c7c9276f---omniagent-chat-2oo7qbkd5q-uc.a.run.app"
+        },
+        {
+          "revisionName": "omniagent-chat-00033-pim",
+          "tag": "ghcr-d796d746a10b",
+          "url": "https://ghcr-d796d746a10b---omniagent-chat-2oo7qbkd5q-uc.a.run.app"
+        },
+        {
+          "revisionName": "omniagent-chat-00034-vul",
+          "tag": "ghcr-c7f32b23d4ac",
+          "url": "https://ghcr-c7f32b23d4ac---omniagent-chat-2oo7qbkd5q-uc.a.run.app"
+        },
+        {
+          "revisionName": "omniagent-chat-00035-ker",
+          "tag": "ghcr-c6020ed87fcf",
+          "url": "https://ghcr-c6020ed87fcf---omniagent-chat-2oo7qbkd5q-uc.a.run.app"
+        },
+        {
+          "revisionName": "omniagent-chat-00036-pev",
+          "tag": "ghcr-6ab64229738b",
+          "url": "https://ghcr-6ab64229738b---omniagent-chat-2oo7qbkd5q-uc.a.run.app"
+        },
+        {
+          "revisionName": "omniagent-chat-00037-duj",
+          "tag": "ghcr-f2a5be442595",
+          "url": "https://ghcr-f2a5be442595---omniagent-chat-2oo7qbkd5q-uc.a.run.app"
+        },
+        {
+          "revisionName": "omniagent-chat-00038-yog",
+          "tag": "ghcr-f9a4a7b5d4d2",
+          "url": "https://ghcr-f9a4a7b5d4d2---omniagent-chat-2oo7qbkd5q-uc.a.run.app"
+        },
+        {
+          "percent": 100,
+          "revisionName": "omniagent-chat-00039-rik",
+          "tag": "ghcr-1a8e575bb9f6",
+          "url": "https://ghcr-1a8e575bb9f6---omniagent-chat-2oo7qbkd5q-uc.a.run.app"
+        },
+        {
+          "revisionName": "omniagent-chat-v2-2d3ea20ad1c06bc068a8e82eebc37d5e",
+          "tag": "v2-2d3ea20ad1c06bc0",
+          "url": "https://v2-2d3ea20ad1c06bc0---omniagent-chat-2oo7qbkd5q-uc.a.run.app"
+        },
+        {
+          "revisionName": "omniagent-chat-v2-4bf99d242b430765acadb12425559f50",
+          "tag": "v2-4bf99d242b430765",
+          "url": "https://v2-4bf99d242b430765---omniagent-chat-2oo7qbkd5q-uc.a.run.app"
+        },
+        {
+          "revisionName": "omniagent-chat-v2-741b4e0c798bd3d8f569b39961c5e6b7",
+          "tag": "v2-741b4e0c798bd3d8",
+          "url": "https://v2-741b4e0c798bd3d8---omniagent-chat-2oo7qbkd5q-uc.a.run.app"
+        },
+        {
+          "revisionName": "omniagent-chat-00039-rik",
+          "tag": "preview",
+          "url": "https://preview---omniagent-chat-2oo7qbkd5q-uc.a.run.app"
+        }
+      ],
+      "url": "https://omniagent-chat-2oo7qbkd5q-uc.a.run.app"
+    }
+  },
+  {
+    "metadata": {
+      "name": "omniagent-agent-gateway"
+    },
+    "status": {
+      "conditions": [
+        {
+          "lastTransitionTime": "2026-10-09T13:48:58.433653Z",
+          "status": "True",
+          "type": "Ready"
+        },
+        {
+          "lastTransitionTime": "2026-10-09T12:54:01.434275Z",
+          "status": "True",
+          "type": "ConfigurationsReady"
+        },
+        {
+          "lastTransitionTime": "2026-10-09T13:48:58.388795Z",
+          "status": "True",
+          "type": "RoutesReady"
+        }
+      ],
+      "traffic": [
+        {
+          "revisionName": "omniagent-agent-gateway-00001-wav",
+          "tag": "phase6b-candidate",
+          "url": "https://phase6b-candidate---omniagent-agent-gateway-2oo7qbkd5q-uc.a.run.app"
+        },
+        {
+          "revisionName": "omniagent-agent-gateway-00012-pez",
+          "tag": "ghcr-3cf40bc7a922",
+          "url": "https://ghcr-3cf40bc7a922---omniagent-agent-gateway-2oo7qbkd5q-uc.a.run.app"
+        },
+        {
+          "revisionName": "omniagent-agent-gateway-00013-way",
+          "tag": "ghcr-a88aa88c1b54",
+          "url": "https://ghcr-a88aa88c1b54---omniagent-agent-gateway-2oo7qbkd5q-uc.a.run.app"
+        },
+        {
+          "revisionName": "omniagent-agent-gateway-00014-wud",
+          "tag": "ghcr-8542c03752e4",
+          "url": "https://ghcr-8542c03752e4---omniagent-agent-gateway-2oo7qbkd5q-uc.a.run.app"
+        },
+        {
+          "revisionName": "omniagent-agent-gateway-00015-hik",
+          "tag": "ghcr-66775eb1364e",
+          "url": "https://ghcr-66775eb1364e---omniagent-agent-gateway-2oo7qbkd5q-uc.a.run.app"
+        },
+        {
+          "revisionName": "omniagent-agent-gateway-00016-wiv",
+          "tag": "ghcr-49a94edfbf12",
+          "url": "https://ghcr-49a94edfbf12---omniagent-agent-gateway-2oo7qbkd5q-uc.a.run.app"
+        },
+        {
+          "revisionName": "omniagent-agent-gateway-00017-fey",
+          "tag": "ghcr-36fe37ea186a",
+          "url": "https://ghcr-36fe37ea186a---omniagent-agent-gateway-2oo7qbkd5q-uc.a.run.app"
+        },
+        {
+          "revisionName": "omniagent-agent-gateway-00018-yak",
+          "tag": "ghcr-20bea005394d",
+          "url": "https://ghcr-20bea005394d---omniagent-agent-gateway-2oo7qbkd5q-uc.a.run.app"
+        },
+        {
+          "revisionName": "omniagent-agent-gateway-00019-sim",
+          "tag": "ghcr-c37f132619da",
+          "url": "https://ghcr-c37f132619da---omniagent-agent-gateway-2oo7qbkd5q-uc.a.run.app"
+        },
+        {
+          "revisionName": "omniagent-agent-gateway-00020-nef",
+          "tag": "ghcr-e3475d3aade0",
+          "url": "https://ghcr-e3475d3aade0---omniagent-agent-gateway-2oo7qbkd5q-uc.a.run.app"
+        },
+        {
+          "revisionName": "omniagent-agent-gateway-00022-put",
+          "tag": "ghcr-6fe2e0401d36",
+          "url": "https://ghcr-6fe2e0401d36---omniagent-agent-gateway-2oo7qbkd5q-uc.a.run.app"
+        },
+        {
+          "revisionName": "omniagent-agent-gateway-00023-moy",
+          "tag": "ghcr-1e70c7c9276f",
+          "url": "https://ghcr-1e70c7c9276f---omniagent-agent-gateway-2oo7qbkd5q-uc.a.run.app"
+        },
+        {
+          "revisionName": "omniagent-agent-gateway-00024-zub",
+          "tag": "ghcr-d796d746a10b",
+          "url": "https://ghcr-d796d746a10b---omniagent-agent-gateway-2oo7qbkd5q-uc.a.run.app"
+        },
+        {
+          "revisionName": "omniagent-agent-gateway-00025-jom",
+          "tag": "ghcr-c7f32b23d4ac",
+          "url": "https://ghcr-c7f32b23d4ac---omniagent-agent-gateway-2oo7qbkd5q-uc.a.run.app"
+        },
+        {
+          "revisionName": "omniagent-agent-gateway-00026-xum",
+          "tag": "ghcr-c6020ed87fcf",
+          "url": "https://ghcr-c6020ed87fcf---omniagent-agent-gateway-2oo7qbkd5q-uc.a.run.app"
+        },
+        {
+          "revisionName": "omniagent-agent-gateway-00027-suw",
+          "tag": "ghcr-6ab64229738b",
+          "url": "https://ghcr-6ab64229738b---omniagent-agent-gateway-2oo7qbkd5q-uc.a.run.app"
+        },
+        {
+          "revisionName": "omniagent-agent-gateway-00028-rof",
+          "tag": "ghcr-f2a5be442595",
+          "url": "https://ghcr-f2a5be442595---omniagent-agent-gateway-2oo7qbkd5q-uc.a.run.app"
+        },
+        {
+          "revisionName": "omniagent-agent-gateway-00029-ter",
+          "tag": "ghcr-f9a4a7b5d4d2",
+          "url": "https://ghcr-f9a4a7b5d4d2---omniagent-agent-gateway-2oo7qbkd5q-uc.a.run.app"
+        },
+        {
+          "percent": 100,
+          "revisionName": "omniagent-agent-gateway-00030-coy",
+          "tag": "ghcr-1a8e575bb9f6",
+          "url": "https://ghcr-1a8e575bb9f6---omniagent-agent-gateway-2oo7qbkd5q-uc.a.run.app"
+        },
+        {
+          "revisionName": "omniagent-agent-gateway-v2-2d3ea20ad1c06bc068a8e82eebc37d5e",
+          "tag": "v2-2d3ea20ad1c06bc0",
+          "url": "https://v2-2d3ea20ad1c06bc0---omniagent-agent-gateway-2oo7qbkd5q-uc.a.run.app"
+        },
+        {
+          "revisionName": "omniagent-agent-gateway-v2-4bf99d242b430765acadb12425559f50",
+          "tag": "v2-4bf99d242b430765",
+          "url": "https://v2-4bf99d242b430765---omniagent-agent-gateway-2oo7qbkd5q-uc.a.run.app"
+        }
+      ],
+      "url": "https://omniagent-agent-gateway-2oo7qbkd5q-uc.a.run.app"
+    }
+  },
+  {
+    "metadata": {
+      "name": "omniagent-shared-codex"
+    },
+    "status": {
+      "conditions": [
+        {
+          "lastTransitionTime": "2026-10-09T13:47:57.360678Z",
+          "status": "True",
+          "type": "Ready"
+        },
+        {
+          "lastTransitionTime": "2026-10-09T12:54:11.012324Z",
+          "status": "True",
+          "type": "ConfigurationsReady"
+        },
+        {
+          "lastTransitionTime": "2026-10-09T13:47:57.316645Z",
+          "status": "True",
+          "type": "RoutesReady"
+        }
+      ],
+      "traffic": [
+        {
+          "revisionName": "omniagent-shared-codex-00005-kih",
+          "tag": "ghcr-3cf40bc7a922",
+          "url": "https://ghcr-3cf40bc7a922---omniagent-shared-codex-2oo7qbkd5q-uc.a.run.app"
+        },
+        {
+          "revisionName": "omniagent-shared-codex-00006-zeg",
+          "tag": "ghcr-a88aa88c1b54",
+          "url": "https://ghcr-a88aa88c1b54---omniagent-shared-codex-2oo7qbkd5q-uc.a.run.app"
+        },
+        {
+          "revisionName": "omniagent-shared-codex-00007-tux",
+          "tag": "ghcr-8542c03752e4",
+          "url": "https://ghcr-8542c03752e4---omniagent-shared-codex-2oo7qbkd5q-uc.a.run.app"
+        },
+        {
+          "revisionName": "omniagent-shared-codex-00008-wot",
+          "tag": "ghcr-66775eb1364e",
+          "url": "https://ghcr-66775eb1364e---omniagent-shared-codex-2oo7qbkd5q-uc.a.run.app"
+        },
+        {
+          "revisionName": "omniagent-shared-codex-00009-qid",
+          "tag": "ghcr-49a94edfbf12",
+          "url": "https://ghcr-49a94edfbf12---omniagent-shared-codex-2oo7qbkd5q-uc.a.run.app"
+        },
+        {
+          "revisionName": "omniagent-shared-codex-00010-vih",
+          "tag": "ghcr-36fe37ea186a",
+          "url": "https://ghcr-36fe37ea186a---omniagent-shared-codex-2oo7qbkd5q-uc.a.run.app"
+        },
+        {
+          "revisionName": "omniagent-shared-codex-00011-cam",
+          "tag": "ghcr-20bea005394d",
+          "url": "https://ghcr-20bea005394d---omniagent-shared-codex-2oo7qbkd5q-uc.a.run.app"
+        },
+        {
+          "revisionName": "omniagent-shared-codex-00012-gej",
+          "tag": "ghcr-c37f132619da",
+          "url": "https://ghcr-c37f132619da---omniagent-shared-codex-2oo7qbkd5q-uc.a.run.app"
+        },
+        {
+          "revisionName": "omniagent-shared-codex-00013-kop",
+          "tag": "ghcr-e3475d3aade0",
+          "url": "https://ghcr-e3475d3aade0---omniagent-shared-codex-2oo7qbkd5q-uc.a.run.app"
+        },
+        {
+          "revisionName": "omniagent-shared-codex-00014-lij",
+          "tag": "ghcr-c7f32b23d4ac",
+          "url": "https://ghcr-c7f32b23d4ac---omniagent-shared-codex-2oo7qbkd5q-uc.a.run.app"
+        },
+        {
+          "revisionName": "omniagent-shared-codex-00015-gew",
+          "tag": "ghcr-c6020ed87fcf",
+          "url": "https://ghcr-c6020ed87fcf---omniagent-shared-codex-2oo7qbkd5q-uc.a.run.app"
+        },
+        {
+          "revisionName": "omniagent-shared-codex-00016-jaz",
+          "tag": "ghcr-6ab64229738b",
+          "url": "https://ghcr-6ab64229738b---omniagent-shared-codex-2oo7qbkd5q-uc.a.run.app"
+        },
+        {
+          "revisionName": "omniagent-shared-codex-00017-lob",
+          "tag": "ghcr-f2a5be442595",
+          "url": "https://ghcr-f2a5be442595---omniagent-shared-codex-2oo7qbkd5q-uc.a.run.app"
+        },
+        {
+          "revisionName": "omniagent-shared-codex-00018-poq",
+          "tag": "ghcr-f9a4a7b5d4d2",
+          "url": "https://ghcr-f9a4a7b5d4d2---omniagent-shared-codex-2oo7qbkd5q-uc.a.run.app"
+        },
+        {
+          "percent": 100,
+          "revisionName": "omniagent-shared-codex-00019-puf",
+          "tag": "ghcr-1a8e575bb9f6",
+          "url": "https://ghcr-1a8e575bb9f6---omniagent-shared-codex-2oo7qbkd5q-uc.a.run.app"
+        }
+      ],
+      "url": "https://omniagent-shared-codex-2oo7qbkd5q-uc.a.run.app"
+    }
+  }
+]

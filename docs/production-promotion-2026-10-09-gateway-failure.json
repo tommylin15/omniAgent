@@ -1,0 +1,229 @@
+{
+  "spec": {
+    "traffic": [
+      {
+        "percent": 100,
+        "revisionName": "omniagent-agent-gateway-00030-coy"
+      },
+      {
+        "revisionName": "omniagent-agent-gateway-00001-wav",
+        "tag": "phase6b-candidate"
+      },
+      {
+        "revisionName": "omniagent-agent-gateway-v2-2d3ea20ad1c06bc068a8e82eebc37d5e",
+        "tag": "v2-2d3ea20ad1c06bc0"
+      },
+      {
+        "revisionName": "omniagent-agent-gateway-v2-4bf99d242b430765acadb12425559f50",
+        "tag": "v2-4bf99d242b430765"
+      },
+      {
+        "revisionName": "omniagent-agent-gateway-00012-pez",
+        "tag": "ghcr-3cf40bc7a922"
+      },
+      {
+        "revisionName": "omniagent-agent-gateway-00013-way",
+        "tag": "ghcr-a88aa88c1b54"
+      },
+      {
+        "revisionName": "omniagent-agent-gateway-00014-wud",
+        "tag": "ghcr-8542c03752e4"
+      },
+      {
+        "revisionName": "omniagent-agent-gateway-00015-hik",
+        "tag": "ghcr-66775eb1364e"
+      },
+      {
+        "revisionName": "omniagent-agent-gateway-00016-wiv",
+        "tag": "ghcr-49a94edfbf12"
+      },
+      {
+        "revisionName": "omniagent-agent-gateway-00017-fey",
+        "tag": "ghcr-36fe37ea186a"
+      },
+      {
+        "revisionName": "omniagent-agent-gateway-00018-yak",
+        "tag": "ghcr-20bea005394d"
+      },
+      {
+        "revisionName": "omniagent-agent-gateway-00019-sim",
+        "tag": "ghcr-c37f132619da"
+      },
+      {
+        "revisionName": "omniagent-agent-gateway-00020-nef",
+        "tag": "ghcr-e3475d3aade0"
+      },
+      {
+        "revisionName": "omniagent-agent-gateway-00021-boq",
+        "tag": "ghcr-7937447dd85e"
+      },
+      {
+        "revisionName": "omniagent-agent-gateway-00022-put",
+        "tag": "ghcr-6fe2e0401d36"
+      },
+      {
+        "revisionName": "omniagent-agent-gateway-00023-moy",
+        "tag": "ghcr-1e70c7c9276f"
+      },
+      {
+        "revisionName": "omniagent-agent-gateway-00024-zub",
+        "tag": "ghcr-d796d746a10b"
+      },
+      {
+        "revisionName": "omniagent-agent-gateway-00025-jom",
+        "tag": "ghcr-c7f32b23d4ac"
+      },
+      {
+        "revisionName": "omniagent-agent-gateway-00026-xum",
+        "tag": "ghcr-c6020ed87fcf"
+      },
+      {
+        "revisionName": "omniagent-agent-gateway-00027-suw",
+        "tag": "ghcr-6ab64229738b"
+      },
+      {
+        "revisionName": "omniagent-agent-gateway-00028-rof",
+        "tag": "ghcr-f2a5be442595"
+      },
+      {
+        "revisionName": "omniagent-agent-gateway-00029-ter",
+        "tag": "ghcr-f9a4a7b5d4d2"
+      },
+      {
+        "revisionName": "omniagent-agent-gateway-00030-coy",
+        "tag": "ghcr-1a8e575bb9f6"
+      }
+    ]
+  },
+  "status": {
+    "conditions": [
+      {
+        "lastTransitionTime": "2026-10-09T13:48:05.297286Z",
+        "message": "Revision 'omniagent-agent-gateway-00021-boq' is not ready and cannot serve traffic. spec.template.spec.containers[0].env[2].value_from.secret_key_ref.name: Failed to access secret projects/131494961796/secrets/omniagent-bundle/versions/2: Secret Version [projects/131494961796/secrets/omniagent-bundle/versions/2] is in DESTROYED state.\nspec.template.spec.containers[0].env[3].value_from.secret_key_ref.name: Failed to access secret projects/131494961796/secrets/omniagent-bundle/versions/2: Secret Version [projects/131494961796/secrets/omniagent-bundle/versions/2] is in DESTROYED state.",
+        "reason": "SecretsAccessCheckFailed",
+        "status": "False",
+        "type": "Ready"
+      },
+      {
+        "lastTransitionTime": "2026-10-09T12:54:01.434275Z",
+        "status": "True",
+        "type": "ConfigurationsReady"
+      },
+      {
+        "lastTransitionTime": "2026-10-09T13:48:05.297286Z",
+        "message": "Revision 'omniagent-agent-gateway-00021-boq' is not ready and cannot serve traffic. spec.template.spec.containers[0].env[2].value_from.secret_key_ref.name: Failed to access secret projects/131494961796/secrets/omniagent-bundle/versions/2: Secret Version [projects/131494961796/secrets/omniagent-bundle/versions/2] is in DESTROYED state.\nspec.template.spec.containers[0].env[3].value_from.secret_key_ref.name: Failed to access secret projects/131494961796/secrets/omniagent-bundle/versions/2: Secret Version [projects/131494961796/secrets/omniagent-bundle/versions/2] is in DESTROYED state.",
+        "reason": "SecretsAccessCheckFailed",
+        "status": "False",
+        "type": "RoutesReady"
+      }
+    ],
+    "traffic": [
+      {
+        "revisionName": "omniagent-agent-gateway-00001-wav",
+        "tag": "phase6b-candidate",
+        "url": "https://phase6b-candidate---omniagent-agent-gateway-2oo7qbkd5q-uc.a.run.app"
+      },
+      {
+        "revisionName": "omniagent-agent-gateway-00012-pez",
+        "tag": "ghcr-3cf40bc7a922",
+        "url": "https://ghcr-3cf40bc7a922---omniagent-agent-gateway-2oo7qbkd5q-uc.a.run.app"
+      },
+      {
+        "revisionName": "omniagent-agent-gateway-00013-way",
+        "tag": "ghcr-a88aa88c1b54",
+        "url": "https://ghcr-a88aa88c1b54---omniagent-agent-gateway-2oo7qbkd5q-uc.a.run.app"
+      },
+      {
+        "revisionName": "omniagent-agent-gateway-00014-wud",
+        "tag": "ghcr-8542c03752e4",
+        "url": "https://ghcr-8542c03752e4---omniagent-agent-gateway-2oo7qbkd5q-uc.a.run.app"
+      },
+      {
+        "revisionName": "omniagent-agent-gateway-00015-hik",
+        "tag": "ghcr-66775eb1364e",
+        "url": "https://ghcr-66775eb1364e---omniagent-agent-gateway-2oo7qbkd5q-uc.a.run.app"
+      },
+      {
+        "revisionName": "omniagent-agent-gateway-00016-wiv",
+        "tag": "ghcr-49a94edfbf12",
+        "url": "https://ghcr-49a94edfbf12---omniagent-agent-gateway-2oo7qbkd5q-uc.a.run.app"
+      },
+      {
+        "revisionName": "omniagent-agent-gateway-00017-fey",
+        "tag": "ghcr-36fe37ea186a",
+        "url": "https://ghcr-36fe37ea186a---omniagent-agent-gateway-2oo7qbkd5q-uc.a.run.app"
+      },
+      {
+        "revisionName": "omniagent-agent-gateway-00018-yak",
+        "tag": "ghcr-20bea005394d",
+        "url": "https://ghcr-20bea005394d---omniagent-agent-gateway-2oo7qbkd5q-uc.a.run.app"
+      },
+      {
+        "revisionName": "omniagent-agent-gateway-00019-sim",
+        "tag": "ghcr-c37f132619da",
+        "url": "https://ghcr-c37f132619da---omniagent-agent-gateway-2oo7qbkd5q-uc.a.run.app"
+      },
+      {
+        "revisionName": "omniagent-agent-gateway-00020-nef",
+        "tag": "ghcr-e3475d3aade0",
+        "url": "https://ghcr-e3475d3aade0---omniagent-agent-gateway-2oo7qbkd5q-uc.a.run.app"
+      },
+      {
+        "revisionName": "omniagent-agent-gateway-00022-put",
+        "tag": "ghcr-6fe2e0401d36",
+        "url": "https://ghcr-6fe2e0401d36---omniagent-agent-gateway-2oo7qbkd5q-uc.a.run.app"
+      },
+      {
+        "revisionName": "omniagent-agent-gateway-00023-moy",
+        "tag": "ghcr-1e70c7c9276f",
+        "url": "https://ghcr-1e70c7c9276f---omniagent-agent-gateway-2oo7qbkd5q-uc.a.run.app"
+      },
+      {
+        "revisionName": "omniagent-agent-gateway-00024-zub",
+        "tag": "ghcr-d796d746a10b",
+        "url": "https://ghcr-d796d746a10b---omniagent-agent-gateway-2oo7qbkd5q-uc.a.run.app"
+      },
+      {
+        "revisionName": "omniagent-agent-gateway-00025-jom",
+        "tag": "ghcr-c7f32b23d4ac",
+        "url": "https://ghcr-c7f32b23d4ac---omniagent-agent-gateway-2oo7qbkd5q-uc.a.run.app"
+      },
+      {
+        "revisionName": "omniagent-agent-gateway-00026-xum",
+        "tag": "ghcr-c6020ed87fcf",
+        "url": "https://ghcr-c6020ed87fcf---omniagent-agent-gateway-2oo7qbkd5q-uc.a.run.app"
+      },
+      {
+        "revisionName": "omniagent-agent-gateway-00027-suw",
+        "tag": "ghcr-6ab64229738b",
+        "url": "https://ghcr-6ab64229738b---omniagent-agent-gateway-2oo7qbkd5q-uc.a.run.app"
+      },
+      {
+        "revisionName": "omniagent-agent-gateway-00028-rof",
+        "tag": "ghcr-f2a5be442595",
+        "url": "https://ghcr-f2a5be442595---omniagent-agent-gateway-2oo7qbkd5q-uc.a.run.app"
+      },
+      {
+        "revisionName": "omniagent-agent-gateway-00029-ter",
+        "tag": "ghcr-f9a4a7b5d4d2",
+        "url": "https://ghcr-f9a4a7b5d4d2---omniagent-agent-gateway-2oo7qbkd5q-uc.a.run.app"
+      },
+      {
+        "percent": 100,
+        "revisionName": "omniagent-agent-gateway-00030-coy",
+        "tag": "ghcr-1a8e575bb9f6",
+        "url": "https://ghcr-1a8e575bb9f6---omniagent-agent-gateway-2oo7qbkd5q-uc.a.run.app"
+      },
+      {
+        "revisionName": "omniagent-agent-gateway-v2-2d3ea20ad1c06bc068a8e82eebc37d5e",
+        "tag": "v2-2d3ea20ad1c06bc0",
+        "url": "https://v2-2d3ea20ad1c06bc0---omniagent-agent-gateway-2oo7qbkd5q-uc.a.run.app"
+      },
+      {
+        "revisionName": "omniagent-agent-gateway-v2-4bf99d242b430765acadb12425559f50",
+        "tag": "v2-4bf99d242b430765",
+        "url": "https://v2-4bf99d242b430765---omniagent-agent-gateway-2oo7qbkd5q-uc.a.run.app"
+      }
+    ]
+  }
+}
