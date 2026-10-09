@@ -22,10 +22,13 @@ as a newly audited PASS. Preserve non-omniAgent data and backup safety.
   derives the release SHA and checks three zero-percent readiness/digests,
   anonymous Chat web/ready/API authorization, IAM scoped Gateway/Shared
   health/readiness and traffic preservation.
-  [Live automatic smoke #37868153663](https://github.com/tommylin15/omniAgent/actions/runs/37868153663)
-  **PASS** against those candidates. The initial workflow bootstrap required
-  a source-SHA fallback; subsequent exact-current-main candidate completion
-  events use their own `workflow_run.head_sha`.
+  [Live smoke #37868153663](https://github.com/tommylin15/omniAgent/actions/runs/37868153663)
+  **PASS** against those candidates under the initial workflow-only push.
+  The ongoing workflow has since been made `workflow_run`-only and entirely
+  SHA-derived, without a hardcoded release or legacy revision. **The future
+  automatic workflow_run trigger itself still needs observation on the
+  next new GHCR candidate**, so do not mistake the bootstrap smoke for
+  an observed full automatic chain.
 - [ ] **Mandatory live integration**: two *real* browser Google OAuth accounts,
   persistent owner separation and account-switch UI; approved owner/provider
   entitlement, real Chat→Gateway signed dispatch, persisted provider event
