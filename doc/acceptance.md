@@ -29,6 +29,28 @@ CI/CD asset retirement remain OPEN**. Legacy Cloud Build V2 is historical.
   candidate + smoke BLOCKED.** Formal cutover, rollback and keep-ten
   revisions remain separate OPEN gates.
 
+**2026-10-09 fail-closed Secret version preflight** (source
+`e6ef98a7548b40d9807f5ce22e70a6b2795b8e75`):
+- **PASS**: full quality, three fresh public GHCR images
+  [publish #37877688902](https://github.com/tommylin15/omniAgent/actions/runs/37877688902).
+- **PASS**: service/traffic snapshot and all three GHCR digests checked by
+  [candidate #37877905596](https://github.com/tommylin15/omniAgent/actions/runs/37877905596).
+  Existing formal serving revisions each remained at 100%.
+- **PASS (safety)**: `candidate_secret_version_preflight=BLOCKED`,
+  every candidate deployment step **SKIPPED before any mutation** because
+  CI cannot verify the `omniagent-bundle` Secret version states. This is
+  intentional fail-closed behavior. Downstream
+  [smoke #37877968631](https://github.com/tommylin15/omniAgent/actions/runs/37877968631)
+  automatically SKIPPED.
+- **BLOCKED (live recovery)**: Gateway still references Secret version
+  `2` explicitly destroyed per prior Cloud Run deployment error; CI
+  lacks scoped `secretmanager.versions.get` metadata read for the bundle.
+  An authorized administrator must grant metadata-only Secret-scoped access
+  and validate an ENABLED, application-compatible replacement before a
+  protected zero-traffic-only reference change. **No Secret payload read,
+  credential replacement, live production promotion, rollback or keep-ten
+  cleanup has been carried out.**
+
 **2026-10-08 verified intermediate evidence** ([detail](../docs/cicd-transition-runtime-evidence.md)):
 
 - [x] Exact SHA `3cf40bc7a9223a5ce7efa630dbd837c4ff57a46a` Node/Python/PostgreSQL/Flutter quality and three public GHCR SHA-256 images: [publish #37768680175](https://github.com/tommylin15/omniAgent/actions/runs/37768680175).
