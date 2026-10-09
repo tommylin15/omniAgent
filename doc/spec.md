@@ -258,18 +258,28 @@ revision traffic, runtime service accounts, Secrets, ingress, VPC, OAuth,
 database, provider and Shared Codex caller contracts. Require exact-SHA
 quality/artefact provenance, candidate revision/digest/config readback and
 real Chat/Gateway/Shared integration gates before any protected promotion.
-Snapshot original traffic first; fail closed on missing gates or stale SHA,
-prevent overlapping releases, read back each traffic change, and restore
-original percentages on partial failure. No synthetic approval, no mandatory
-gate skipped by manual release.
+Snapshot original traffic for audit before promotion; fail closed on missing
+application gates, stale SHA, overlaps, missing live candidate evidence or
+traffic readback. **Owner-approved 2026-10-09 new-only recovery policy:** new
+releases use only prior verified GitHub Actions → public GHCR → Cloud Run
+candidate revisions as rollback targets. The earlier Cloud Build / AR
+release or its rollback mechanism is **not** a prerequisite and is not
+required as the recovery destination. Verify a complete three-service
+GHCR fallback set independently (immutable digests, Ready, actual enabled
+Secret references, signed IAM/health); then rehearse rollback and return
+to the promoted GHCR release with actual route readbacks. On partial
+promotion failure, route to the independently verified GHCR fallback set;
+never silently rely on old serving images. If no validated new-only
+fallback is available, BLOCK formal promotion rather than fabricate a
+successful rollback. No synthetic approval or application gate skip.
 
 **Post-success retention policy:** after real integration/rollback rehearsal,
 successful promotion and traffic readback, the final pipeline job keeps
 the newest **10 Cloud Run revisions per existing service** (or all when
-fewer than ten exist). The approved current 100%-traffic revision and
-its recorded previous known-good rollback target must both fall within
+fewer than ten exist). The approved new-GHCR 100%-traffic revision and
+its verified **previous GHCR** rollback target must both fall within
 the ten newest revisions; otherwise cleanup is BLOCKED rather than
-sacrificing recovery. Failed candidate revisions may also be in the ten;
+sacrificing new-only recovery. No old AR rollback target is required. Failed candidate revisions may also be in the ten;
 the count does not certify ten validated releases. Delete only older
 untagged/zero-traffic revisions; never remove a serving, tagged, or
 protected revision. Stale SHA, missing readback, latest revision
