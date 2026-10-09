@@ -48,6 +48,33 @@ as a newly audited PASS. Preserve non-omniAgent data and backup safety.
   operator must validate a working Secret version and controlled runtime
   reference/compatibility before retrying the exact-SHA auto chain.
   **E2E result: BLOCKED**, not CI/CD DONE.
+- [x] **2026-10-09 no-partial-deploy safeguard:** commit
+  `e6ef98a7548b40d9807f5ce22e70a6b2795b8e75` passed full quality,
+  Node Core and three GHCR publishes
+  [#37877688902](https://github.com/tommylin15/omniAgent/actions/runs/37877688902).
+  Candidate [#37877905596](https://github.com/tommylin15/omniAgent/actions/runs/37877905596)
+  confirmed all three public image digests, WIF and each service's 100%
+  existing formal traffic, then failed closed on missing Secret-version
+  metadata readback **BEFORE ANY deployment command**. Actual deploy step
+  SKIPPED; downstream auto-smoke
+  [#37877968631](https://github.com/tommylin15/omniAgent/actions/runs/37877968631)
+  SKIPPED as designed. Read-only GCP diagnostic
+  [#37877547277](https://github.com/tommylin15/omniAgent/actions/runs/37877547277)
+  confirmed Chat `omniagent-bundle:latest`, Gateway `:2` and `:latest`,
+  Shared no environment Secret reference, with metadata unreadable to CI.
+  Earlier Cloud Run deploy **explicitly** reported Gateway version `2`
+  DESTROYED. **Safety regression PASS; recovered deployment NOT VERIFIED.**
+- [ ] **Admin-scoped recovery prerequisite:** grant `omniagent-ci` only
+  `roles/secretmanager.viewer` on the specific `omniagent-bundle` Secret,
+  not project-wide nor Secret Accessor. This permits version-state metadata
+  reads but no payload reads. Inventory ENABLED versions; a destroyed
+  version cannot be assumed recoverable, and `latest` cannot be assumed
+  semantically compatible with pinned `2`. An authorized application
+  maintainer must verify payload contract without logging values, then
+  update the affected Gateway environment secret references only through
+  a protected zero-traffic release. Repeat exact-main push -> GHCR ->
+  three 0%-candidates -> automatic signed smoke. No formal promotion until
+  separate real application acceptance passes.
 - [ ] **Mandatory live integration**: two *real* browser Google OAuth accounts,
   persistent owner separation and account-switch UI; approved owner/provider
   entitlement, real Chat→Gateway signed dispatch, persisted provider event
