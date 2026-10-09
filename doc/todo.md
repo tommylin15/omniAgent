@@ -2,6 +2,30 @@
 
 ## Current delivery scope — NEW GitHub Actions → GHCR → Cloud Run only (2026-10-09)
 
+**2026-10-09 newest GCP live retention inventory — READ-ONLY PASS, cleanup BLOCKED:**
+[Three-service GCP inventory #37914559743](https://github.com/tommylin15/omniAgent/actions/runs/37914559743)
+and [precise last-ten tag analysis #37914953148](https://github.com/tommylin15/omniAgent/actions/runs/37914953148)
+both SUCCESS with **zero mutations**.
+Chat currently 25 Revisions (15 over limit), Gateway 21 (11 over),
+Shared 16 (6 over): **62 existing / 32 above ten** in total.
+Of 45 historical/other 0% tagged entries outside the approved
+GHCR primary/fallback pair, **22 tagged Revision references are
+outside latest ten** (Chat 11, Gateway 9, Shared 2), requiring
+reviewed post-promotion tag retirement before safe deletion.
+All three current formal 100%-serving old Revision names are
+**outside the latest ten**, so last-ten deletion cannot occur now.
+The new digest-pinned GHCR primary `6ab64229738bb75490231aed93e0d0d759c3aa4b`
+and previous accepted GHCR fallback `c6020ed87fcf4b696f5816e23a34ba7b18350ebb`
+are **both inside** newest ten for all services. Do NOT treat the old
+currently serving Revision as a required new-pipeline rollback target,
+but do not delete it while it still serves traffic.
+After actual human OAuth/two-owner/Chat→Gateway application acceptance
+and authorized new GHCR 100% traffic promotion + actual GHCR-only rollback
+rehearsal, remove obsolete outside-ten tag routes only after dependency
+review, independently re-read service allocation (must stay 100% GHCR
+primary), then run the gated latest-ten retention deletion. No
+old Cloud Build/AR rollback gate. As of these two runs: **32 deleted = 0**.
+
 **2026-10-09 latest Chat integration hardening and live candidate — PARTIAL:**
 source `6ab64229738bb75490231aed93e0d0d759c3aa4b` enforces owner-ID
 binding on all Gateway reply events before database persistence, including

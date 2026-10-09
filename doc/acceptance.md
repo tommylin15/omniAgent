@@ -10,6 +10,23 @@ formal traffic promotion, actual new-GHCR-only traffic rollback drill and
 ten-Revision cleanup remain OPEN**. Legacy Cloud Build/AR rollback is no
 longer a prerequisite per the 2026-10-09 owner authorization.
 
+**2026-10-09 gate #3 read-only GCP last-ten inventory — PASS; cleanup BLOCKED:**
+[Inventory #37914559743](https://github.com/tommylin15/omniAgent/actions/runs/37914559743)
+and [precise tagged/serving preflight #37914953148](https://github.com/tommylin15/omniAgent/actions/runs/37914953148)
+proved Chat 25, Gateway 21, Shared 16 current Revisions; excess
+15 + 11 + 6 = **32**, deletion count **zero**.
+A total of **22 tag references on beyond-ten Revisions**
+(Chat 11 / Gateway 9 / Shared 2) still exist. All three active
+100%-serving Revisions are outside the latest ten, whereas both
+approved GHCR-only primary and fallback pairs are inside. Removal
+of older tags can invalidate tagged URLs; review actual dependencies
+before a post-promotion tag change.
+**No tag mutation, traffic reassignment, Revision deletion, Secret
+payload read or database write** was performed.
+These are concrete prerequisites for post-promotion revision pruning,
+not a waiver of application acceptance, a traffic rollback drill
+or legacy rollback dependency.
+
 **2026-10-09 Chat hardening and current GHCR candidate verification:**
 - **PASS — owner-bound event safety:** commit
   `6ab64229738bb75490231aed93e0d0d759c3aa4b` denies Gateway

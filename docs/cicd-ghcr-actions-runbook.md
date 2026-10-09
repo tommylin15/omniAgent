@@ -164,6 +164,38 @@ test only zero-traffic candidates with bounded paid provider calls,
 then verify actual database event persistence and cross-owner denial.
 Formal release/rollback remain CLOSED until those checks actually PASS.
 
+### 2026-10-09 post-promotion latest-ten cleanup: concrete GCP evidence
+
+The new immutable-GHCR-only pipeline's read-only revision inventory is
+`.github/workflows/omniagent-ghcr-revision-retention-inventory.yml`.
+Real [inventory #37914559743](https://github.com/tommylin15/omniAgent/actions/runs/37914559743)
+and [last-ten-tag refinement #37914953148](https://github.com/tommylin15/omniAgent/actions/runs/37914953148)
+passed. Chat has 25, Gateway 21, and Shared 16 Revisions, for **32**
+above the desired ten-per-service retention limit. A total of **22**
+tagged outside-ten Revision references (11 Chat, 9 Gateway, 2 Shared)
+prevent the current strict retention policy from deleting the older
+Revisions. These tags are HTTP-addressable endpoints even with 0%
+formal service allocation. All three existing 100%-serving old
+Revisions are also outside the latest-ten window; these must stay
+available **while they still serve traffic**. The verified primary
+SHA `6ab642297...` and previous new-GHCR fallback SHA
+`c6020ed87...` are both inside each service's latest ten.
+
+Cloud Run's `gcloud run services update-traffic --remove-tags` can
+remove only explicitly named unneeded tag routes without changing
+the percentages. **That does not mean old tagged URLs are unused:**
+verify no accepted clients or integration tasks still rely on those
+individual endpoints; preserve the approved primary and GHCR rollback
+candidate tags. After actual authorized GHCR promotion, confirmed
+100% readback, actual GHCR-to-GHCR rollback rehearsal and recovery,
+inventory again, retire only audited unneeded tags, reverify unchanged
+active 100% allocation, then call the existing gated
+`omniagent-cloudrun-retain-ten.yml` deletion stage. Its
+`select_plan` must fail closed if active old traffic or any older
+tagged candidate remains. Do not force cleanup via legacy rollback or
+delete currently serving Revisions. A read-only inventory is not
+permission to skip actual browser/dispatch acceptance or delete data.
+
 ## 2026-10-09 earlier owner-approved NEW-only rollback policy
 
 **Approved:** New releases may promote and recover **only** among digest-pinned
