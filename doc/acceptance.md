@@ -4,10 +4,48 @@
 
 Owner decision 2026-10-08. Requirements below are final production
 gates. Some source/build/candidate sub-gates now have observed PASS, while
-**Shared real inference, human/browser/dispatcher, promotion/rollback and
-CI/CD asset retirement remain OPEN**. Legacy Cloud Build V2 is historical.
+**Shared real inference PASS for both verified GHCR release sets; human
+browser OAuth/two-owner identity, Chat↔Gateway durable provider dispatch,
+formal traffic promotion, actual new-GHCR-only traffic rollback drill and
+ten-Revision cleanup remain OPEN**. Legacy Cloud Build/AR rollback is no
+longer a prerequisite per the 2026-10-09 owner authorization.
 
-**2026-10-09 Gate #1 — FULLY AUTOMATIC replacement path: PASS**
+**2026-10-09 new-only GHCR release/rollback authorization and evidence:**
+- **PASS — newer exact-source CI/GHCR/candidate/automatic Smoke:**
+  `c6020ed87fcf4b696f5816e23a34ba7b18350ebb`:
+  [publish #37896498492](https://github.com/tommylin15/omniAgent/actions/runs/37896498492)
+  → [candidate #37896743989](https://github.com/tommylin15/omniAgent/actions/runs/37896743989)
+  → [auto smoke #37896904915](https://github.com/tommylin15/omniAgent/actions/runs/37896904915),
+  all **SUCCESS**. Current Chat `00035-ker`, Gateway `00026-xum`,
+  Shared `00015-gew`, each GHCR-pinned, Ready, and 0% formal traffic.
+- **PASS — previous new-GHCR recovery target read-only viability:**
+  `c7f32b23d4ac4b60d43b3108e69e5b4019e31321` Chat
+  `00034-vul`, Gateway `00025-jom`, Shared `00014-lij`.
+  [GHCR-only two-release preflight #37897007278](https://github.com/tommylin15/omniAgent/actions/runs/37897007278)
+  verified **all six** Ready conditions, immutable digests, tags, enabled
+  Secret states, and unchanged formal traffic. Not an actual
+  100% → prior-GHCR → 100% traffic rollback drill.
+- **FAIL (superseded fallback; intentionally excluded):**
+  [#37896367974](https://github.com/tommylin15/omniAgent/actions/runs/37896367974)
+  found a previously published GHCR Gateway candidate bound to
+  `omniagent-bundle:2` (DESTROYED). Historical Ready is not evidence
+  of current rollback safety; this fallback is not eligible.
+- **PASS — three-caller real Shared Codex execution:**
+  previous verified candidate
+  [#37896120562](https://github.com/tommylin15/omniAgent/actions/runs/37896120562)
+  and new primary
+  [#37897135903](https://github.com/tommylin15/omniAgent/actions/runs/37897135903)
+  each returned real inference for the three approved caller principals,
+  used isolated fresh threads, denied cross-project calls and preserved
+  production traffic.
+- **OPEN/BLOCKED — actual release:** human browser OAuth and cross-owner
+  account isolation, enabled Chat↔Gateway provider dispatch and replay,
+  real rollback traffic rehearsal and formal promotion not yet
+  established. No legacy Cloud Build/AR rollback target is required, but
+  **missing application acceptance is not waived**. No formal traffic or
+  Revision deletion mutation has occurred.
+
+**2026-10-09 earlier Gate #1 — FULLY AUTOMATIC replacement path: PASS**
 for immutable source SHA `c7f32b23d4ac4b60d43b3108e69e5b4019e31321`.
 [CI/full quality + 3 GHCR #37894051418](https://github.com/tommylin15/omniAgent/actions/runs/37894051418)
 **SUCCESS** triggered
@@ -31,9 +69,9 @@ independent Cloud Run readback. The workflow retains CLI exit evidence
 and fails closed unless a new matching Ready/immutable zero-traffic
 revision is verified. Old failed tag remains an explicit diagnostic
 anomaly, not a reason to mutate formal traffic or delete historic versions.
-**Application E2E / browser owner separation / real Shared inference,
-production traffic cutover and rollback rehearsal, and last-10 revision
-retention remain OPEN — not implied by this PASS.**
+**At this older checkpoint** application E2E, browser owners,
+real Shared inference, production cutover/rollback and retention were
+OPEN; the newer Shared inference sub-gate has now PASSED as documented above.
 
 **2026-10-09 current-path auto-trigger gate** (source
 `7937447dd85ef78dbabfe0ca7fd05a703dd99e3c`):
