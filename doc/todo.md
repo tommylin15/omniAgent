@@ -2,6 +2,45 @@
 
 ## Current delivery scope — NEW GitHub Actions → GHCR → Cloud Run only (2026-10-09)
 
+**2026-10-09 latest retention implementation and GCP evidence — PARTIAL:**
+New post-promotion-only tag retirement implementation:
+`scripts/cloudrun_revision_tag_retirement.py`,
+`tests/test_cloudrun_revision_tag_retirement.py`,
+and release-only `.github/workflows/omniagent-cloudrun-retain-ten.yml`
+(commit `f2a5be4425953b26f2340694765362c7bdc943c9`).
+The workflow cannot be dispatched independently: it requires
+`workflow_call` approval inputs for **application acceptance and
+formal GHCR traffic promotion** plus **retired tag URL dependency audit**.
+Its stage order is strict tag-retirement dry-run → selected obsolete
+outside-ten tag removal with fresh traffic/tag readback → latest-ten
+Revision dry-run → guarded deletion. No old Artifact Registry rollback
+target; the new GHCR fallback pair is protected.
+**Implementation/tests PASS**, verified by
+[full CI + 3 GHCR #37915501123](https://github.com/tommylin15/omniAgent/actions/runs/37915501123);
+[Cloud Run 0% candidates #37915797147](https://github.com/tommylin15/omniAgent/actions/runs/37915797147)
+and [auto signed smoke #37915994575](https://github.com/tommylin15/omniAgent/actions/runs/37915994575)
+also PASS. Candidate Revisions Chat `omniagent-chat-00037-duj`,
+Gateway `omniagent-agent-gateway-00028-rof`,
+Shared `omniagent-shared-codex-00017-lob`.
+Prior accepted GHCR fallback Revisions Chat `00036-pev`,
+Gateway `00027-suw`, Shared `00016-jaz`.
+Current/fallback pair verified by
+[GHCR-only read-only rollback #37916199053](https://github.com/tommylin15/omniAgent/actions/runs/37916199053)
+PASS; new Shared real three-caller provider inference
+[#37916199074](https://github.com/tommylin15/omniAgent/actions/runs/37916199074)
+PASS with cross-project denial.
+**Newest GCP retention inventory**
+[#37916199040](https://github.com/tommylin15/omniAgent/actions/runs/37916199040)
+PASS read-only: Chat 26 Revisions (16 excess; 12 beyond-ten tags),
+Gateway 22 (12 excess; 10 beyond-ten tags), Shared 17
+(7 excess; 3 beyond-ten tags): total **65 Revisions, 35 excess,
+25 tag references beyond ten**. All three current old serving
+100% Revisions remain outside latest ten; no deletion eligible yet.
+Actual tag removal, traffic cutover, GHCR→GHCR rollback drill and
+Revision deletion all **NOT VERIFIED / NOT PERFORMED**.
+Human two-owner OAuth and authorized Chat→Gateway provider dispatch
+remain OPEN; do not enable model charges or invent owner entitlements.
+
 **2026-10-09 newest GCP live retention inventory — READ-ONLY PASS, cleanup BLOCKED:**
 [Three-service GCP inventory #37914559743](https://github.com/tommylin15/omniAgent/actions/runs/37914559743)
 and [precise last-ten tag analysis #37914953148](https://github.com/tommylin15/omniAgent/actions/runs/37914953148)

@@ -2,6 +2,54 @@
 
 **Approved architecture, 2026-10-08. Status: GATE #1 AUTOMATIC CHAIN PASS; FORMAL RELEASE/PRODUCT INTEGRATION OPEN.** Policy owner: [SPEC §8](../doc/spec.md#8-cicd-v2); acceptance: [matrix](../doc/acceptance.md); backlog: [TODO](../doc/todo.md). This supersedes the legacy [Cloud Build V2 runbook](cicd-v2-runbook.md) for *new* releases, not its historical evidence.
 
+## 2026-10-09 GHCR-only retention tag lifecycle (implemented, not run)
+
+The post-release-only workflow
+`.github/workflows/omniagent-cloudrun-retain-ten.yml`
+now includes `scripts/cloudrun_revision_tag_retirement.py`
+with unit tests. The `workflow_call` contract requires explicit
+`acceptance_and_promotion_passed=true` and
+`older_tag_dependencies_cleared=true`. It is not a standalone push
+cleanup. It runs unit tests, then on each service sequentially:
+1. Dry-run a plan containing only tags on revisions **outside** the
+   newest ten; preserve the exact approved new GHCR promoted and
+   GHCR fallback Revisions.
+2. Re-read service and revision snapshots, fail closed if tagged
+   allocation changed, then use only targeted
+   `gcloud run services update-traffic --remove-tags`.
+   Validate unchanged serving 100% revision and exact remaining tags.
+3. Re-run latest-ten dry-run and guarded deletion with a fresh
+   runtime snapshot for each irreversible Revision removal.
+   No Secret payloads or external legacy CI/CD artifacts are touched.
+
+Tagged 0% revisions can serve requests through tag-specific URLs.
+Cloud Run's official `--remove-tags` behavior does not change normal
+formal traffic percentages, but **can break clients using removed tag
+URLs**; a dependency audit is a hard approval prerequisite. If a
+post-mutation readback fails, mark **PARTIAL / BLOCKED**, inspect
+runtime evidence; do not claim that prior tag changes were reverted.
+Do not run any retirement until browser/owner/Provider acceptance and
+a real GHCR-only promotion/rollback drill are complete.
+
+Source `f2a5be4425953b26f2340694765362c7bdc943c9`
+passed [full CI / 3 GHCR #37915501123](https://github.com/tommylin15/omniAgent/actions/runs/37915501123),
+[three zero-traffic candidate revisions #37915797147](https://github.com/tommylin15/omniAgent/actions/runs/37915797147)
+and [signed auto Smoke #37915994575](https://github.com/tommylin15/omniAgent/actions/runs/37915994575).
+Latest primary Chat `00037-duj`, Gateway `00028-rof`, Shared
+`00017-lob`. Prior all-GHCR fallback Chat `00036-pev`,
+Gateway `00027-suw`, Shared `00016-jaz` passed
+[read-only two-release gate #37916199053](https://github.com/tommylin15/omniAgent/actions/runs/37916199053).
+Shared real three-caller inference
+[#37916199074](https://github.com/tommylin15/omniAgent/actions/runs/37916199074)
+PASS. Updated live
+[retention inventory #37916199040](https://github.com/tommylin15/omniAgent/actions/runs/37916199040):
+Chat 26 (16 above ten; 12 outside-ten tags), Gateway 22
+(12 above ten; 10 outside-ten tags), Shared 17
+(7 above ten; 3 outside-ten tags). **65 existing / 35 excess /
+25 outside-ten tags** as of that GCP snapshot. No actual tag or
+Revision deletion was performed; all old formal 100% traffic remains
+untouched until separate protected promotion.
+
 ## Control and trust flow
 
 ```

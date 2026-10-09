@@ -2,6 +2,42 @@
 
 ## Replacement CI/CD — GitHub Actions / public GHCR / Cloud Run (OPEN)
 
+**2026-10-09 current proof (new GHCR path, NOT formal release):**
+- **PASS — new guarded last-ten tag-retirement implementation/tests:**
+  `f2a5be4425953b26f2340694765362c7bdc943c9`;
+  [full CI + 3 public GHCR images #37915501123](https://github.com/tommylin15/omniAgent/actions/runs/37915501123)
+  passed. Conditional `workflow_call` now requires BOTH
+  `acceptance_and_promotion_passed` and
+  `older_tag_dependencies_cleared` before tag or Revision mutation.
+  Under this prerequisite, retirement dry-runs and removes only
+  tags outside last ten with strict fresh readback. Unit tests
+  simulate safe/unsafe flows; **live destructive execution NOT DONE**.
+- **PASS — exact-source latest 0% candidate deployment and signed Smoke:**
+  [#37915797147](https://github.com/tommylin15/omniAgent/actions/runs/37915797147)
+  → [#37915994575](https://github.com/tommylin15/omniAgent/actions/runs/37915994575),
+  new Revisions Chat `00037-duj`, Gateway `00028-rof`,
+  Shared `00017-lob`; original formal traffic unchanged.
+- **PASS — new-GHCR-only fallback and actual Shared provider calls:**
+  [#37916199053](https://github.com/tommylin15/omniAgent/actions/runs/37916199053)
+  verifies new primary and preceding `6ab6422` GHCR revisions Ready,
+  immutable digests, healthy Secret metadata, 0% tags;
+  [#37916199074](https://github.com/tommylin15/omniAgent/actions/runs/37916199074)
+  exercises real Shared inference for all three caller identities,
+  separate threads and cross-project denial.
+- **PASS — refreshed read-only revision inventory:**
+  [#37916199040](https://github.com/tommylin15/omniAgent/actions/runs/37916199040)
+  shows Chat 26, Gateway 22, Shared 17 Revisions:
+  **65 total, 35 above the ten-per-service target**.
+  **25 old tagged Revision routes** are outside the newest ten
+  (Chat 12, Gateway 10, Shared 3).
+  Three old serving revisions still receive 100% formal traffic and
+  lie outside the newest ten; deletion MUST NOT occur yet.
+- **BLOCKED — formal app/release gates:** actual two-human Google OAuth
+  isolation, approved owner dispatch, real Chat→Gateway/provider
+  persistence, GHCR-only 100% traffic cutover and rollback rehearsal,
+  older tag URL dependency audit and eventual last-ten cleanup.
+  The old Cloud Build/AR rollback mechanism is NOT a prerequisite.
+
 Owner decision 2026-10-08. Requirements below are final production
 gates. Some source/build/candidate sub-gates now have observed PASS, while
 **Shared real inference PASS for both verified GHCR release sets; human
