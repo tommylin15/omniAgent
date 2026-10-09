@@ -2,9 +2,40 @@
 
 ## Current delivery scope — NEW GitHub Actions → GHCR → Cloud Run only (2026-10-09)
 
-**2026-10-09 owner-approved NEW-only rollback — release preparation PARTIAL:**
+**2026-10-09 latest Chat integration hardening and live candidate — PARTIAL:**
+source `6ab64229738bb75490231aed93e0d0d759c3aa4b` enforces owner-ID
+binding on all Gateway reply events before database persistence, including
+Codex native thread/turn IDs; targeted regression test is included in
+[full CI / public GHCR #37903996197](https://github.com/tommylin15/omniAgent/actions/runs/37903996197)
+**PASS**. Automatically triggered
+[three 0%-traffic revisions #37904503766](https://github.com/tommylin15/omniAgent/actions/runs/37904503766)
+and [current signed Smoke #37904670566](https://github.com/tommylin15/omniAgent/actions/runs/37904670566)
+**PASS** (Chat `omniagent-chat-00036-pev`; Gateway
+`omniagent-agent-gateway-00027-suw`; Shared
+`omniagent-shared-codex-00016-jaz`). Previous GHCR-only primary
+`c6020ed87fcf4b696f5816e23a34ba7b18350ebb` is the verified
+fallback (Chat `00035-ker`, Gateway `00026-xum`, Shared `00015-gew`).
+[GHCR-only six-Revision read-only fallback #37904836739](https://github.com/tommylin15/omniAgent/actions/runs/37904836739)
+**PASS**, all six Ready, digest/tag-matched and Secret refs ENABLED.
+[Current Shared 3-caller real provider acceptance #37904946565](https://github.com/tommylin15/omniAgent/actions/runs/37904946565)
+**PASS** including cross-project denials and separate provider threads.
+
+**Verified actual Chat candidate settings**, from the
+[read-only authenticated GCP preflight #37903833063](https://github.com/tommylin15/omniAgent/actions/runs/37903833063):
+Google OAuth client and internal service auth configuration PRESENT,
+but `CHAT_DISPATCH_ENABLED` **DISABLED**, zero approved dispatch
+Owner UUIDs, and no Chat Gateway candidate URL/audience match.
+The preflight read **no Secret payload**, wrote **no Chat DB records**,
+and did **not** change traffic. Enabling live billable provider dispatch
+requires approved actual Owner IDs and validated candidate Gateway
+route/audience; no fake owner or implicit auto-enable.
+Real browser two-human-account OAuth/session isolation, real
+Chat→Gateway provider persistence/replay/cancel/approval and actual
+GHCR ↔ GHCR traffic rollback / production cutover remain OPEN.
+
+**2026-10-09 earlier owner-approved NEW-only rollback checkpoint — release preparation PARTIAL:**
 The historical Cloud Build / Artifact Registry rollback path is explicitly
-**not** a prerequisite. Current all-GHCR primary
+**not** a prerequisite. Earlier all-GHCR primary
 `c6020ed87fcf4b696f5816e23a34ba7b18350ebb` passed
 [CI/GHCR #37896498492](https://github.com/tommylin15/omniAgent/actions/runs/37896498492)
 → [3 real 0%-traffic candidates #37896743989](https://github.com/tommylin15/omniAgent/actions/runs/37896743989)

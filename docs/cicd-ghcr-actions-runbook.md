@@ -125,7 +125,46 @@ The downstream read-only signed smoke must also pass. Do not remove
 historical tags/revisions or authorize formal promotion as a workaround.
 The anomaly is tracked separately for future safe revision retention.
 
-## 2026-10-09 owner-approved NEW-only rollback policy
+### Current Chat integration evidence (2026-10-09)
+
+The newest GHCR source `6ab64229738bb75490231aed93e0d0d759c3aa4b`
+passed [CI+3 GHCR #37903996197](https://github.com/tommylin15/omniAgent/actions/runs/37903996197),
+[zero-traffic candidate deployment #37904503766](https://github.com/tommylin15/omniAgent/actions/runs/37904503766)
+and [auto signed Smoke #37904670566](https://github.com/tommylin15/omniAgent/actions/runs/37904670566).
+The service revisions are Chat `00036-pev`, Gateway `00027-suw`,
+Shared `00016-jaz`. Previous GHCR-only SHA `c6020ed87fcf4b696f5816e23a34ba7b18350ebb`
+is the currently verified *fallback set*. Its and the new release's
+readiness, digests, tags and Secret metadata passed
+[read-only rollback preflight #37904836739](https://github.com/tommylin15/omniAgent/actions/runs/37904836739);
+new Shared real three-caller inference passed
+[#37904946565](https://github.com/tommylin15/omniAgent/actions/runs/37904946565).
+
+An independent **read-only** authenticated Chat/Gateway configuration
+inventory is provided by
+`.github/workflows/omniagent-ghcr-chat-integration-readonly.yml`.
+Observed [run #37903833063](https://github.com/tommylin15/omniAgent/actions/runs/37903833063)
+proved browser Google OAuth client and Chat internal service
+authentication configuration PRESENT; **the dispatcher is currently
+disabled**, the approved dispatch owner list is **empty**, and
+`CHAT_GATEWAY_URL` / `CHAT_GATEWAY_AUDIENCE` are not configured to
+the current zero-traffic Gateway candidate URL/service audience.
+This is a **real live configuration blocker**, not a CI smoke failure.
+The workflow does not print Secret values, call providers, read Secret
+payloads, change Cloud Run traffic or mutate Chat/PostgreSQL data.
+Never invent owner identifiers, enable billable provider execution,
+or label browser OAuth PASS from GCP service-account token checks.
+
+The Chat dispatcher also rejects Gateway events that claim a different
+owner than the owner-bound PostgreSQL dispatch claim, including events
+using Codex-native thread IDs. This safety regression was tested in
+the exact-source CI. Existing provider message/event persistence
+tests are not substitutes for real human owner/browser and Gateway
+integration acceptance. After explicit owner entitlement/config approval,
+test only zero-traffic candidates with bounded paid provider calls,
+then verify actual database event persistence and cross-owner denial.
+Formal release/rollback remain CLOSED until those checks actually PASS.
+
+## 2026-10-09 earlier owner-approved NEW-only rollback policy
 
 **Approved:** New releases may promote and recover **only** among digest-pinned
 public GHCR candidates of this same GitHub Actions → Cloud Run pipeline.

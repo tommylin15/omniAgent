@@ -10,7 +10,43 @@ formal traffic promotion, actual new-GHCR-only traffic rollback drill and
 ten-Revision cleanup remain OPEN**. Legacy Cloud Build/AR rollback is no
 longer a prerequisite per the 2026-10-09 owner authorization.
 
-**2026-10-09 new-only GHCR release/rollback authorization and evidence:**
+**2026-10-09 Chat hardening and current GHCR candidate verification:**
+- **PASS — owner-bound event safety:** commit
+  `6ab64229738bb75490231aed93e0d0d759c3aa4b` denies Gateway
+  responses with a foreign `ownerId` before writing any model output,
+  for Gemini and Codex-native bindings. Node/Python/PostgreSQL/Flutter
+  CI and 3 public immutable GHCR packages:
+  [#37903996197](https://github.com/tommylin15/omniAgent/actions/runs/37903996197).
+- **PASS — exact-source live 0% candidates:**
+  Chat `omniagent-chat-00036-pev`, Gateway
+  `omniagent-agent-gateway-00027-suw`, Shared
+  `omniagent-shared-codex-00016-jaz`;
+  [deployment #37904503766](https://github.com/tommylin15/omniAgent/actions/runs/37904503766),
+  [auto signed Smoke #37904670566](https://github.com/tommylin15/omniAgent/actions/runs/37904670566);
+  both **SUCCESS**, formal traffic unchanged.
+- **PASS — strict GHCR-only fallback metadata:**
+  previous SHA `c6020ed87fcf4b696f5816e23a34ba7b18350ebb` with
+  Chat `00035-ker`, Gateway `00026-xum`, Shared `00015-gew`;
+  [#37904836739](https://github.com/tommylin15/omniAgent/actions/runs/37904836739)
+  verifies all six Ready, digest, tagged 0%-traffic and ENABLED Secret
+  references. This does not prove a real traffic rollback drill.
+- **PASS — current Shared real 3-caller provider inference:**
+  [#37904946565](https://github.com/tommylin15/omniAgent/actions/runs/37904946565)
+  with isolated threads, cross-project denials and traffic protection.
+- **PASS (read-only settings inventory), but application integration BLOCKED:**
+  [Chat candidate config #37903833063](https://github.com/tommylin15/omniAgent/actions/runs/37903833063)
+  shows OAuth Client and internal identity configuration present, while
+  `CHAT_DISPATCH_ENABLED` is DISABLED, approved Owner UUIDs = 0,
+  candidate Gateway URL/audience do not match. No Secret payload reads,
+  DB test writes, model provider calls or traffic changes were made by
+  this preflight. Actual two-human-account browser Google OAuth and
+  authorized owner-to-Gateway dispatch/provider-event persistence are
+  **NOT VERIFIED**; they are prerequisites for formal promotion.
+- **Still OPEN:** real app E2E and authorized owner entitlements, bounded
+  GHCR-only traffic promotion/rollback rehearsal and 10-revision
+  retention. Prior Cloud Build/AR rollback is not a dependency.
+
+**2026-10-09 earlier new-only GHCR release/rollback checkpoint:**
 - **PASS — newer exact-source CI/GHCR/candidate/automatic Smoke:**
   `c6020ed87fcf4b696f5816e23a34ba7b18350ebb`:
   [publish #37896498492](https://github.com/tommylin15/omniAgent/actions/runs/37896498492)
