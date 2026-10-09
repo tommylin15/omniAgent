@@ -40,12 +40,12 @@ jobs:
           import json,sys
           s=json.load(open(sys.argv[1])); iam=json.load(open(sys.argv[2]))
           routes=s.get("status",{}).get("traffic",[])
-          if not any(x.get("revisionName")=="omniagent-shared-codex-00016-jaz"
-              and x.get("tag")=="ghcr-6ab64229738b" for x in routes):
+          if not any(x.get("revisionName")=="omniagent-shared-codex-00017-lob"
+              and x.get("tag")=="ghcr-f2a5be442595" for x in routes):
               raise SystemExit("BLOCKED: new GHCR candidate unavailable")
           active=[t for t in routes if t.get("percent",0)>0]
-          tagged=[t for t in routes if t.get("tag")=="ghcr-6ab64229738b"
-                  and t.get("revisionName")=="omniagent-shared-codex-00016-jaz"
+          tagged=[t for t in routes if t.get("tag")=="ghcr-f2a5be442595"
+                  and t.get("revisionName")=="omniagent-shared-codex-00017-lob"
                   and t.get("percent",0)==0]
           if len(tagged)!=1 or len(active)!=1 or active[0].get("percent")!=100:
               raise SystemExit("BLOCKED: candidate or live traffic drift")
@@ -56,7 +56,7 @@ jobs:
               raise SystemExit("BLOCKED: private invoker contract changed")
           c=s.get("spec",{}).get("template",{}).get("spec",{}).get("containers") or [{}]
           ref=c[0].get("image","")
-          if ref!="ghcr.io/tommylin15/omniagent-shared-codex@sha256:aeb36aa48aa690d53f476bf0e6beec95acc598c9d9efa21ff9e9d7a97dfbca9b":
+          if ref!="ghcr.io/tommylin15/omniagent-shared-codex@sha256:805346261e79b232b8e68a2701251707f718d64b2adc54dc96815a85b934b93f":
               raise SystemExit("BLOCKED: SHA-pinned GHCR image changed")
           tagurl=tagged[0].get("url","").rstrip("/")
           audience=s.get("status",{}).get("url","").rstrip("/")

@@ -39,18 +39,18 @@ jobs:
           root=Path(os.environ["RUNNER_TEMP"])
           project=os.environ["PROJECT"]
           region=os.environ["REGION"]
-          primary_sha="6ab64229738bb75490231aed93e0d0d759c3aa4b"
-          fallback_sha="c6020ed87fcf4b696f5816e23a34ba7b18350ebb"
+          primary_sha="f2a5be4425953b26f2340694765362c7bdc943c9"
+          fallback_sha="6ab64229738bb75490231aed93e0d0d759c3aa4b"
           versions={
             "omniagent-chat":(
-              ("omniagent-chat-00036-pev","8822283bf3dac56ef0577f668c3b7efdaafb768d8c4c793510f7fb5d03cdd5fc"),
-              ("omniagent-chat-00035-ker","ce28b0d8a3582842b649bdc668a7c7efd5f9178a9762392d5e9f993503b94d24")),
+              ("omniagent-chat-00037-duj","74f0c8b2067fd598a84bdae7b1aa43ea463bd6ecc6d6f7886e369c65b43d4eb8"),
+              ("omniagent-chat-00036-pev","8822283bf3dac56ef0577f668c3b7efdaafb768d8c4c793510f7fb5d03cdd5fc")),
             "omniagent-agent-gateway":(
-              ("omniagent-agent-gateway-00027-suw","3c06d828587c2dfed8ae51f70ea66df24c42489e612fc9e9d489359c81e71175"),
-              ("omniagent-agent-gateway-00026-xum","4104ad8ab3a3577f11fc18122be166ef7d93ab55cdec0c97e21f6af44eee0602")),
+              ("omniagent-agent-gateway-00028-rof","75baf42ae3efba134eca4eda440059dc220e63c927c3d3bb6a87089dce7db112"),
+              ("omniagent-agent-gateway-00027-suw","3c06d828587c2dfed8ae51f70ea66df24c42489e612fc9e9d489359c81e71175")),
             "omniagent-shared-codex":(
-              ("omniagent-shared-codex-00016-jaz","aeb36aa48aa690d53f476bf0e6beec95acc598c9d9efa21ff9e9d7a97dfbca9b"),
-              ("omniagent-shared-codex-00015-gew","4a5c31d2f5207b86114ec6609cec40dcb0e1a6aaa8ccb511d9a4d0770e8b58d3")),
+              ("omniagent-shared-codex-00017-lob","805346261e79b232b8e68a2701251707f718d64b2adc54dc96815a85b934b93f"),
+              ("omniagent-shared-codex-00016-jaz","aeb36aa48aa690d53f476bf0e6beec95acc598c9d9efa21ff9e9d7a97dfbca9b")),
           }
           failed=[]
           for service, pair in versions.items():
