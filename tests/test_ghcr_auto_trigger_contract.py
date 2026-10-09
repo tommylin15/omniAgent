@@ -53,7 +53,7 @@ class GhcrAutomaticTriggerContractTest(unittest.TestCase):
         self.assertIn('GATEWAY_SECRET_REPLACEMENT_NOT_EXACT', source)
         self.assertIn('GATEWAY_TEMPLATE_SECRETS_NOT_EXACT', source)
         self.assertIn('if [[ "$svc" == "omniagent-agent-gateway" ]]; then', source)
-        self.assertIn('Always set the *one* preflight-approved bundle on Gateway.', source)
+        self.assertIn('Enforce the exactly preflight-approved single bundle.', source)
         self.assertIn('set(refs)!=(set(planned)|{"OMNIAGENT_PROVIDER_BUNDLE"})', source)
         self.assertIn("--no-traffic", source)
         self.assertIn('if protected(before,True)!=protected(after):', source)
