@@ -36,16 +36,27 @@ class GhcrAutomaticTriggerContractTest(unittest.TestCase):
         self.assertIn("--no-traffic", source)
         self.assertIn("traffic_preserved=PASS", source)
 
-    def test_secret_preflight_blocks_all_candidate_mutations_when_unverified(self):
+    def test_destroyed_gateway_legacy_secrets_are_removed_only_for_zero_percent_candidates(self):
         source = workflow("omniagent-ghcr-cloudrun-candidate.yml")
-        preflight = source.index("name: Fail closed on disabled or unreadable Secret versions")
+        preflight = source.index("name: Validate Secret versions and plan Gateway legacy detach")
         deploy = source.index("name: Deploy immutable public GHCR candidates with NO traffic")
         self.assertLess(preflight, deploy)
+        for label in ("JANUS_AGENT_PROVIDER_BUNDLE", "MCP_OWNER_SIGNING_KEY",
+                      "OMNIAGENT_PROVIDER_BUNDLE"):
+            self.assertIn(label, source)
+        self.assertIn('source==("omniagent-bundle","latest")', source)
+        self.assertIn('and observed=="DESTROYED" and source_healthy', source)
         self.assertIn('candidate_secret_version_preflight=BLOCKED', source)
         self.assertIn('gcloud","secrets","versions","describe"', source)
-        self.assertIn('if state!="ENABLED":', source)
         self.assertIn("raise SystemExit(1)", source)
+        self.assertIn('deploy_args+=("--remove-secrets=$detach")', source)
+        self.assertIn("--no-traffic", source)
+        self.assertIn('if protected(before,True)!=protected(after):', source)
         self.assertNotIn("gcloud secrets versions access", source)
+        gateway = (ROOT / "services/agent-gateway/server.ts").read_text()
+        self.assertIn('process.env.OMNIAGENT_PROVIDER_BUNDLE?.trim()', gateway)
+        self.assertIn('MCP_OWNER_SIGNING_KEY: "mcp_owner_signing_key"', gateway)
+        self.assertNotIn('process.env.JANUS_AGENT_PROVIDER_BUNDLE', gateway)
 
     def test_candidate_success_automatically_starts_read_only_smoke(self):
         source = workflow("omniagent-ghcr-current-candidate-smoke.yml")
