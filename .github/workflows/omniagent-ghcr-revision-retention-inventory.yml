@@ -1,0 +1,100 @@
+# Read-only current GCP revision count and retention blockers, new GHCR only.
+# Does not modify Cloud Run traffic/tags/Revisions or inspect any Secret payload.
+name: omniAgent GHCR revision retention inventory
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/omniagent-ghcr-revision-retention-inventory.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  inspect:
+    if: github.repository == 'tommylin15/omniAgent' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      PROJECT: gen-lang-client-0593591102
+      REGION: us-central1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+          service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Classify live revision inventory, zero mutations
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          for svc in omniagent-chat omniagent-agent-gateway omniagent-shared-codex; do
+            gcloud run services describe "$svc" --project="$PROJECT" --region="$REGION" --format=json \
+              > "$RUNNER_TEMP/$svc-service.json"
+            gcloud run revisions list --service="$svc" --project="$PROJECT" --region="$REGION" --format=json \
+              > "$RUNNER_TEMP/$svc-revisions.json"
+          done
+          python3 - "$RUNNER_TEMP" <<'PY'
+          import json,sys
+          from pathlib import Path
+          from scripts.cloudrun_revision_retention import Blocked,select_plan
+          root=Path(sys.argv[1])
+          target={
+            "omniagent-chat":("omniagent-chat-00036-pev","omniagent-chat-00035-ker"),
+            "omniagent-agent-gateway":("omniagent-agent-gateway-00027-suw","omniagent-agent-gateway-00026-xum"),
+            "omniagent-shared-codex":("omniagent-shared-codex-00016-jaz","omniagent-shared-codex-00015-gew"),
+          }
+          rows=[]
+          for svc,(new,old) in target.items():
+              snapshot=json.loads((root/(svc+"-service.json")).read_text())
+              revisions=json.loads((root/(svc+"-revisions.json")).read_text())
+              if not isinstance(revisions,list):
+                  raise SystemExit("BLOCKED: missing revision list for "+svc)
+              status=snapshot.get("status") or {}
+              traffic=status.get("traffic") or []
+              serving=[r for r in traffic if isinstance(r,dict) and r.get("percent",0)>0]
+              if len(serving)!=1 or serving[0].get("percent")!=100:
+                  raise SystemExit("BLOCKED: ambiguous live serving allocation for "+svc)
+              names={((r.get("metadata") or {}).get("name") or r.get("name")) for r in revisions}
+              if new not in names or old not in names:
+                  raise SystemExit("BLOCKED: approved new GHCR primary/fallback absent from revision inventory: "+svc)
+              tags=[{"revision":r.get("revisionName"),"tag":r.get("tag")} for r in traffic
+                    if isinstance(r,dict) and r.get("tag")]
+              older_tagged=[x for x in tags if x["revision"] not in (new,old)]
+              cleanup="NOT_ELIGIBLE"
+              try:
+                  select_plan(svc,snapshot,revisions,new,old)
+                  cleanup="READY_DRY_RUN_ONLY"
+              except Blocked as exc:
+                  cleanup="BLOCKED_"+str(exc)
+              item={
+                  "service":svc,
+                  "total_revisions":len(revisions),
+                  "excess_over_ten":max(0,len(revisions)-10),
+                  "live_revision":serving[0].get("revisionName"),
+                  "live_pct":serving[0].get("percent"),
+                  "approved_new_ghcr_primary_present":new in names,
+                  "approved_new_ghcr_fallback_present":old in names,
+                  "tagged_revisions_count":len(tags),
+                  "other_tagged_revisions_count":len(older_tagged),
+                  "old_tagged_revisions_outside_new_pair":sorted({str(x["revision"]) for x in older_tagged}),
+                  "retention_policy_now":cleanup,
+                  "delete_attempted":False,
+                  "traffic_mutated":False,
+                  "secret_payload_read":False,
+              }
+              rows.append(item)
+              print(json.dumps(item,sort_keys=True))
+          with Path(__import__("os").environ["GITHUB_STEP_SUMMARY"]).open("a") as f:
+              f.write("### New-only Cloud Run revision retention inventory (read-only)\n\n")
+              f.write("| Service | Revisions | Above ten | Other tagged revisions | Current cleanup gate |\n")
+              f.write("|---|---:|---:|---:|---|\n")
+              for row in rows:
+                  f.write("| "+row["service"]+" | "+str(row["total_revisions"])+" | "+
+                          str(row["excess_over_ten"])+" | "+str(row["other_tagged_revisions_count"])+" | "+
+                          row["retention_policy_now"]+" |\n")
+              f.write("\nNo Cloud Run tags, traffic, Secrets or revisions were mutated.\n")
+          print("new_ghcr_retention_live_inventory=PASS")
+          PY
