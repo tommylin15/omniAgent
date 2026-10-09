@@ -103,11 +103,11 @@ OAuth console 設定及本固定來源的真人登入尚未在本次文件工作
 | 項目 | 狀態與限制 |
 | --- | --- |
 | 同 SHA CI/GHCR → 0% 候選 → signed smoke | 已有已提交 workflow 與本 runbook 的歷史成功紀錄；不是本次新跑的驗收。候選 workflow 檢查 SHA→GHCR digest→Ready revision，smoke 檢查 Ready、digest、標籤、健康與正式流量。 |
-| 固定 preview 更新與保護項目讀回 | 本機未提交草稿：`omniagent-ghcr-current-candidate-smoke.yml` 的最後步驟及 `scripts/verify_preview_route.py`。尚未證明這份草稿已經 GitHub CI 或真實發布執行。不可標記部署完成。 |
-| 固定網址更新後驗證 | 草稿僅檢查首頁 200；固定網址的 health/ready、UI 資產及未授權拒絕檢查仍待補齊。 |
-| 更新後失敗自動恢復 | OPEN：目前草稿沒有恢復步驟；失敗可能留下已變更的 preview。必須補上原版本保存、受保護的恢復、恢復讀回及失敗回報，再驗證失敗情境。 |
-| 發布間併發防護 | PARTIAL：有 smoke 自身 concurrency 與更新前 SHA 檢查；候選部署和 smoke 使用不同 concurrency group，尚未證明有共用鎖避免檢查與更新間的競態。 |
-| 完整每次發布紀錄 | PARTIAL：現有日志包含 SHA、digest、revision 與驗證結果；草稿 summary 僅寫固定網址與流量保護成功。成功、失敗及恢復結果的完整持久化紀錄仍待補齊。 |
+| 固定 preview 更新與保護項目讀回 | **STAGED-CODE**：已提交 guarded helper；由 repository variable opt-in；實際發布仍待驗收。 |
+| 固定網址更新後驗證 | **STAGED-CODE**：固定網址 health/ready/UI 200 與 API/dispatch 401 已實作；runtime 驗收 OPEN。 |
+| 更新後失敗自動恢復 | **STAGED-CODE**：前版保存、受保護還原、讀回及明確失敗已實作；真實復原驗收 OPEN。 |
+| 發布間併發防護 | **STAGED-CODE**：candidate/smoke 共用 Actions concurrency group；外部 console 操作以重新讀回與 fail-closed 處理。 |
+| 完整每次發布紀錄 | **STAGED-CODE**：成功/失敗/恢復 JSON、Actions summary 與 90 日 artifact；真實產生結果待驗證。 |
 | 固定來源 OAuth／真人登入 | NOT VERIFIED：既有其他入口的登入證據不能直接視為本固定 preview 來源的驗收。 |
 
 ### 每次發布紀錄
@@ -129,6 +129,51 @@ formal_traffic_and_config=<讀回結果>
 recovery=<NOT_NEEDED / PASS / FAIL / NOT_IMPLEMENTED>
 production_promotion=<NOT_PERFORMED 或另外核准的證據連結>
 ```
+
+### 2026-10-10 Fixed preview source implementation — staged for unified acceptance
+
+The guarded implementation is `scripts/cloudrun_preview_route.py`, its
+isolated unit tests, and the downstream signed Smoke workflow. The candidate
+deployment and Smoke workflows now share the
+`omniagent-ghcr-cloudrun-release` concurrency group with
+`cancel-in-progress: false`. The helper re-reads current main SHA,
+immutable image digest, candidate revision, 0%-traffic tag, production allocation
+and template/other-tag snapshot before any update. This serializes those
+two automatic GitHub Actions workflows, but does not claim an atomic lock
+against manual Cloud Run changes; unexpected state drift fails closed.
+
+**Default: NO FIXED PREVIEW MUTATION.** The preview step executes only when
+the GitHub Actions *repository variable* `OMNIAGENT_AUTO_PREVIEW_ENABLED`
+is exactly `true`. Leave this unset or false until the later consolidated
+acceptance stage. CI → public GHCR → 0%-traffic candidate → signed Smoke
+continues independently; no workflow here changes formal service traffic.
+The variable gates only preview tagging and never authorizes a formal release.
+
+When explicitly enabled, the helper checks the prior fixed preview (if any)
+with /health, /ready, homepage and /main.dart.js all HTTP 200 plus anonymous
+thread/dispatch denial HTTP 401. It updates **only** the Cloud Run
+`preview` tag using `--update-tags=preview=<revision>`.
+After updating, it reads back immutable candidate source, protected config,
+all other tags and 100% formal traffic, checks the fixed preview URL, and
+repeats HTTP validation. Any post-update failure triggers a guarded return
+to the prior revision, or removal of preview on first publication, followed
+by a second readback and recovery validation. Concurrent mutation causes
+FAIL/BLOCKED rather than a claim of recovered success. The helper never
+reports PASS after a failed update.
+
+Each enabled run records a redacted JSON receipt and GitHub Actions summary
+including SHA, target, old/new preview, formal traffic protection and
+recovery state; the receipt is uploaded as a 90-day workflow artifact.
+No Secret payload, Google identity token, paid inference or PostgreSQL
+mutation is part of this preview step.
+
+**Evidence status: STAGED-CODE**, not deployed fixed-preview acceptance.
+The next consolidated cycle must prove exact-SHA CI, preview publication
+(including fixed-origin Google OAuth), deliberate failure/recovery behavior,
+real authorized provider/SSE acceptance, separate GHCR-only formal rollback
+drill and guarded last-ten retention. Missing owner entitlements or Codex
+auth stay BLOCKED; do not enable paid dispatch merely to test Preview.
+
 
 ## Control and trust flow
 

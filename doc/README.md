@@ -46,6 +46,7 @@ These are architecture requirements. Current implementation status is recorded i
 | [acceptance.md](acceptance.md) | Evidence and security/isolation/storage acceptance gates. |
 | [current GitHub Actions/GHCR release runbook](../docs/cicd-ghcr-actions-runbook.md) | New CI/CD target, WIF, GHCR immutable digests, Cloud Run 0%-traffic candidates, integration/rollback/diagnostics. |
 | [固定 preview 網址與發布規則](../docs/cicd-ghcr-actions-runbook.md#固定-preview-網址與每次發布規則2026-10-09) | 固定入口、每次驗證與恢復政策、OAuth 設定及已實作／待辦差距。 |
+| [固定 Preview guarded source and activation](../docs/cicd-ghcr-actions-runbook.md#2026-10-10-fixed-preview-source-implementation--staged-for-unified-acceptance) | Staged implementation, disabled-by-default release gate, restoration safeguards and deferred live acceptance. |
 | [historical Cloud Build V2 runbook](../docs/cicd-v2-runbook.md) | Earlier Cloud Build release execution and evidence; superseded for future releases. |
 
 Supporting architecture/migration records remain under `docs/`, especially `docs/architecture.md`, `docs/chat-storage-migration.md`, deployment plans/evidence, and cutover runbooks.

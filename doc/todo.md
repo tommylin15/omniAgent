@@ -1,5 +1,19 @@
 # omniAgent TODO
 
+## 2026-10-10 集中開發批次 — 最後統一驗收
+
+本輪只新增不需付費推論或 Owner 私密憑證的部署安全實作：
+候選與 Smoke 共用 concurrency；固定 Preview 來源 SHA/digest/Revision、
+正式流量、既有設定及非 Preview 標籤驗證；固定網址 HTTP 驗證；
+更新失敗時的受保護回復；成功/失敗/回復證據；單元測試；
+禁止 Revision tag 清理誤刪固定 `preview`。
+`OMNIAGENT_AUTO_PREVIEW_ENABLED` 預設未啟用，需另行驗收及核准。
+此次 **STAGED-CODE** 不等於 CI PASS 或完成上線；後續一次統一跑
+exact-SHA CI → 0% candidate → fixed-preview/UI OAuth → 授權 Owner 真實推論
+與 DB SSE replay（需使用者解除暫停）→ GHCR-only 正式回滾 →
+正式發布及最後 10 Revisions 的清理。Codex owner 權限維持暫停，
+不可自行開啟付費推論。
+
 ## 2026-10-09 正式流量已切換；產品驗收仍未完成
 
 依使用者明確授權，GHCR release `1a8e575bb9f6224e698765d268c6e823e94ba55a` 已固定為三服務 100% 正式流量：Chat `00039-rik`、Gateway `00030-coy`、Shared `00019-puf`，live readback 均 Ready=True。正式 Chat health/ready/UI 資產 200，匿名 API 401。Gateway 一個指向 DESTROYED Secret 的失效歷史標籤已移除以完成路由更新；未刪 revision、Secret 或資料。

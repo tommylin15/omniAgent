@@ -64,6 +64,14 @@ class TagRetirementTest(unittest.TestCase):
         with self.assertRaisesRegex(TAGGER.Blocked,"unapproved_or_invalid_tag"):
             TAGGER.plan_tags(SERVICE,svc,revs,PRIMARY,FALLBACK)
 
+    def test_fixed_preview_is_never_retired_as_obsolete_tag(self):
+        svc,revs=sample()
+        svc["status"]["traffic"].append(
+            {"revisionName":NAMES[0],"percent":0,"tag":"preview"})
+        with self.assertRaisesRegex(
+                TAGGER.Blocked,"fixed_preview_outside_latest_ten_requires_explicit_repoint"):
+            TAGGER.plan_tags(SERVICE,svc,revs,PRIMARY,FALLBACK)
+
     def test_dry_run_produces_receipt_without_gcloud_mutation(self):
         svc,revs=sample()
         with patch.object(TAGGER,"snapshots",return_value=(svc,revs)),patch.object(

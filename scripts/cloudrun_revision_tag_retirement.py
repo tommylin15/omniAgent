@@ -83,6 +83,8 @@ def plan_tags(service: str, snapshot: dict, revisions: list,
         raise Blocked("approved_new_ghcr_pair_outside_latest_ten")
     tags = _tag_routes(snapshot)
     obsolete = tuple(sorted(tag for tag,rev in tags.items() if rev not in newest))
+    if "preview" in obsolete:
+        raise Blocked("fixed_preview_outside_latest_ten_requires_explicit_repoint")
     # Simulate only the requested tag removal; select_plan validates actual
     # serving allocation, newest Ready/created revision and full retention.
     simulated = deepcopy(snapshot)

@@ -1,5 +1,18 @@
 # omniAgent acceptance matrix
 
+## 2026-10-10 staged code and deferred unified acceptance
+
+Fixed Preview guarded publisher and non-destructive safety tests are
+**STAGED-CODE** only. It is disabled unless repository variable
+`OMNIAGENT_AUTO_PREVIEW_ENABLED=true` is separately set after
+approval. Unit/CI verification, actual fixed-preview publication and
+failure recovery, human fixed-origin OAuth, real provider turn/replay,
+approved GHCR-only production rollback, and Revision retention all
+require the later consolidated run. Prior operator A→B→A evidence is
+limited to the previously checked browser origin; do not generalize it
+to the new fixed Preview. No model entitlement or billable dispatch
+is granted by this code change.
+
 ## 2026-10-09 正式流量已切換；產品驗收仍未完成
 
 依使用者明確授權，GHCR release `1a8e575bb9f6224e698765d268c6e823e94ba55a` 已固定為三服務 100% 正式流量：Chat `00039-rik`、Gateway `00030-coy`、Shared `00019-puf`，live readback 均 Ready=True。正式 Chat health/ready/UI 資產 200，匿名 API 401。Gateway 一個指向 DESTROYED Secret 的失效歷史標籤已移除以完成路由更新；未刪 revision、Secret 或資料。

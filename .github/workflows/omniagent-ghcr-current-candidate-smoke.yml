@@ -9,7 +9,7 @@ permissions:
   contents: read
   id-token: write
 concurrency:
-  group: omniagent-ghcr-current-candidate-smoke
+  group: omniagent-ghcr-cloudrun-release
   cancel-in-progress: false
 jobs:
   smoke:
@@ -35,6 +35,10 @@ jobs:
           actual="$(git ls-remote https://github.com/tommylin15/omniAgent.git refs/heads/main | cut -f1)"
           [[ "$actual" == "$RELEASE_SHA" ]] || { echo "candidate_sha=STALE_BLOCKED"; exit 1; }
           echo "current_candidate_source=PASS"
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
       - uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
@@ -176,3 +180,31 @@ jobs:
           echo "formal_traffic_preserved=PASS"
           echo "human_oauth_and_live_chat_gateway_provider_acceptance=OPEN"
           echo "promotion_and_rollback=NOT_AUTHORIZED_BY_THIS_READ_ONLY_WORKFLOW"
+# No Preview mutation until the separate final acceptance enables it.
+      - name: Preview publication staged and disabled
+        if: ${{ vars.OMNIAGENT_AUTO_PREVIEW_ENABLED != 'true' }}
+        shell: bash
+        run: |
+          echo 'fixed_preview=STAGED_DISABLED' >> "$GITHUB_STEP_SUMMARY"
+      - name: Publish guarded fixed preview (explicitly enabled only)
+        if: ${{ vars.OMNIAGENT_AUTO_PREVIEW_ENABLED == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          IFS=$'\t' read -r url audience revision serving digest < "$RUNNER_TEMP/omniagent-chat.tsv"
+          python3 scripts/cloudrun_preview_route.py \
+            --release-sha "$RELEASE_SHA" \
+            --target-revision "$revision" \
+            --serving-revision "$serving" \
+            --image-digest "$digest" \
+            --report-file "$RUNNER_TEMP/preview-receipt.json" \
+            --apply
+      - name: Preserve preview publication or restoration receipt
+        if: ${{ always() && vars.OMNIAGENT_AUTO_PREVIEW_ENABLED == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: guarded-preview-${{ github.event.workflow_run.head_sha }}
+          path: ${{ runner.temp }}/preview-receipt.json
+          if-no-files-found: warn
+          retention-days: 90
+
