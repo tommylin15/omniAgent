@@ -42,9 +42,9 @@ jobs:
           from scripts.cloudrun_revision_retention import Blocked,_date,select_plan
           root=Path(sys.argv[1])
           target={
-            "omniagent-chat":("omniagent-chat-00037-duj","omniagent-chat-00036-pev"),
-            "omniagent-agent-gateway":("omniagent-agent-gateway-00028-rof","omniagent-agent-gateway-00027-suw"),
-            "omniagent-shared-codex":("omniagent-shared-codex-00017-lob","omniagent-shared-codex-00016-jaz"),
+            "omniagent-chat":("omniagent-chat-00038-yog","omniagent-chat-00037-duj"),
+            "omniagent-agent-gateway":("omniagent-agent-gateway-00029-ter","omniagent-agent-gateway-00028-rof"),
+            "omniagent-shared-codex":("omniagent-shared-codex-00018-poq","omniagent-shared-codex-00017-lob"),
           }
           rows=[]
           for svc,(new,old) in target.items():

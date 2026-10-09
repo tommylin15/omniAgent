@@ -2,6 +2,33 @@
 
 ## Current delivery scope — NEW GitHub Actions → GHCR → Cloud Run only (2026-10-09)
 
+**2026-10-09 current Chat→Gateway signed integration status — LOCAL PASS; LIVE CODEX BLOCKED:**
+The non-billable local HTTP integration test (commit
+`f9a4a7b5d4d226d47af6aa526d49d10737b44406`) exercises
+Chat's real signature generator against Gateway's real HTTP
+`signedBody` middleware, then a synthetic provider fixture,
+owner-scoped event persistence calls, and invalid-HMAC rejection.
+[Full CI/GHCR #37924500076](https://github.com/tommylin15/omniAgent/actions/runs/37924500076)
+PASS; [Cloud Run 0% deploy #37924894616](https://github.com/tommylin15/omniAgent/actions/runs/37924894616)
+PASS; [current signed smoke #37925039627](https://github.com/tommylin15/omniAgent/actions/runs/37925039627)
+PASS. Candidate Revisions: Chat `00038-yog`, Gateway `00029-ter`,
+Shared `00018-poq`. Prior approved GHCR fallback Chat `00037-duj`,
+Gateway `00028-rof`, Shared `00017-lob`. No formal traffic moved.
+
+[Newest actual GCP configuration inspection #37925330111](https://github.com/tommylin15/omniAgent/actions/runs/37925330111)
+PASS read-only, but application gate remains **OPEN**:
+Chat dispatch DISABLED, **zero** approved owner IDs, Chat Gateway
+URL/Audience mismatched or missing, Gateway Bundle configured but
+`CODEX_OWNER_SECRETS` not explicitly supplied via Cloud Run env.
+Gateway `loadAgentBundle` currently maps provider keys/HMAC but
+**not** `CODEX_OWNER_SECRETS`, so owner-bound Codex credentials cannot
+be inferred from the bundle. Positive live HMAC, actual owner-specific
+Codex auth, real provider inference → PostgreSQL SSE replay all
+**NOT VERIFIED**. User's A→B→A Google account isolation remains
+**OPERATOR-REPORTED MANUAL PASS**. No synthetic Owner entitlements,
+Secret payload reads, DB writes, paid Provider calls or production
+traffic changes were performed in the read-only inspection.
+
 **2026-10-09 two-account Google browser OAuth — OPERATOR-REPORTED PASS:**
 User completed the 0%-traffic GHCR Chat candidate A → B → A browser
 sequence and expressly confirmed **both** essential isolation assertions:

@@ -2,6 +2,31 @@
 
 ## Replacement CI/CD — GitHub Actions / public GHCR / Cloud Run (OPEN)
 
+**2026-10-09 most recent Chat→Gateway local-vs-live acceptance:**
+- **PASS — local signed HTTP with synthetic no-cost Provider:** commit
+  `f9a4a7b5d4d226d47af6aa526d49d10737b44406` verifies signed
+  Chat invoker → real Gateway HTTP handler → fixture output →
+  ChatDispatcher owner-bound event persistence calls. Invalid HMAC
+  rejected before Provider execution. [CI/GHCR #37924500076](https://github.com/tommylin15/omniAgent/actions/runs/37924500076).
+- **PASS — latest immutable GHCR 0% candidates and IAM smoke:**
+  [deployment #37924894616](https://github.com/tommylin15/omniAgent/actions/runs/37924894616),
+  [smoke #37925039627](https://github.com/tommylin15/omniAgent/actions/runs/37925039627).
+  New Revisions Chat `00038-yog`, Gateway `00029-ter`,
+  Shared `00018-poq`. No formal serving traffic change.
+- **PASS READ-ONLY CONFIG / LIVE INTEGRATION BLOCKED:**
+  [re-run #37925330111](https://github.com/tommylin15/omniAgent/actions/runs/37925330111)
+  proved Chat dispatch disabled, approved Owner count **0**,
+  no matching Gateway URL/Audience, and no direct Gateway
+  `CODEX_OWNER_SECRETS` entry. Gateway's bundle reference exists,
+  but the code does not import owner-specific Codex auth from it.
+  Secret payloads not inspected. Failed first workflow attempt
+  #37925220817 was fixed by `eea5af5b`; do not count it as PASS.
+- **OPERATOR-REPORTED MANUAL PASS** — two-account A→B→A browser UI
+  login and data isolation (previously completed).
+- **NOT VERIFIED** — live positive signed Chat call, approved-owner
+  Codex model request, durable DB model output and UI SSE replay,
+  100% production traffic promotion and GHCR-only rollback drill.
+
 **2026-10-09 browser A → B → A — OPERATOR-REPORTED MANUAL PASS:**
 The user finished the Google OAuth account-switch acceptance at the
 public 0%-traffic GHCR Chat candidate and confirmed that **B could

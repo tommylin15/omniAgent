@@ -2,6 +2,36 @@
 
 **Current status: SOURCE / TEST INTEGRATION; LIVE AUTHENTICATED PROVIDER ACCEPTANCE OPEN.**
 
+### 2026-10-09 signed boundary: verified local, live owner prerequisites missing
+
+`f9a4a7b5d4d226d47af6aa526d49d10737b44406` introduced
+a real local Gateway HTTP signature roundtrip with an injected
+nonbillable Provider fixture and owner-scoped persisted event calls.
+[Full CI/GHCR #37924500076](https://github.com/tommylin15/omniAgent/actions/runs/37924500076)
+PASS; [new 0% GHCR candidates #37924894616](https://github.com/tommylin15/omniAgent/actions/runs/37924894616)
+and [auto signed smoke #37925039627](https://github.com/tommylin15/omniAgent/actions/runs/37925039627)
+PASS. Current candidates Chat `00038-yog`, Gateway
+`00029-ter`, Shared `00018-poq`. These tests do **not**
+prove a real signed provider turn from deployed Chat.
+
+[Actual GCP metadata re-run #37925330111](https://github.com/tommylin15/omniAgent/actions/runs/37925330111)
+is read-only PASS, while Chat dispatch is disabled, zero owners
+approved, Chat Gateway URL/Audience not configured for latest
+Gateway candidate, and Gateway lacks directly configured
+`CODEX_OWNER_SECRETS`. The Gateway bundle ref is present, but
+`loadAgentBundle()` imports only the provider API keys and HMAC,
+**not** owner-scoped Codex secret locators. Do not infer those
+per-owner credentials or valid HMAC payload from a configured
+bundle reference. No Secret payload was read.
+
+Before real Codex end-to-end acceptance, approve the actual logged-in
+owner's entitlement and an explicit bounded provider test, configure
+only that owner's established Codex Secret resource and Gateway
+routing/identity consistently, perform one signed Chat → Gateway
+turn, and verify events persisted and replayed only within the
+approved owner's PostgreSQL scope. Formal GHCR promotion and
+rollback remain later, separately gated work.
+
 ### Browser OAuth and account isolation — operator-confirmed PASS
 
 **2026-10-09:** Operator performed the A → B → A sign-in sequence on
