@@ -7,6 +7,34 @@ gates. Some source/build/candidate sub-gates now have observed PASS, while
 **Shared real inference, human/browser/dispatcher, promotion/rollback and
 CI/CD asset retirement remain OPEN**. Legacy Cloud Build V2 is historical.
 
+**2026-10-09 Gate #1 — FULLY AUTOMATIC replacement path: PASS**
+for immutable source SHA `c7f32b23d4ac4b60d43b3108e69e5b4019e31321`.
+[CI/full quality + 3 GHCR #37894051418](https://github.com/tommylin15/omniAgent/actions/runs/37894051418)
+**SUCCESS** triggered
+[3 Cloud Run zero-traffic candidate revisions #37894312427](https://github.com/tommylin15/omniAgent/actions/runs/37894312427)
+**SUCCESS** triggered
+[read-only signed live Smoke #37894440766](https://github.com/tommylin15/omniAgent/actions/runs/37894440766)
+**SUCCESS**.
+Verified Chat `omniagent-chat-00034-vul`,
+Gateway `omniagent-agent-gateway-00025-jom`,
+Shared `omniagent-shared-codex-00014-lij`, each Ready,
+digest-pinned 0% candidate, formal serving route preserved 100% on
+the original service revision. Chat /health, /ready and Flutter web HTTP 200;
+unauthorized API/dispatch HTTP 401; anonymous Gateway/Shared HTTP 403;
+signed authorized Gateway health and Shared health/readiness HTTP 200.
+Gateway `gcloud run deploy` CLI reported a nonzero code referencing
+previous FAILED tagged revision `omniagent-agent-gateway-00021-boq`
+with destroyed Secret version `2`; newer Gateway candidate
+`00025-jom` was proven Ready, correct image/tag, secure single
+`omniagent-bundle:latest` reference and 0% formal traffic via
+independent Cloud Run readback. The workflow retains CLI exit evidence
+and fails closed unless a new matching Ready/immutable zero-traffic
+revision is verified. Old failed tag remains an explicit diagnostic
+anomaly, not a reason to mutate formal traffic or delete historic versions.
+**Application E2E / browser owner separation / real Shared inference,
+production traffic cutover and rollback rehearsal, and last-10 revision
+retention remain OPEN — not implied by this PASS.**
+
 **2026-10-09 current-path auto-trigger gate** (source
 `7937447dd85ef78dbabfe0ca7fd05a703dd99e3c`):
 - **PASS — push → exact-source full quality → three GHCR image publishes:**
