@@ -2,7 +2,33 @@
 
 ## Current delivery scope — NEW GitHub Actions → GHCR → Cloud Run only (2026-10-09)
 
-**2026-10-09 automatic chain latest accepted checkpoint — PASS (gate #1):**
+**2026-10-09 owner-approved NEW-only rollback — release preparation PARTIAL:**
+The historical Cloud Build / Artifact Registry rollback path is explicitly
+**not** a prerequisite. Current all-GHCR primary
+`c6020ed87fcf4b696f5816e23a34ba7b18350ebb` passed
+[CI/GHCR #37896498492](https://github.com/tommylin15/omniAgent/actions/runs/37896498492)
+→ [3 real 0%-traffic candidates #37896743989](https://github.com/tommylin15/omniAgent/actions/runs/37896743989)
+→ [automatic signed Smoke #37896904915](https://github.com/tommylin15/omniAgent/actions/runs/37896904915).
+Proposed GHCR-only rollback `c7f32b23d4ac4b60d43b3108e69e5b4019e31321` and new primary
+passed the [read-only two-release fallback test #37897007278](https://github.com/tommylin15/omniAgent/actions/runs/37897007278):
+6/6 Ready, immutable digests, matching tags and ENABLED Secret references,
+formal traffic unmodified. Chat `00035-ker` ↔ `00034-vul`,
+Gateway `00026-xum` ↔ `00025-jom`,
+Shared `00015-gew` ↔ `00014-lij`.
+Earlier GHCR fallback `e3475d3...` **BLOCKED** by
+[preflight #37896367974](https://github.com/tommylin15/omniAgent/actions/runs/37896367974)
+because its Gateway Secret version `2` is DESTROYED.
+Current primary Shared three-caller **real Codex** inference PASS:
+[#37897135903](https://github.com/tommylin15/omniAgent/actions/runs/37897135903),
+including isolated threads and cross-project denial. The earlier fallback
+Shared also passed real inference:
+[#37896120562](https://github.com/tommylin15/omniAgent/actions/runs/37896120562).
+**GHCR-only rollback TARGET READINESS PASS; real traffic rollback rehearsal,
+human two-owner browser OAuth, Chat↔Gateway end-to-end provider dispatch,
+formal traffic promotion and retention NOT VERIFIED.** No formal cutover,
+actual traffic rollback or Revision deletion was performed.
+
+**2026-10-09 earlier automatic chain accepted checkpoint — PASS (gate #1):**
 source commit `c7f32b23d4ac4b60d43b3108e69e5b4019e31321`;
 [full quality and three public GHCR digests #37894051418](https://github.com/tommylin15/omniAgent/actions/runs/37894051418)
 SUCCESS → automatically triggered
@@ -105,14 +131,17 @@ as a newly audited PASS. Preserve non-omniAgent data and backup safety.
   replay and cancel/approval/reconnection/recovery evidence. Mocked and
   PostgreSQL acceptance tests alone cannot satisfy this item. The current
   Chat dispatcher is deliberately opt-in and remains disabled in candidates.
-- [ ] **Mandatory Shared acceptance**: fresh real Codex provider invocation
-  for each of the three approved caller identities, with wrong-project denial
-  on the **current** Shared candidate SHA. Historical candidate results
-  do not prove this release.
+- [x] **Mandatory Shared current-candidate real inference (scope PASS):**
+  all three approved caller identities returned real provider outputs with
+  new threads and cross-project denials on GHCR
+  `c6020ed87fcf4b696f5816e23a34ba7b18350ebb`, run
+  [#37897135903](https://github.com/tommylin15/omniAgent/actions/runs/37897135903).
+  This does **not** establish browser OAuth or full Chat↔Gateway integration.
 - [ ] **Release gate**: only after both live integration items pass, perform
-  bounded 3-service production traffic promotion with readback, actual
-  rollback rehearsal and recovery, then separately invoke revision retention
-  for the *approved new delivery path*. Do not let source tests or 0%
+  bounded 3-service production traffic promotion with readback, an actual
+  rollback rehearsal **between two validated GHCR release sets only**, and
+  recovery, then separately invoke revision retention for the *approved
+  new delivery path*. No older Cloud Build/AR rollback dependency. Do not let source tests or 0%
   candidates authorize production promotion.
 
 
