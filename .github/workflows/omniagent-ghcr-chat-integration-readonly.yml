@@ -85,7 +85,7 @@ jobs:
               if name in gateway_env:
                   raise SystemExit("BLOCKED: duplicate Gateway environment variable")
               gateway_env[name]=entry
-          def configured(entry):
+          def gateway_has_config(entry):
               return bool(entry and (entry.get("valueFrom") or entry.get("value")))
           container=(candidate.get("spec") or {}).get("containers") or []
           if len(container)!=1:
@@ -123,8 +123,8 @@ jobs:
           result={
               "current_candidate_routing":"PASS",
               "gateway_revision_ready":"PASS",
-              "gateway_provider_bundle_config":"PRESENT" if configured(gateway_env.get("OMNIAGENT_PROVIDER_BUNDLE")) else "MISSING",
-              "gateway_codex_owner_credential_map":"DIRECT_ENV_PRESENT" if configured(gateway_env.get("CODEX_OWNER_SECRETS")) else "MISSING_IN_RUNTIME_ENV",
+              "gateway_provider_bundle_config":"PRESENT" if gateway_has_config(gateway_env.get("OMNIAGENT_PROVIDER_BUNDLE")) else "MISSING",
+              "gateway_codex_owner_credential_map":"DIRECT_ENV_PRESENT" if gateway_has_config(gateway_env.get("CODEX_OWNER_SECRETS")) else "MISSING_IN_RUNTIME_ENV",
               "gateway_hmac_signing_key_payload":"NOT_READ__MATCH_NOT_VERIFIED",
               "chat_revision_ready":"PASS",
               "browser_oauth_client_config":"PRESENT" if oauth_present else "MISSING",
