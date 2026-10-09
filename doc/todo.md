@@ -1,5 +1,48 @@
 # omniAgent TODO
 
+## Current delivery scope — NEW GitHub Actions → GHCR → Cloud Run only (2026-10-09)
+
+The operator explicitly excludes investigation/cleanup of legacy CI/CD
+Cloud Run revisions, historical Docker images, Cloud Build and GCS assets
+from the active completion path. Manual asset cleanup was reported by the
+operator; do not turn it into a prerequisite or treat unverified cleanup
+as a newly audited PASS. Preserve non-omniAgent data and backup safety.
+
+- [x] Latest source-quality and three immutable public GHCR image publications
+  for code SHA `e3475d3aade0fd8061d832d2dd4a0af45a8892ac`:
+  [GHCR Actions #37867383817](https://github.com/tommylin15/omniAgent/actions/runs/37867383817).
+  Flutter auth-account switch State isolation with widget regression test:
+  [Flutter #37867383811](https://github.com/tommylin15/omniAgent/actions/runs/37867383811).
+- [x] Latest 0%-traffic candidates: Chat `omniagent-chat-00029-nux`,
+  Gateway `omniagent-agent-gateway-00020-nef`, Shared
+  `omniagent-shared-codex-00013-kop`:
+  [candidate #37867853618](https://github.com/tommylin15/omniAgent/actions/runs/37867853618).
+- [x] Automated `workflow_run` read-only candidate acceptance:
+  `.github/workflows/omniagent-ghcr-current-candidate-smoke.yml`
+  derives the release SHA and checks three zero-percent readiness/digests,
+  anonymous Chat web/ready/API authorization, IAM scoped Gateway/Shared
+  health/readiness and traffic preservation.
+  [Live automatic smoke #37868153663](https://github.com/tommylin15/omniAgent/actions/runs/37868153663)
+  **PASS** against those candidates. The initial workflow bootstrap required
+  a source-SHA fallback; subsequent exact-current-main candidate completion
+  events use their own `workflow_run.head_sha`.
+- [ ] **Mandatory live integration**: two *real* browser Google OAuth accounts,
+  persistent owner separation and account-switch UI; approved owner/provider
+  entitlement, real Chat→Gateway signed dispatch, persisted provider event
+  replay and cancel/approval/reconnection/recovery evidence. Mocked and
+  PostgreSQL acceptance tests alone cannot satisfy this item. The current
+  Chat dispatcher is deliberately opt-in and remains disabled in candidates.
+- [ ] **Mandatory Shared acceptance**: fresh real Codex provider invocation
+  for each of the three approved caller identities, with wrong-project denial
+  on the **current** Shared candidate SHA. Historical candidate results
+  do not prove this release.
+- [ ] **Release gate**: only after both live integration items pass, perform
+  bounded 3-service production traffic promotion with readback, actual
+  rollback rehearsal and recovery, then separately invoke revision retention
+  for the *approved new delivery path*. Do not let source tests or 0%
+  candidates authorize production promotion.
+
+
 ## Actions + GHCR + Cloud Run migration — TARGET / OPEN (2026-10-08)
 
 ### Live retirement inventory checkpoint — PARTIAL (2026-10-09)
