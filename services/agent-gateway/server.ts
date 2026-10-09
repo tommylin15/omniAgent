@@ -698,7 +698,8 @@ async function signedBody(request: IncomingMessage): Promise<Json> {
   return JSON.parse(body.toString("utf8")) as Json;
 }
 
-export function makeServer(mcp = new McpHost(), sessions = new OwnerSessionRegistry(), turns = new CodexTurnRegistry()) {
+export function makeServer(mcp = new McpHost(), sessions = new OwnerSessionRegistry(),
+  turns = new CodexTurnRegistry(), dispatch = dispatchAssistant) {
   let running = false;
   return createServer(async (request: IncomingMessage, response: ServerResponse) => {
     const url = new URL(request.url || "/", "http://localhost");
@@ -827,7 +828,7 @@ export function makeServer(mcp = new McpHost(), sessions = new OwnerSessionRegis
         const continuation = body.continuation && typeof body.continuation === "object" && !Array.isArray(body.continuation) ? body.continuation as Record<string, Json> : {};
         send(response, 200, runtime === "codex"
           ? await dispatchCodexTurn(body.ownerId, body.threadId, body.model, body.messages as Array<{ role?: string; content?: string }>, continuation)
-          : await dispatchAssistant({ ownerId: body.ownerId, threadId: body.threadId,
+          : await dispatch({ ownerId: body.ownerId, threadId: body.threadId,
             turnId: body.turnId, runtime, model: body.model, messages: body.messages as never[], grounding: body.grounding === true, continuation }));
       } catch (error) {
         send(response, 400, { error: error instanceof Error ? error.message : "assistant_turn_failed" });

@@ -1,4 +1,6 @@
 import { createHmac } from "node:crypto";
+import type { AddressInfo } from "node:net";
+import { makeServer, type Json } from "../services/agent-gateway/server.js";
 import { describe, expect, it, vi } from "vitest";
 import { ChatDispatcher, makeSignedGatewayInvoker } from "../services/chat-api/gateway_dispatch.js";
 import type { DispatchClaim } from "../services/chat-api/storage.js";
@@ -138,5 +140,75 @@ describe("Gateway private HTTP authentication", () => {
     expect(()=>makeSignedGatewayInvoker({...base,url:"https://gateway.example.com/?x=1"})).toThrow("unsafe");
     expect(()=>makeSignedGatewayInvoker({...base,url:"https://gateway.example.com",
       signingKey:"short"})).toThrow("unsafe");
+  });
+});
+
+describe("real Gateway HTTP signed handoff with nonbillable provider fixture", () => {
+  it("verifies HMAC on real Gateway handler and persists only durable claim events", async () => {
+    const previous = process.env.MCP_OWNER_SIGNING_KEY;
+    const signingKey="0123456789abcdef0123456789abcdef";
+    process.env.MCP_OWNER_SIGNING_KEY=signingKey;
+    const provider=vi.fn(async (request: {ownerId:string;threadId:string;turnId:string}) =>
+      ({ events:[
+        { ownerId:request.ownerId,threadId:request.threadId,turnId:request.turnId,
+          type:"text_delta",payload:{text:"nonbillable fixture response"} },
+        { ownerId:request.ownerId,threadId:request.threadId,turnId:request.turnId,
+          type:"turn_completed",payload:{status:"complete"} }
+      ] }) as unknown as Json);
+    const gateway=makeServer(undefined,undefined,undefined,provider);
+    try {
+      await new Promise<void>(resolve=>gateway.listen(0,"127.0.0.1",resolve));
+      const local="http://127.0.0.1:"+(gateway.address() as AddressInfo).port;
+      const fetcher: typeof fetch=(target,opts)=>{
+        expect(new URL(String(target)).hostname).toBe("gateway-candidate.example.com");
+        return fetch(local+new URL(String(target)).pathname,opts);
+      };
+      const invoker=makeSignedGatewayInvoker({
+        url:"https://gateway-candidate.example.com",
+        audience:"https://gateway-service.example.com", signingKey,
+        idToken:async()=>"synthetic-local-only",fetcher
+      });
+      const db=store();
+      const worker=new ChatDispatcher(db,invoker,["owner-a"]);
+      expect(await worker.runOnce()).toEqual({status:"completed",turnId:"turn-a"});
+      expect(provider).toHaveBeenCalledTimes(1);
+      expect(provider.mock.calls[0][0]).toMatchObject({ownerId:"owner-a",
+        threadId:"thread-a",turnId:"turn-a",runtime:"gemini",model:"gemini-2.5-flash",
+        messages:[{role:"user",content:"hello"}]});
+      expect(db.appendEvent).toHaveBeenNthCalledWith(1,"owner-a","thread-a","turn-a",
+        "gateway-turn-a-0","text_delta",{text:"nonbillable fixture response"});
+      expect(db.appendEvent).toHaveBeenNthCalledWith(2,"owner-a","thread-a","turn-a",
+        "gateway-turn-a-1","turn_completed",{status:"complete"});
+      expect(await worker.runOnce()).toEqual({status:"idle"});
+      expect(provider).toHaveBeenCalledTimes(1);
+    } finally {
+      await new Promise<void>(resolve=>gateway.close(()=>resolve()));
+      if(previous===undefined) delete process.env.MCP_OWNER_SIGNING_KEY;
+      else process.env.MCP_OWNER_SIGNING_KEY=previous;
+    }
+  });
+
+  it("rejects a forged signature before any provider invocation", async () => {
+    const previous=process.env.MCP_OWNER_SIGNING_KEY;
+    process.env.MCP_OWNER_SIGNING_KEY="0123456789abcdef0123456789abcdef";
+    const provider=vi.fn(async ()=>({events:[]} as Json));
+    const gateway=makeServer(undefined,undefined,undefined,provider);
+    try {
+      await new Promise<void>(resolve=>gateway.listen(0,"127.0.0.1",resolve));
+      const local="http://127.0.0.1:"+(gateway.address() as AddressInfo).port;
+      const result=await fetch(local+"/internal/v1/assistant/turn",{
+        method:"POST",headers:{"Content-Type":"application/json",
+          "X-OmniAgent-Timestamp":String(Date.now()),
+          "X-OmniAgent-Signature":"v1="+"0".repeat(64)},
+        body:JSON.stringify({runtime:"gemini",ownerId:"owner-b",threadId:"thread-b",
+          turnId:"turn-b",model:"fixture",messages:[]})
+      });
+      expect(result.status).toBe(400);
+      expect(provider).not.toHaveBeenCalled();
+    } finally {
+      await new Promise<void>(resolve=>gateway.close(()=>resolve()));
+      if(previous===undefined) delete process.env.MCP_OWNER_SIGNING_KEY;
+      else process.env.MCP_OWNER_SIGNING_KEY=previous;
+    }
   });
 });
