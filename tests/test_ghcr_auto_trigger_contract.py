@@ -36,6 +36,17 @@ class GhcrAutomaticTriggerContractTest(unittest.TestCase):
         self.assertIn("--no-traffic", source)
         self.assertIn("traffic_preserved=PASS", source)
 
+    def test_secret_preflight_blocks_all_candidate_mutations_when_unverified(self):
+        source = workflow("omniagent-ghcr-cloudrun-candidate.yml")
+        preflight = source.index("name: Fail closed on disabled or unreadable Secret versions")
+        deploy = source.index("name: Deploy immutable public GHCR candidates with NO traffic")
+        self.assertLess(preflight, deploy)
+        self.assertIn('candidate_secret_version_preflight=BLOCKED', source)
+        self.assertIn('gcloud","secrets","versions","describe"', source)
+        self.assertIn('if state!="ENABLED":', source)
+        self.assertIn("raise SystemExit(1)", source)
+        self.assertNotIn("gcloud secrets versions access", source)
+
     def test_candidate_success_automatically_starts_read_only_smoke(self):
         source = workflow("omniagent-ghcr-current-candidate-smoke.yml")
         self.assertRegex(source, r"(?m)^on:\n  workflow_run:")
