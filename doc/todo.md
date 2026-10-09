@@ -2,6 +2,20 @@
 
 ## Current delivery scope — NEW GitHub Actions → GHCR → Cloud Run only (2026-10-09)
 
+**2026-10-09 latest new-GHCR-only live readback (post-candidate):**
+[Current primary/fallback #37925707793](https://github.com/tommylin15/omniAgent/actions/runs/37925707793)
+PASS for new `f9a4a7b5d4d226d47af6aa526d49d10737b44406`
+and previous `f2a5be4425953b26f2340694765362c7bdc943c9`,
+with no legacy rollback or formal traffic mutation.
+[Latest-ten inventory #37925707749](https://github.com/tommylin15/omniAgent/actions/runs/37925707749)
+PASS read-only: Chat 27 (17 excess, 13 tagged outside ten),
+Gateway 23 (13 excess, 11 tagged outside ten),
+Shared 18 (8 excess, 4 tagged outside ten).
+**68 existing, 38 excess and 28 outside-ten tagged Revision
+references**. Cleanup must remain blocked until separately authorized
+promotion/real GHCR rollback and obsolete tag dependency audit;
+**zero Revisions or tags removed** in these workflows.
+
 **2026-10-09 current Chat→Gateway signed integration status — LOCAL PASS; LIVE CODEX BLOCKED:**
 The non-billable local HTTP integration test (commit
 `f9a4a7b5d4d226d47af6aa526d49d10737b44406`) exercises
