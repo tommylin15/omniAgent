@@ -5,10 +5,6 @@ on:
   workflow_run:
     workflows: ['omniAgent GHCR Cloud Run zero-traffic candidates']
     types: [completed]
-  push:
-    branches: [main]
-    paths: ['.github/workflows/omniagent-ghcr-current-candidate-smoke.yml']
-  workflow_dispatch:
 permissions:
   contents: read
   id-token: write
@@ -20,16 +16,16 @@ jobs:
     if: >-
       github.repository == 'tommylin15/omniAgent' &&
       github.ref == 'refs/heads/main' &&
-      (github.event_name != 'workflow_run' ||
-       (github.event.workflow_run.conclusion == 'success' &&
-        github.event.workflow_run.head_repository.full_name == 'tommylin15/omniAgent' &&
-        github.event.workflow_run.head_branch == 'main'))
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_repository.full_name == 'tommylin15/omniAgent' &&
+      github.event.workflow_run.head_branch == 'main'
     runs-on: ubuntu-latest
     timeout-minutes: 13
     env:
       P: gen-lang-client-0593591102
       R: us-central1
-      RELEASE_SHA: ${{ github.event.workflow_run.head_sha || 'e3475d3aade0fd8061d832d2dd4a0af45a8892ac' }}
+      RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
     steps:
       - name: Reject stale and unapproved source
         shell: bash
@@ -37,13 +33,7 @@ jobs:
           set -euo pipefail
           [[ "$RELEASE_SHA" =~ ^[a-f0-9]{40}$ ]]
           actual="$(git ls-remote https://github.com/tommylin15/omniAgent.git refs/heads/main | cut -f1)"
-          if [[ "$GITHUB_EVENT_NAME" == "workflow_run" ]]; then
-            [[ "$actual" == "$RELEASE_SHA" ]] || { echo "candidate_sha=STALE_BLOCKED"; exit 1; }
-          else
-            # The workflow-only bootstrap push has a new commit, while the
-            # already-deployed code remains pinned to the tested release SHA.
-            [[ "$actual" == "$GITHUB_SHA" ]] || { echo "candidate_sha=STALE_BLOCKED"; exit 1; }
-          fi
+          [[ "$actual" == "$RELEASE_SHA" ]] || { echo "candidate_sha=STALE_BLOCKED"; exit 1; }
           echo "current_candidate_source=PASS"
       - uses: google-github-actions/auth@v2
         with:
