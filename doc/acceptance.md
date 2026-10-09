@@ -7,6 +7,28 @@ gates. Some source/build/candidate sub-gates now have observed PASS, while
 **Shared real inference, human/browser/dispatcher, promotion/rollback and
 CI/CD asset retirement remain OPEN**. Legacy Cloud Build V2 is historical.
 
+**2026-10-09 current-path auto-trigger gate** (source
+`7937447dd85ef78dbabfe0ca7fd05a703dd99e3c`):
+- **PASS — push → exact-source full quality → three GHCR image publishes:**
+  [run #37876825619](https://github.com/tommylin15/omniAgent/actions/runs/37876825619).
+- **PASS — successful publisher event automatically starts candidate:**
+  [workflow_run #37877047775](https://github.com/tommylin15/omniAgent/actions/runs/37877047775).
+  Three public immutable GHCR digests checked. Chat revision
+  `omniagent-chat-00030-puq` deployed at 0%.
+- **FAIL/BLOCKED — complete three-service candidates:** Gateway deployment
+  rejected Secret Manager `omniagent-bundle` version `2` as `DESTROYED`
+  for existing environment references. Shared never attempted. No formal
+  promotion. An approved live Secret/config recovery is required, not a
+  synthetic or code-only PASS.
+- **PASS — failure-path downstream trigger and safe skip:**
+  [smoke workflow_run #37877114127](https://github.com/tommylin15/omniAgent/actions/runs/37877114127)
+  was automatically created and skipped after candidate failure.
+  **NOT VERIFIED — successful candidate → automatically passing smoke.**
+  Full three-service post-failure traffic readback is also unverified.
+- Result: **trigger topology PASS; successful end-to-end automatic release
+  candidate + smoke BLOCKED.** Formal cutover, rollback and keep-ten
+  revisions remain separate OPEN gates.
+
 **2026-10-08 verified intermediate evidence** ([detail](../docs/cicd-transition-runtime-evidence.md)):
 
 - [x] Exact SHA `3cf40bc7a9223a5ce7efa630dbd837c4ff57a46a` Node/Python/PostgreSQL/Flutter quality and three public GHCR SHA-256 images: [publish #37768680175](https://github.com/tommylin15/omniAgent/actions/runs/37768680175).
