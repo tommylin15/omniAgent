@@ -36,9 +36,12 @@ jobs:
             gcloud run services describe "$svc" --project="$PROJECT" --region="$REGION" \
               --format=json > "$RUNNER_TEMP/$svc-service.json"
           done
-          gcloud run revisions describe omniagent-chat-00035-ker \
+          gcloud run revisions describe omniagent-chat-00038-yog \
             --project="$PROJECT" --region="$REGION" --format=json \
             > "$RUNNER_TEMP/chat-revision.json"
+          gcloud run revisions describe omniagent-agent-gateway-00029-ter \
+            --project="$PROJECT" --region="$REGION" --format=json \
+            > "$RUNNER_TEMP/gateway-revision.json"
           python3 - "$RUNNER_TEMP" <<'PY'
           import json,re,sys
           from pathlib import Path
@@ -47,9 +50,10 @@ jobs:
           chat=json.loads((root/"omniagent-chat-service.json").read_text())
           gateway=json.loads((root/"omniagent-agent-gateway-service.json").read_text())
           candidate=json.loads((root/"chat-revision.json").read_text())
-          release="c6020ed87fcf4b696f5816e23a34ba7b18350ebb"
-          chat_rev="omniagent-chat-00035-ker"
-          gateway_rev="omniagent-agent-gateway-00026-xum"
+          gateway_candidate=json.loads((root/"gateway-revision.json").read_text())
+          release="f9a4a7b5d4d226d47af6aa526d49d10737b44406"
+          chat_rev="omniagent-chat-00038-yog"
+          gateway_rev="omniagent-agent-gateway-00029-ter"
           tag="ghcr-"+release[:12]
           def route(service,revision):
               traffic=(service.get("status") or {}).get("traffic") or []
@@ -67,6 +71,22 @@ jobs:
           cond={c.get("type"):c.get("status") for c in (candidate.get("status") or {}).get("conditions") or []}
           if cond.get("Ready")!="True" or (candidate.get("metadata") or {}).get("name")!=chat_rev:
               raise SystemExit("BLOCKED: current Chat candidate revision not Ready")
+          gateway_conditions={x.get("type"):x.get("status") for x in
+              (gateway_candidate.get("status") or {}).get("conditions") or []}
+          if gateway_conditions.get("Ready")!="True" or (gateway_candidate.get("metadata") or {}).get("name")!=gateway_rev:
+              raise SystemExit("BLOCKED: latest Gateway candidate not Ready")
+          gateway_containers=(gateway_candidate.get("spec") or {}).get("containers") or []
+          if len(gateway_containers)!=1:
+              raise SystemExit("BLOCKED: unexpected Gateway containers")
+          gateway_environment=gateway_containers[0].get("env") or []
+          gateway_env={}
+          for entry in gateway_environment:
+              name=entry.get("name")
+              if name in gateway_env:
+                  raise SystemExit("BLOCKED: duplicate Gateway environment variable")
+              gateway_env[name]=entry
+          def configured(entry):
+              return bool(entry and (entry.get("valueFrom") or entry.get("value")))
           container=(candidate.get("spec") or {}).get("containers") or []
           if len(container)!=1:
               raise SystemExit("BLOCKED: unexpected Chat container count")
@@ -102,6 +122,10 @@ jobs:
               raise SystemExit("BLOCKED: current Chat template not immutable GHCR")
           result={
               "current_candidate_routing":"PASS",
+              "gateway_revision_ready":"PASS",
+              "gateway_provider_bundle_config":"PRESENT" if configured(gateway_env.get("OMNIAGENT_PROVIDER_BUNDLE")) else "MISSING",
+              "gateway_codex_owner_credential_map":"DIRECT_ENV_PRESENT" if configured(gateway_env.get("CODEX_OWNER_SECRETS")) else "MISSING_IN_RUNTIME_ENV",
+              "gateway_hmac_signing_key_payload":"NOT_READ__MATCH_NOT_VERIFIED",
               "chat_revision_ready":"PASS",
               "browser_oauth_client_config":"PRESENT" if oauth_present else "MISSING",
               "chat_internal_service_auth":"CONFIGURED" if internal_identity_present else "MISSING",
@@ -110,8 +134,10 @@ jobs:
               "approved_owner_count":len(owners),
               "gateway_candidate_url_matches":setting("CHAT_GATEWAY_URL").rstrip("/")==gateway_url.rstrip("/"),
               "gateway_audience_matches":setting("CHAT_GATEWAY_AUDIENCE").rstrip("/")==gateway_audience.rstrip("/"),
-              "real_human_browser_owners":"NOT_VERIFIED",
+              "real_human_browser_owners":"OPERATOR_REPORTED_PASS__NOT_TESTED_BY_THIS_WORKFLOW",
               "real_chat_gateway_provider_dispatch":"NOT_VERIFIED",
+              "positive_live_chat_gateway_hmac":"NOT_VERIFIED",
+              "codex_owner_entitlement":"NOT_VERIFIED",
               "postgreSQL_writes":"NONE",
               "secret_payload_access":"NONE",
               "formal_traffic_mutated":"NO",
@@ -122,6 +148,7 @@ jobs:
               for key,value in result.items():
                   f.write("- "+key+": "+str(value)+"\n")
           print("read_only_chat_integration_inventory=PASS")
+          print("no_provider_dispatch_or_owner_record_mutations=PASS")
           if not dispatcher_enabled or not configured:
               print("chat_provider_dispatch_live_gate=OPEN_CONFIGURATION_DISABLED")
           else:
