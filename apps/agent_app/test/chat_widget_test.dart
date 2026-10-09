@@ -169,10 +169,10 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('建立對話'));
     await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextField).last, 'private Alice message');
+    await tester.enterText(find.byType(TextField).last, 'hello');
     await tester.testTextInput.receiveAction(TextInputAction.done);
     await tester.pumpAndSettle();
-    expect(find.text('private Alice message'), findsOneWidget);
+    expect(find.text('hello'), findsOneWidget);
 
     // The app's account-session boundary changes the ChatPage key.
     // Flutter must dispose Alice's State, including her event cursor.
@@ -180,7 +180,7 @@ void main() {
       home: ChatPage(bob, key: ObjectKey(bob)),
     ));
     await tester.pumpAndSettle();
-    expect(find.text('private Alice message'), findsNothing);
+    expect(find.text('hello'), findsNothing);
     expect(find.text('今天想一起完成什麼？'), findsOneWidget);
     expect(bob.writes, isEmpty);
     await tester.tap(find.text('建立對話'));
