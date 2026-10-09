@@ -1,0 +1,129 @@
+# Read-only configuration evidence for the current GHCR Chat/Gateway candidates.
+# Does not issue OAuth identities, access Secret payloads, mutate PostgreSQL,
+# call model providers, change routing or enable the dispatcher.
+name: omniAgent GHCR Chat integration read-only preflight
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/omniagent-ghcr-chat-integration-readonly.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  inspect:
+    if: github.repository == 'tommylin15/omniAgent' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PROJECT: gen-lang-client-0593591102
+      REGION: us-central1
+    steps:
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+          service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Inspect current candidate only without exposing env values
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          for svc in omniagent-chat omniagent-agent-gateway; do
+            gcloud run services describe "$svc" --project="$PROJECT" --region="$REGION" \
+              --format=json > "$RUNNER_TEMP/$svc-service.json"
+          done
+          gcloud run revisions describe omniagent-chat-00035-ker \
+            --project="$PROJECT" --region="$REGION" --format=json \
+            > "$RUNNER_TEMP/chat-revision.json"
+          python3 - "$RUNNER_TEMP" <<'PY'
+          import json,re,sys
+          from pathlib import Path
+
+          root=Path(sys.argv[1])
+          chat=json.loads((root/"omniagent-chat-service.json").read_text())
+          gateway=json.loads((root/"omniagent-agent-gateway-service.json").read_text())
+          candidate=json.loads((root/"chat-revision.json").read_text())
+          release="c6020ed87fcf4b696f5816e23a34ba7b18350ebb"
+          chat_rev="omniagent-chat-00035-ker"
+          gateway_rev="omniagent-agent-gateway-00026-xum"
+          tag="ghcr-"+release[:12]
+          def route(service,revision):
+              traffic=(service.get("status") or {}).get("traffic") or []
+              active=[r for r in traffic if r.get("percent",0)>0]
+              tags=[r for r in traffic if r.get("revisionName")==revision and
+                    r.get("tag")==tag and r.get("percent",0)==0]
+              if len(active)!=1 or active[0].get("percent")!=100 or len(tags)!=1:
+                  raise SystemExit("BLOCKED: formal routing or current candidate tag changed")
+              return tags[0].get("url",""),(service.get("status") or {}).get("url","")
+          chat_url,chat_audience=route(chat,chat_rev)
+          gateway_url,gateway_audience=route(gateway,gateway_rev)
+          if not all(isinstance(x,str) and x.startswith("https://")
+                for x in (chat_url,chat_audience,gateway_url,gateway_audience)):
+              raise SystemExit("BLOCKED: current candidate service URLs unavailable")
+          cond={c.get("type"):c.get("status") for c in (candidate.get("status") or {}).get("conditions") or []}
+          if cond.get("Ready")!="True" or (candidate.get("metadata") or {}).get("name")!=chat_rev:
+              raise SystemExit("BLOCKED: current Chat candidate revision not Ready")
+          container=(candidate.get("spec") or {}).get("containers") or []
+          if len(container)!=1:
+              raise SystemExit("BLOCKED: unexpected Chat container count")
+          env={}
+          for row in container[0].get("env") or []:
+              key=row.get("name")
+              if key in env:
+                  raise SystemExit("BLOCKED: duplicate Chat configuration")
+              env[key]=row
+          def setting(key):
+              entry=env.get(key) or {}
+              value=entry.get("value")
+              return value if isinstance(value,str) else ""
+          def supplied(key):
+              item=env.get(key)
+              return bool(item and (setting(key) or item.get("valueFrom")))
+          allowed=setting("CHAT_DISPATCH_APPROVED_OWNER_IDS")
+          owners=[x.strip() for x in allowed.split(",") if x.strip()]
+          uuid=r"[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}"
+          owners_ok=bool(owners) and all(re.fullmatch(uuid,x) for x in owners)
+          dispatcher_enabled=setting("CHAT_DISPATCH_ENABLED")=="true"
+          configured=(
+              supplied("OMNIAGENT_BUNDLE") and
+              owners_ok and
+              setting("CHAT_GATEWAY_URL").rstrip("/")==gateway_url.rstrip("/") and
+              setting("CHAT_GATEWAY_AUDIENCE").rstrip("/")==gateway_audience.rstrip("/")
+          )
+          oauth_present=supplied("OMNIAGENT_GOOGLE_CLIENT_ID")
+          internal_identity_present=(supplied("CHAT_INTERNAL_AUDIENCE") and
+              supplied("CHAT_INTERNAL_ALLOWED_EMAILS"))
+          image=(chat.get("spec") or {}).get("template",{}).get("spec",{}).get("containers",[{}])[0].get("image","")
+          if not str(image).startswith("ghcr.io/tommylin15/omniagent-chat@sha256:"):
+              raise SystemExit("BLOCKED: current Chat template not immutable GHCR")
+          result={
+              "current_candidate_routing":"PASS",
+              "chat_revision_ready":"PASS",
+              "browser_oauth_client_config":"PRESENT" if oauth_present else "MISSING",
+              "chat_internal_service_auth":"CONFIGURED" if internal_identity_present else "MISSING",
+              "dispatch_feature":"ENABLED" if dispatcher_enabled else "DISABLED",
+              "dispatch_required_config":"PASS" if configured else "NOT_CONFIGURED",
+              "approved_owner_count":len(owners),
+              "gateway_candidate_url_matches":setting("CHAT_GATEWAY_URL").rstrip("/")==gateway_url.rstrip("/"),
+              "gateway_audience_matches":setting("CHAT_GATEWAY_AUDIENCE").rstrip("/")==gateway_audience.rstrip("/"),
+              "real_human_browser_owners":"NOT_VERIFIED",
+              "real_chat_gateway_provider_dispatch":"NOT_VERIFIED",
+              "postgreSQL_writes":"NONE",
+              "secret_payload_access":"NONE",
+              "formal_traffic_mutated":"NO",
+          }
+          print(json.dumps(result,sort_keys=True))
+          with open(__import__("os").environ["GITHUB_STEP_SUMMARY"],"a") as f:
+              f.write("### Current GHCR Chat integration readiness\n\n")
+              for key,value in result.items():
+                  f.write("- "+key+": "+str(value)+"\n")
+          print("read_only_chat_integration_inventory=PASS")
+          if not dispatcher_enabled or not configured:
+              print("chat_provider_dispatch_live_gate=OPEN_CONFIGURATION_DISABLED")
+          else:
+              print("chat_provider_dispatch_live_gate=NOT_VERIFIED")
+          PY
