@@ -15,9 +15,14 @@ export class ChatDispatcher {
   constructor(private readonly store: Store, private readonly invoke: Invoke,
               private readonly approvedOwners: readonly string[]) {}
 
-  async runOnce(): Promise<DispatchOutcome> {
+  canDispatch(ownerId: string): boolean {
+    return this.approvedOwners.includes(ownerId);
+  }
+
+  async runOnce(target?: { ownerId: string; threadId: string; turnId: string }): Promise<DispatchOutcome> {
     if (!this.approvedOwners.length) throw new Error("dispatch approval not configured");
-    const claim = await this.store.claimNextQueuedTurn(this.approvedOwners);
+    if (target && !this.canDispatch(target.ownerId)) throw new Error("dispatch owner not approved");
+    const claim = await this.store.claimNextQueuedTurn(this.approvedOwners, target);
     if (!claim) return { status: "idle" };
     let events: TurnEvent[];
     try {

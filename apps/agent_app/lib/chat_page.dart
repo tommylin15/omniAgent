@@ -92,6 +92,33 @@ class _ChatPageState extends State<ChatPage> {
     }
   }
 
+  Future<void> deleteThread(Map<String, dynamic> value) async {
+    if (busy) return;
+    final confirmed = await showDialog<bool>(context: context, builder: (context) => AlertDialog(
+      title: const Text('永久刪除對話？'),
+      content: const Text('此對話的訊息與歷史紀錄將永久刪除，無法復原。已有分支會保留。'),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')),
+        TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('永久刪除')),
+      ],
+    ));
+    if (confirmed != true || !mounted) return;
+    setState(() => busy = true);
+    try {
+      await widget.api.delete('/v1/threads/${value['thread_id']}');
+      if (!mounted) return;
+      if (thread?['thread_id'] == value['thread_id']) {
+        poller?.cancel();
+        setState(() { thread = null; events.clear(); seenEvents.clear(); lockedApprovals.clear(); queuedTurn = null; cursor = -1; connection = 'idle'; });
+      }
+      reloadThreads();
+    } catch (_) {
+      if (mounted) _error('無法刪除對話；請確認回合已停止後重試');
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
   Future<void> refresh() async {
     final id = thread?['thread_id'];
     if (id == null || polling) return;
@@ -141,8 +168,8 @@ class _ChatPageState extends State<ChatPage> {
       input.clear();
       setState(() => queuedTurn = '${value['turn']['turn_id']}');
       await refresh();
-    } catch (_) {
-      if (mounted) _error('訊息送出失敗，請稍後重試');
+    } catch (error) {
+      if (mounted) _error(error is StateError ? error.message.toString() : '訊息送出失敗，請稍後重試');
     } finally {
       if (mounted) setState(() => busy = false);
     }
@@ -360,6 +387,8 @@ class _ChatPageState extends State<ChatPage> {
                                 borderRadius: BorderRadius.circular(16),
                               ),
                               leading: const Icon(Icons.chat_bubble_outline),
+                              trailing: IconButton(tooltip: '刪除對話', icon: const Icon(Icons.delete_outline),
+                                onPressed: busy ? null : () => deleteThread(Map<String, dynamic>.from(raw))),
                               title:
                                   Text('${raw['runtime']} · ${raw['model']}'),
                               subtitle: Text(

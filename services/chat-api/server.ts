@@ -44,7 +44,7 @@ async function serveWeb(pathname: string, response: ServerResponse): Promise<boo
 }
 
 function send(response: ServerResponse, status: number, body: unknown): void {
-  response.writeHead(status, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+  response.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
   response.end(JSON.stringify(body));
 }
 
@@ -90,7 +90,7 @@ function threadInput(value: Record<string, unknown>): ThreadInput {
 }
 
 export function makeChatServer(store: ChatStore, verifyUser: VerifyUser, verifyService: VerifyService,
-                               dispatcher?: Pick<ChatDispatcher,"runOnce">) {
+                               dispatcher?: Pick<ChatDispatcher,"runOnce"> & Partial<Pick<ChatDispatcher,"canDispatch">>) {
   return createServer(async (request, response) => {
     const url = new URL(request.url ?? "/", "http://localhost");
     if (request.method === "GET" && url.pathname === "/health") return send(response,200,{ status: "ok" });
@@ -141,6 +141,10 @@ export function makeChatServer(store: ChatStore, verifyUser: VerifyUser, verifyS
       }
       const thread = /^\/v1\/threads\/([A-Za-z0-9][A-Za-z0-9._:-]{0,127})$/.exec(url.pathname);
       if (request.method === "GET" && thread) return send(response,200,await store.thread(ownerId,thread[1]));
+      if (request.method === "DELETE" && thread) {
+        await store.deleteThread(ownerId,thread[1]);
+        return send(response,200,{ status:"deleted" });
+      }
       const fork = /^\/v1\/threads\/([A-Za-z0-9][A-Za-z0-9._:-]{0,127})\/fork$/.exec(url.pathname);
       if (request.method === "POST" && fork) {
         const parent = await store.thread(ownerId,fork[1]);
@@ -159,7 +163,11 @@ export function makeChatServer(store: ChatStore, verifyUser: VerifyUser, verifyS
         if (typeof value.content !== "string" || !value.content.trim() || value.content.length > 50_000) {
           throw new InvalidRequest("message content is invalid");
         }
-        return send(response,202,await store.message(ownerId,messages[1],value.content,key(request)));
+        if (!dispatcher?.canDispatch?.(ownerId)) return send(response,503,{ error:"dispatch_unavailable" });
+        const result = await store.message(ownerId,messages[1],value.content,key(request));
+        // Keep the request alive during inference; Cloud Run can suspend work after a response.
+        const outcome = await dispatcher.runOnce({ ownerId,threadId:messages[1],turnId:String((result.turn as Record<string,unknown>).turn_id) });
+        return send(response,202,{ ...result, dispatch:outcome });
       }
       const events = /^\/v1\/threads\/([A-Za-z0-9][A-Za-z0-9._:-]{0,127})\/events$/.exec(url.pathname);
       if (request.method === "GET" && events) {
@@ -169,7 +177,7 @@ export function makeChatServer(store: ChatStore, verifyUser: VerifyUser, verifyS
           throw new InvalidRequest("event cursor or limit is invalid");
         }
         const rows = await store.events(ownerId,events[1],cursor,limit);
-        response.writeHead(200,{ "Content-Type":"text/event-stream", "Cache-Control":"no-cache", "X-Accel-Buffering":"no" });
+        response.writeHead(200,{ "Content-Type":"text/event-stream; charset=utf-8", "Cache-Control":"no-cache", "X-Accel-Buffering":"no" });
         for (const row of rows) response.write("id: " + row.seq + "\nevent: " + row.event_type + "\ndata: " + JSON.stringify(row) + "\n\n");
         response.end();
         return;

@@ -140,6 +140,29 @@ export class ChatStore {
     return (await this.pool.query(`SELECT * FROM omni_chat.threads WHERE owner_id=$1 ORDER BY updated_at DESC LIMIT 100`, [ownerId])).rows;
   }
 
+  async deleteThread(ownerId: string, threadId: string): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const row = (await client.query(
+        `SELECT 1 FROM omni_chat.threads WHERE owner_id=$1 AND thread_id=$2 FOR UPDATE`,
+        [ownerId,threadId])).rows[0];
+      if (!row) throw new ChatNotFound("thread not found");
+      const turns = (await client.query(
+        `SELECT status FROM omni_chat.turns WHERE owner_id=$1 AND thread_id=$2 FOR UPDATE`,
+        [ownerId,threadId])).rows;
+      if (turns.some(turn => turn.status === "RUNNING")) throw new ChatConflict("running thread cannot be deleted");
+      await client.query(`UPDATE omni_chat.threads SET parent_thread_id=NULL WHERE owner_id=$1 AND parent_thread_id=$2`,[ownerId,threadId]);
+      for (const table of ["approvals","events","turns","threads"]) {
+        await client.query(`DELETE FROM omni_chat.${table} WHERE owner_id=$1 AND thread_id=$2`,[ownerId,threadId]);
+      }
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally { client.release(); }
+  }
+
   async thread(ownerId: string, threadId: string): Promise<Record<string, unknown>> {
     const row = (await this.pool.query(`SELECT * FROM omni_chat.threads WHERE owner_id=$1 AND thread_id=$2`, [ownerId,threadId])).rows[0];
     if (!row) throw new ChatNotFound("thread not found");
@@ -192,7 +215,7 @@ export class ChatStore {
    * Reconciliation and attempt recovery must be implemented before enabling
    * unattended dispatch in production.
    */
-  async claimNextQueuedTurn(approvedOwners: readonly string[]): Promise<DispatchClaim | null> {
+  async claimNextQueuedTurn(approvedOwners: readonly string[], target?: { ownerId: string; threadId: string; turnId: string }): Promise<DispatchClaim | null> {
     if (!approvedOwners.length) throw new Error("dispatch requires an approved owner list");
     const client = await this.pool.connect();
     try {
@@ -213,9 +236,10 @@ export class ChatStore {
         ) AS e ON TRUE
         WHERE t.status='QUEUED' AND th.status='ACTIVE'
           AND t.owner_id = ANY($1::uuid[])
+          AND ($2::uuid IS NULL OR (t.owner_id=$2 AND t.thread_id=$3 AND t.turn_id=$4))
         ORDER BY t.created_at,t.owner_id,t.thread_id,t.turn_id
-        LIMIT 1 FOR UPDATE OF t SKIP LOCKED`,
-        [approvedOwners]
+        LIMIT 1 FOR UPDATE OF th,t SKIP LOCKED`,
+        [approvedOwners,target?.ownerId ?? null,target?.threadId ?? null,target?.turnId ?? null]
       )).rows[0];
       if (!selected) {
         await client.query("COMMIT");

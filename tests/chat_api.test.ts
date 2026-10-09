@@ -16,6 +16,7 @@ async function app(dispatcher?: Pick<ChatDispatcher,"runOnce">) {
     owner: vi.fn(async (_issuer: string, subject: string) => "owner-" + subject),
     createThread: vi.fn(async (ownerId: string, input: unknown) => ({ owner_id: ownerId, thread_id: "thread-1", input })),
     threads: vi.fn(async (ownerId: string) => [{ owner_id: ownerId, thread_id: "thread-1" }]),
+    deleteThread: vi.fn(async () => undefined),
     thread: vi.fn(async (ownerId: string, threadId: string) => ({ owner_id: ownerId, thread_id: threadId,
       runtime: "gemini", model: "gemini-2.5-flash", assistant_profile: "default" })),
     message: vi.fn(async (ownerId: string, threadId: string, content: string) => ({ owner_id: ownerId,
@@ -38,6 +39,27 @@ async function app(dispatcher?: Pick<ChatDispatcher,"runOnce">) {
 }
 
 describe("omniAgent Chat API ownership boundary", () => {
+  it("rejects disabled dispatch instead of silently queuing a message", async () => {
+    const {base,store}=await app();
+    const response=await fetch(base+"/v1/threads/thread-1/messages",{method:"POST",headers:{Authorization:"Bearer alice","Idempotency-Key":"utf8", "Content-Type":"application/json"},body:JSON.stringify({content:"你好，世界"})});
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({error:"dispatch_unavailable"});
+    expect(store.message).not.toHaveBeenCalled();
+  });
+
+  it("uses UTF-8 and permanently deletes only the authenticated owner's thread", async () => {
+    const {base,store}=await app();
+    const response=await fetch(base+"/v1/threads/thread-1",{method:"DELETE",headers:{Authorization:"Bearer alice"}});
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("charset=utf-8");
+    expect(store.deleteThread).toHaveBeenCalledWith("owner-alice","thread-1");
+    expect((await fetch(base+"/v1/threads/thread-1",{method:"DELETE"})).status).toBe(401);
+    expect(store.deleteThread).toHaveBeenCalledTimes(1);
+    store.events.mockResolvedValueOnce([{owner_id:"owner-alice",seq:0,event_type:"item_upsert",payload:{content:"你好，世界"}}]);
+    const events=await fetch(base+"/v1/threads/thread-1/events?cursor=-1",{headers:{Authorization:"Bearer alice"}});
+    expect(events.headers.get("content-type")).toContain("charset=utf-8");
+    expect(await events.text()).toContain("你好，世界");
+  });
   it("accepts provider/model IDs without relaxing thread IDs", async () => {
     const { base, store } = await app();
     const headers = { Authorization: "Bearer alice", "Idempotency-Key": "key-1", "Content-Type": "application/json" };
@@ -78,7 +100,8 @@ describe("omniAgent Chat API ownership boundary", () => {
   });
 
   it("derives owner from verified identity and persists queued messages and replay", async () => {
-    const { base, store } = await app();
+    const worker = { canDispatch: () => true, runOnce: vi.fn(async () => ({ status:"completed" as const })) };
+    const { base, store } = await app(worker);
     const headers = { Authorization: "Bearer alice", "Idempotency-Key": "key-1", "Content-Type": "application/json" };
     const created = await fetch(base + "/v1/threads", { method: "POST", headers,
       body: JSON.stringify({ runtime: "gemini", model: "gemini-2.5-flash", assistantProfile: "default", ownerId: "owner-bob" }) });
@@ -87,7 +110,8 @@ describe("omniAgent Chat API ownership boundary", () => {
     const message = await fetch(base + "/v1/threads/thread-1/messages", { method: "POST", headers,
       body: JSON.stringify({ content: "hello" }) });
     expect(message.status).toBe(202);
-    expect((await message.json()).dispatch.status).toBe("QUEUED");
+    expect((await message.json()).dispatch.status).toBe("completed");
+    expect(worker.runOnce).toHaveBeenCalledWith({ownerId:"owner-alice",threadId:"thread-1",turnId:"turn-1"});
     const replay = await fetch(base + "/v1/threads/thread-1/events?cursor=-1", { headers });
     expect(replay.status).toBe(200);
     expect(await replay.text()).toContain("event: item_upsert");

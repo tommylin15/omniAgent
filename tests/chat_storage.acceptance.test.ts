@@ -119,6 +119,21 @@ describe.runIf(Boolean(dsn))("isolated PostgreSQL ChatStore acceptance", () => {
       await expect(store.appendEvent(a,"thread-b",pending.turn.turn_id as string,
         "foreign","text_delta",{text:"not allowed"})).rejects.toBeInstanceOf(ChatNotFound);
 
+      const disposable = await store.createThread(a,{...input,threadId:"delete-me"},"delete-create");
+      await store.message(a,String(disposable.thread_id),"永久刪除測試","delete-message");
+      const running = await store.claimNextQueuedTurn([a], {ownerId:a,threadId:"delete-me",turnId:String((await store.message(a,"delete-me","永久刪除測試","delete-message")).turn.turn_id)});
+      expect(running?.threadId).toBe("delete-me");
+      await expect(store.deleteThread(a,"delete-me")).rejects.toBeInstanceOf(ChatConflict);
+      await store.appendEvent(a,"delete-me",running!.turnId,"delete-completed","turn_completed",{status:"complete"});
+      await store.createThread(a,{...input,threadId:"kept-fork",parentThreadId:"delete-me"},"fork-create");
+      await expect(store.deleteThread(b,"delete-me")).rejects.toBeInstanceOf(ChatNotFound);
+      await store.deleteThread(a,"delete-me");
+      await expect(store.thread(a,"delete-me")).rejects.toBeInstanceOf(ChatNotFound);
+      expect((await store.thread(a,"kept-fork")).parent_thread_id).toBeNull();
+      for (const table of ["threads","turns","events","approvals"]) {
+        expect((await pool.query(`SELECT count(*) AS n FROM omni_chat.${table} WHERE owner_id=$1 AND thread_id=$2`,[a,"delete-me"])).rows[0].n).toBe("0");
+      }
+
       const content = { prompt:"summarize", required_tools:[], workflow:[] };
       const skill = await store.writeSkillRevision(a,"summary",1,content,"skill-1");
       expect(skill.content_digest).toMatch(/^sha256:[0-9a-f]{64}$/);

@@ -15,6 +15,7 @@ class ChatApi {
   }
 
   Future<dynamic> get(String path) => _request('GET', path);
+  Future<dynamic> delete(String path) => _request('DELETE', path);
   Future<dynamic> post(String path, Map<String, dynamic> body) =>
       _request('POST', path, body);
 
@@ -31,9 +32,13 @@ class ChatApi {
     if (body != null) request.body = jsonEncode(body);
     final response = await http.Response.fromStream(await client.send(request));
     if (response.statusCode < 200 || response.statusCode >= 300) {
+      if (response.statusCode == 503 && response.bodyBytes.isNotEmpty &&
+          (jsonDecode(utf8.decode(response.bodyBytes)) as Map)['error'] == 'dispatch_unavailable') {
+        throw StateError('模型執行尚未啟用，或此帳號尚未獲授權；訊息未送入排隊');
+      }
       throw Exception('omniAgent API ${response.statusCode}');
     }
-    return response.body.isEmpty ? null : jsonDecode(response.body);
+    return response.bodyBytes.isEmpty ? null : jsonDecode(utf8.decode(response.bodyBytes));
   }
 
   Future<List<Map<String, dynamic>>> events(String threadId, int cursor) async {
@@ -59,7 +64,7 @@ class ChatApi {
       data.clear();
     }
 
-    for (final line in const LineSplitter().convert(response.body)) {
+    for (final line in const LineSplitter().convert(utf8.decode(response.bodyBytes))) {
       if (line.isEmpty) {
         flush();
       } else if (line.startsWith('event: ')) {

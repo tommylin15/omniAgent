@@ -13,6 +13,12 @@ class FakeChatApi extends ChatApi {
   final writes = <Map<String, dynamic>>[];
 
   @override
+  Future<dynamic> delete(String path) async {
+    writes.add({'path': path, 'method': 'DELETE'});
+    return {'status': 'deleted'};
+  }
+
+  @override
   Future<dynamic> get(String path) async => {
         'items': [
           if (withApproval)
@@ -72,6 +78,25 @@ class FakeChatApi extends ChatApi {
 }
 
 void main() {
+  testWidgets('permanent thread deletion requires confirmation', (tester) async {
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.binding.setSurfaceSize(const Size(1200, 900));
+    final api = FakeChatApi(withApproval: true);
+    await tester.pumpWidget(MaterialApp(home: ChatPage(api)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('刪除對話'));
+    await tester.pumpAndSettle();
+    expect(api.writes, isEmpty);
+    await tester.tap(find.text('取消').last);
+    await tester.pumpAndSettle();
+    expect(api.writes, isEmpty);
+    await tester.tap(find.byTooltip('刪除對話'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('永久刪除'));
+    await tester.pumpAndSettle();
+    expect(api.writes.single, {'path': '/v1/threads/thread-1', 'method': 'DELETE'});
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
   for (final selection in {
     'Codex': 'gpt-6-luna',
     'Gemini': 'gemini-3.1-pro-preview',
