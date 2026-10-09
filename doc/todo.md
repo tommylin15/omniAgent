@@ -2,6 +2,27 @@
 
 ## Current delivery scope — NEW GitHub Actions → GHCR → Cloud Run only (2026-10-09)
 
+**2026-10-09 latest real IAM/HMAC negative boundary — PASS, human OAuth action OPEN:**
+The accepted exact GHCR candidate `f2a5be4425953b26f2340694765362c7bdc943c9`
+was tested in [live Chat↔Gateway security #37917980938](https://github.com/tommylin15/omniAgent/actions/runs/37917980938):
+anonymous Chat/Gateway denials PASS, Chat service identity can invoke
+private Gateway PASS, and POSTs with missing, invalid or expired HMAC
+all return HTTP 400 before model execution. Formal serving 100% routing
+unchanged; no DB mutation, Secret payload retrieval, or provider charges.
+**This is a negative security test, NOT proof of accepted HMAC or actual
+Provider calls**. The current 0%-traffic Chat browser candidate:
+`https://ghcr-f2a5be442595---omniagent-chat-2oo7qbkd5q-uc.a.run.app`.
+One human operator should test Google account A → create a test thread,
+sign out → account B → confirm no A thread, sign out → A →
+confirm only A's thread reappears. No email, password, cookies, ID
+tokens or user identifiers should be pasted into public logs or ChatGPT.
+If OAuth rejects the unique tagged hostname, this is **BLOCKED for
+candidate browser validation**, not evidence that the two-owner gate
+passed. Actual authorized provider dispatch remains disabled and requires
+separately approved Owner entitlements and a bounded paid-call policy.
+**No user action needed for code/CI; human Google login is the only
+currently requested operator action.**
+
 **2026-10-09 latest retention implementation and GCP evidence — PARTIAL:**
 New post-promotion-only tag retirement implementation:
 `scripts/cloudrun_revision_tag_retirement.py`,

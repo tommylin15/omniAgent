@@ -2,6 +2,24 @@
 
 ## Replacement CI/CD — GitHub Actions / public GHCR / Cloud Run (OPEN)
 
+**2026-10-09 actual zero-traffic Chat/Gateway authentication negative contract:**
+[GitHub Actions #37917980938](https://github.com/tommylin15/omniAgent/actions/runs/37917980938)
+**PASS** for candidate SHA `f2a5be4425953b26f2340694765362c7bdc943c9`.
+Anonymous Chat API denied, anonymous Gateway health denied,
+actual `omniagent-chat` IAM principal granted signed Cloud Run
+Gateway health, and all absent/invalid/expired HMAC cases rejected
+HTTP 400. **No accepted HMAC/provider invocation**, no persisted
+events, no browser Google OAuth identity confirmation; these remain
+**NOT VERIFIED**. The test did not access Secret payloads or switch
+traffic. Candidate browser URL discovered by authoritative GCP traffic
+tag readback is
+`https://ghcr-f2a5be442595---omniagent-chat-2oo7qbkd5q-uc.a.run.app`.
+Required human OAuth acceptance: two distinct accounts, account-switch
+isolation, A's saved thread visible again only to A. Report status
+without sending account identifiers or credentials. Record this as
+**operator-reported** until corroborated by actual backend owner-scoped
+persistence evidence. No unapproved model/provider calls.
+
 **2026-10-09 current proof (new GHCR path, NOT formal release):**
 - **PASS — new guarded last-ten tag-retirement implementation/tests:**
   `f2a5be4425953b26f2340694765362c7bdc943c9`;

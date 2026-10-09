@@ -2,6 +2,40 @@
 
 **Current status: SOURCE / TEST INTEGRATION; LIVE AUTHENTICATED PROVIDER ACCEPTANCE OPEN.**
 
+### Latest 2026-10-09 zero-traffic live negative security check
+
+[Real IAM and HMAC-negative probe #37917980938](https://github.com/tommylin15/omniAgent/actions/runs/37917980938)
+is PASS on the latest accepted public GHCR candidate. A Chat service
+identity ID token can access the private Gateway tagged /health route;
+an anonymous principal cannot. The Gateway /internal/v1/assistant/turn
+route refuses missing, malformed or expired HMAC headers with HTTP 400.
+Each test intentionally uses a non-routable runtime and cannot perform
+a billable Provider request. It is **not** proof of accepted HMAC,
+reconstructed provider events or database persistence. All formal
+traffic percentages remained unchanged.
+
+A currently verified, public 0%-traffic Chat candidate for a **real
+human** browser check:
+https://ghcr-f2a5be442595---omniagent-chat-2oo7qbkd5q-uc.a.run.app
+
+Manual browser OAuth acceptance recipe:
+1. Sign in with Google account A; create one harmless thread/message;
+   message remaining `QUEUED` is expected while dispatch is disabled.
+2. Sign out, sign in with account B; verify A's threads/messages are
+   not visible. Create a separate harmless B test thread.
+3. Sign out, sign back in with A; verify only A's thread reappears.
+4. Report either successful A/B/A isolation or the stage and generic
+   error label, without providing passwords, cookies, OAuth tokens,
+   emails, or owner UUIDs. A "Google origin not allowed" error on the
+   ephemeral candidate URL is **NOT VERIFIED**, not user separation PASS.
+
+Until real owners and bounded billable model usage have been approved,
+do not set `CHAT_DISPATCH_ENABLED=true`, invent owner UUIDs,
+assume an HTTP 200 health check proves provider inference, or switch
+formal production traffic. The current endpoint only dispatches in
+response to an explicit authorized call; there is no background
+scheduler/consumer and a queued user message is not a completion.
+
 The existing Chat service now includes a service-authenticated POST endpoint
 `/internal/v1/chat/dispatch:once`. It is disabled unless the process starts
 with `CHAT_DISPATCH_ENABLED=true` **and** a non-empty comma-separated
