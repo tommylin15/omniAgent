@@ -8,7 +8,18 @@ Provider access remains subject to account entitlement and existing paid-tier ga
 Browser-authorized owner UUID was obtained from the app's thread response; this
 does not enable owner dispatch. Codex Secret resource mapping and a bounded live
 provider test remain required. CI, candidate deploy and runtime evidence for this
-change are pending.
+change completed successfully:
+[GHCR quality and publication #37932371785](https://github.com/tommylin15/omniAgent/actions/runs/37932371785),
+[zero-traffic deployment #37932955708](https://github.com/tommylin15/omniAgent/actions/runs/37932955708),
+and [current candidate auto smoke #37933132998](https://github.com/tommylin15/omniAgent/actions/runs/37933132998).
+Release `1a8e575bb9f6224e698765d268c6e823e94ba55a`, Chat `00039-rik`.
+Deployed `main.dart.js` returned HTTP 200 and included all 42 catalog model IDs.
+Local Node build and 56 tests PASS (database acceptance skipped locally, run in CI);
+Flutter analyze, 12 widget tests and release Web build PASS. Automatic smoke
+verified current immutable GHCR revisions, zero traffic, Chat readiness/web,
+unauthorized API denial and signed private service health. Provider inference and
+owner-scoped PostgreSQL replay remain NOT VERIFIED; formal traffic is unchanged.
+The project Codex CLI default is committed as `gpt-6-luna` with `low` reasoning.
 
 ## Current delivery scope — NEW GitHub Actions → GHCR → Cloud Run only (2026-10-09)
 **2026-10-09 dispatch prerequisites revalidation — READ-ONLY PASS; LIVE DISPATCH BLOCKED:**
@@ -27,7 +38,7 @@ No Secret payload access, PostgreSQL writes, provider calls or formal
 traffic changes were performed by this preflight. This checkpoint records
 prerequisites only; it does not authorize enabling dispatch or release.
 
-**2026-10-09 latest new-GHCR-only live readback (post-candidate):**
+**2026-10-09 earlier new-GHCR-only live readback (superseded candidate):**
 [Current primary/fallback #37925707793](https://github.com/tommylin15/omniAgent/actions/runs/37925707793)
 PASS for new `f9a4a7b5d4d226d47af6aa526d49d10737b44406`
 and previous `f2a5be4425953b26f2340694765362c7bdc943c9`,
