@@ -125,6 +125,44 @@ The downstream read-only signed smoke must also pass. Do not remove
 historical tags/revisions or authorize formal promotion as a workaround.
 The anomaly is tracked separately for future safe revision retention.
 
+## 2026-10-09 owner-approved NEW-only rollback policy
+
+**Approved:** New releases may promote and recover **only** among digest-pinned
+public GHCR candidates of this same GitHub Actions → Cloud Run pipeline.
+An old Artifact Registry image, Cloud Build trigger, or historical serving
+Revision is *not* a mandatory rollback/release prerequisite. The currently
+serving revision remains an audit/traffic observation, not the designated
+new-release rollback target.
+
+**Real readiness evidence:** New primary SHA
+`c6020ed87fcf4b696f5816e23a34ba7b18350ebb` passed
+[CI + 3 GHCR #37896498492](https://github.com/tommylin15/omniAgent/actions/runs/37896498492),
+[3 zero-traffic candidates #37896743989](https://github.com/tommylin15/omniAgent/actions/runs/37896743989),
+and [automatic signed Smoke #37896904915](https://github.com/tommylin15/omniAgent/actions/runs/37896904915).
+Proposed fallback SHA `c7f32b23d4ac4b60d43b3108e69e5b4019e31321`
+also passed an entire CI/candidate/smoke chain. Read-only
+[GHCR-only rollback preflight #37897007278](https://github.com/tommylin15/omniAgent/actions/runs/37897007278)
+**PASS**: current/fallback candidates for Chat, Gateway and Shared are
+Ready, correctly tagged, digest-matched and have only enabled Secret
+references. **This is not a formal traffic rollback drill.**
+
+An older GHCR fallback SHA `e3475d3a...` was explicitly **BLOCKED**
+by [preflight #37896367974](https://github.com/tommylin15/omniAgent/actions/runs/37896367974):
+its Gateway Revision still referenced a destroyed Secret version. A
+GHCR tag or historical Ready flag without current viable runtime Secret
+dependencies is insufficient.
+
+**Promotion requirement remains unchanged:** verified live human two-owner
+browser OAuth, persisted provider/dispatcher paths, real Shared calls,
+application authorization and cross-owner isolation must pass before
+traffic mutation. Once accepted, snapshot formal traffic for audit,
+require a full three-service new-GHCR fallback set, promote with bounded
+readback and on partial failure recover to the validated new-GHCR fallback.
+Rehearse actual current-GHCR ↔ previous-GHCR traffic changes and recovery
+before claiming rollback PASS. A documentation change, preflight or tag-only
+test is **not** a completed rollout. Never use old legacy rollback as a
+hidden fallback, and never infer permission to bypass application gates.
+
 ## Acceptance → traffic promotion → rollback
 
 Mandatory real checks: Chat `/health=200`, DB-backed `/ready=200`,
@@ -135,11 +173,13 @@ isolation and cross-project denials. Missing gates are BLOCKED, never
 synthetic PASS. Component skips require tested dependency/contract rules.
 
 Before promotion snapshot current **real traffic percentages** and revision
-IDs. After *all* affected service acceptance and recovery drill PASS, apply
-protected progressive/controlled traffic change and read back each revision
-percentage. On partial failure, restore/read back the exact prior allocation
-and preserve previously serving images. Stale SHA, simultaneous releases
-or image-digest mismatch must fail closed. Image deletion remains disabled during migration; **Cloud Run Revision
+IDs as audit evidence, plus exact validated primary and prior GHCR rollback
+Revisions. After *all* affected service acceptance and the GHCR-only recovery
+drill PASS, apply progressive/controlled traffic change and read back each
+Revision percentage. On partial failure, move to the **approved new-GHCR**
+fallback and verify its final allocation; do not require the old AR serving
+Revision as the rollback source. Stale SHA, simultaneous releases or
+image-digest mismatch must fail closed. Image deletion remains disabled during migration; **Cloud Run Revision
 retention** is separately permitted **only as the final post-promotion
 step** after all acceptance, rollback and traffic readback pass.
 
@@ -147,7 +187,7 @@ step** after all acceptance, rollback and traffic readback pass.
 
 Owner setting: retain the **10 newest Cloud Run revisions per existing
 service** (or all revisions when fewer than 10 exist). The deployed
-100%-traffic revision **and the recorded last-known-good rollback target**
+100%-traffic revision **and the recorded last-known-good **GHCR-only** rollback target**
 must both be included among the ten, even if failed candidates were created
 between them. If the known-good rollback target falls outside the newest
 ten, **BLOCK cleanup**, keep the existing revisions, and surface the
@@ -187,9 +227,12 @@ not establish actual billing or storage invoices. See Google Cloud's
 [revision management](https://cloud.google.com/run/docs/managing/revisions)
 and [minimum instances](https://cloud.google.com/run/docs/configuring/min-instances).
 
-**Rollback:** rollback to the recorded previously serving revision stays
-available; older revisions among the ten might require separate integration
-acceptance before promotion. Image retention is independent: this rule
+**Rollback:** use only the previously accepted **new GHCR candidate**
+as the protected recovery target; do not require any old Artifact Registry
+serving Revision to remain a rollback prerequisite. A candidate’s Ready
+metadata and a tag alone are not sufficient: it must have a currently valid
+runtime configuration, passed candidate Smoke and real app acceptance.
+Never delete an actively serving or live-tagged revision as a shortcut. Image retention is independent: this rule
 never deletes any GHCR Docker image, GCS object or Artifact Registry asset.
 
 **Integration status:** the new GHCR pipeline is not yet a fully accepted
