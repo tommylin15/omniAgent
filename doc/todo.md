@@ -24,11 +24,30 @@ as a newly audited PASS. Preserve non-omniAgent data and backup safety.
   health/readiness and traffic preservation.
   [Live smoke #37868153663](https://github.com/tommylin15/omniAgent/actions/runs/37868153663)
   **PASS** against those candidates under the initial workflow-only push.
-  The ongoing workflow has since been made `workflow_run`-only and entirely
-  SHA-derived, without a hardcoded release or legacy revision. **The future
-  automatic workflow_run trigger itself still needs observation on the
-  next new GHCR candidate**, so do not mistake the bootstrap smoke for
-  an observed full automatic chain.
+  The ongoing workflow is now `workflow_run`-only and SHA-derived.
+  **2026-10-09 trigger observation**: a normal main push of
+  `7937447dd85ef78dbabfe0ca7fd05a703dd99e3c` passed full quality and
+  three GHCR image publishes [#37876825619](https://github.com/tommylin15/omniAgent/actions/runs/37876825619);
+  its successful publisher automatically triggered candidate workflow_run
+  [#37877047775](https://github.com/tommylin15/omniAgent/actions/runs/37877047775).
+  The failed candidate in turn automatically triggered read-only smoke
+  workflow_run [#37877114127](https://github.com/tommylin15/omniAgent/actions/runs/37877114127),
+  whose job was correctly SKIPPED because upstream was not successful.
+  **Automatic event wiring and fail-closed downstream gating: PASS.**
+  **Successful three-service deployment → automatic passing smoke: NOT VERIFIED.**
+- [ ] **2026-10-09 current GHCR deployment blocker (not legacy cleanup):**
+  all three newly published GHCR digests were anonymously accessible in
+  candidate #37877047775. Chat `omniagent-chat-00030-puq` deployed at 0%
+  with serving traffic preserved. Gateway candidate failed because existing
+  Cloud Run configuration still references Secret Manager
+  `omniagent-bundle` version `2`, which Cloud Run reported `DESTROYED`
+  for two environment secret references. Shared was not attempted.
+  All three formal serving revisions read back at 100% **before** deployment;
+  a post-failure three-service readback has not been obtained.
+  Do not guess a replacement Secret version or mutate credentials. An authorized
+  operator must validate a working Secret version and controlled runtime
+  reference/compatibility before retrying the exact-SHA auto chain.
+  **E2E result: BLOCKED**, not CI/CD DONE.
 - [ ] **Mandatory live integration**: two *real* browser Google OAuth accounts,
   persistent owner separation and account-switch UI; approved owner/provider
   entitlement, real Chat→Gateway signed dispatch, persisted provider event
