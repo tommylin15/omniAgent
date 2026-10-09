@@ -32,12 +32,12 @@ from the active completion path. Manual asset cleanup was reported by the
 operator; do not turn it into a prerequisite or treat unverified cleanup
 as a newly audited PASS. Preserve non-omniAgent data and backup safety.
 
-- [x] Latest source-quality and three immutable public GHCR image publications
+- [x] Earlier source-quality and three immutable public GHCR image publications
   for code SHA `e3475d3aade0fd8061d832d2dd4a0af45a8892ac`:
   [GHCR Actions #37867383817](https://github.com/tommylin15/omniAgent/actions/runs/37867383817).
   Flutter auth-account switch State isolation with widget regression test:
   [Flutter #37867383811](https://github.com/tommylin15/omniAgent/actions/runs/37867383811).
-- [x] Latest 0%-traffic candidates: Chat `omniagent-chat-00029-nux`,
+- [x] Earlier 0%-traffic candidates: Chat `omniagent-chat-00029-nux`,
   Gateway `omniagent-agent-gateway-00020-nef`, Shared
   `omniagent-shared-codex-00013-kop`:
   [candidate #37867853618](https://github.com/tommylin15/omniAgent/actions/runs/37867853618).
@@ -58,7 +58,8 @@ as a newly audited PASS. Preserve non-omniAgent data and backup safety.
   workflow_run [#37877114127](https://github.com/tommylin15/omniAgent/actions/runs/37877114127),
   whose job was correctly SKIPPED because upstream was not successful.
   **Automatic event wiring and fail-closed downstream gating: PASS.**
-  **Successful three-service deployment → automatic passing smoke: NOT VERIFIED.**
+  **At that historical checkpoint** successful deployment → automatic smoke
+  was NOT VERIFIED; the newer accepted `c7f32b2` run above proves PASS.
 - [x] **2026-10-09 historical GHCR Secret deployment blocker — mitigated by verified current-path candidate:**
   all three newly published GHCR digests were anonymously accessible in
   candidate #37877047775. Chat `omniagent-chat-00030-puq` deployed at 0%
@@ -68,9 +69,10 @@ as a newly audited PASS. Preserve non-omniAgent data and backup safety.
   for two environment secret references. Shared was not attempted.
   All three formal serving revisions read back at 100% **before** deployment;
   a post-failure three-service readback has not been obtained.
-  Do not guess a replacement Secret version or mutate credentials. An authorized
-  operator must validate a working Secret version and controlled runtime
-  reference/compatibility before retrying the exact-SHA auto chain.
+  Historical safe-block rule: do not guess replacement Secret payloads.
+  The later verified 0%-traffic Gateway candidates use the already ENABLED
+  `omniagent-bundle:latest`, without changing the original serving revision.
+  Real payload/contract compatibility remains an application integration gate.
   **Historical run result: BLOCKED; newer exact-SHA gate #1 E2E PASS above.**
 - [x] **2026-10-09 no-partial-deploy safeguard:** commit
   `e6ef98a7548b40d9807f5ce22e70a6b2795b8e75` passed full quality,
@@ -87,18 +89,16 @@ as a newly audited PASS. Preserve non-omniAgent data and backup safety.
   confirmed Chat `omniagent-bundle:latest`, Gateway `:2` and `:latest`,
   Shared no environment Secret reference, with metadata unreadable to CI.
   Earlier Cloud Run deploy **explicitly** reported Gateway version `2`
-  DESTROYED. **Safety regression PASS; recovered deployment NOT VERIFIED.**
-- [x] **Admin-scoped recovery prerequisite — completed and observed:** granted `omniagent-ci` only
-  `roles/secretmanager.viewer` on the specific `omniagent-bundle` Secret,
-  not project-wide nor Secret Accessor. This permits version-state metadata
-  reads but no payload reads. Inventory ENABLED versions; a destroyed
-  version cannot be assumed recoverable, and `latest` cannot be assumed
-  semantically compatible with pinned `2`. An authorized application
-  maintainer must verify payload contract without logging values, then
-  update the affected Gateway environment secret references only through
-  a protected zero-traffic release. Repeat exact-main push -> GHCR ->
-  three 0%-candidates -> automatic signed smoke. No formal promotion until
-  separate real application acceptance passes.
+  DESTROYED. **Safety regression PASS in that run; recovered candidate
+  deployment PASS in the newer observed full automatic chain above.**
+- [x] **Admin-scoped Secret version metadata recovery:** `omniagent-ci`
+  has Secret-scoped `roles/secretmanager.viewer` for `omniagent-bundle`,
+  without payload-read permission; actual CI diagnostics proved version
+  `latest` ENABLED and version `2` DESTROYED. The approved single-bundle
+  Gateway candidate was successfully created at 0% and signed smoke PASS.
+  This does **not** prove every provider/HMAC application scenario:
+  real provider, dispatcher and multi-owner contract acceptance is still OPEN.
+  No separate production Secret rotation or traffic promotion was done.
 - [ ] **Mandatory live integration**: two *real* browser Google OAuth accounts,
   persistent owner separation and account-switch UI; approved owner/provider
   entitlement, real Chat→Gateway signed dispatch, persisted provider event
