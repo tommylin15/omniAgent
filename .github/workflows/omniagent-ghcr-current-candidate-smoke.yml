@@ -121,13 +121,37 @@ jobs:
           for item in 'omniagent-agent-gateway omniagent-chat' 'omniagent-shared-codex omniagent-codex-chat-client'; do
             read -r svc caller <<< "$item"
             IFS=$'\t' read -r url audience candidate serving digest < "$RUNNER_TEMP/$svc.tsv"
-            token="$(gcloud auth print-identity-token \
-              --impersonate-service-account="$caller@$P.iam.gserviceaccount.com" \
-              --audiences="$audience" --include-email 2>/dev/null)" || {
-                echo "signed_candidate=$svc token_issue=BLOCKED"
-                exit 1
-              }
-            [[ -n "$token" ]] || exit 1
+            # Narrow IAM Credentials generateIdToken (getOpenIdToken only).
+            # Avoid gcloud impersonation, which can request broader TokenCreator.
+            export SERVICE_ACCOUNT="$caller@$P.iam.gserviceaccount.com"
+            export ID_AUDIENCE="$audience"
+            export ACCESS_TOKEN="$(gcloud auth print-access-token)"
+            if ! python3 - "$RUNNER_TEMP/candidate-identity.jwt" <<'PY'
+          import json,os,sys,urllib.request
+          from urllib.parse import quote
+          name=quote(os.environ["SERVICE_ACCOUNT"],safe="")
+          endpoint="https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/"+name+":generateIdToken"
+          request=urllib.request.Request(endpoint,
+              data=json.dumps({"audience":os.environ["ID_AUDIENCE"],"includeEmail":True}).encode(),
+              headers={"Authorization":"Bearer "+os.environ["ACCESS_TOKEN"],
+                       "Content-Type":"application/json"},method="POST")
+          try:
+              with urllib.request.urlopen(request,timeout=25) as reply:
+                  jwt=json.load(reply).get("token")
+              if not isinstance(jwt,str) or not jwt:
+                  raise ValueError("identity unavailable")
+              with open(sys.argv[1],"w") as out: out.write(jwt)
+          except Exception:
+              print("narrow_identity_token=BLOCKED")
+              raise SystemExit(1)
+          PY
+            then
+              echo "signed_candidate=$svc token_issue=BLOCKED"
+              exit 1
+            fi
+            unset ACCESS_TOKEN
+            token="$(cat "$RUNNER_TEMP/candidate-identity.jwt")"
+            rm -f "$RUNNER_TEMP/candidate-identity.jwt"
             anon="$(curl -sS --max-time 35 -o /dev/null -w '%{http_code}' "$url/health")"
             echo "anonymous_private_health=$svc http=$anon"
             [[ "$anon" == 403 ]] || exit 1
