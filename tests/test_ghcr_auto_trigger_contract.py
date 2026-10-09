@@ -62,6 +62,19 @@ class GhcrAutomaticTriggerContractTest(unittest.TestCase):
         self.assertIn('process.env.OMNIAGENT_PROVIDER_BUNDLE?.trim()', gateway)
         self.assertIn('MCP_OWNER_SIGNING_KEY: "mcp_owner_signing_key"', gateway)
 
+    def test_nonzero_cli_result_requires_verified_immutable_ready_revision(self):
+        source = workflow("omniagent-ghcr-cloudrun-candidate.yml")
+        self.assertIn('|| deploy_rc=$?', source)
+        self.assertIn('deploy_command_exit=$svc:$deploy_rc', source)
+        self.assertIn('latestReadyRevisionName', source)
+        self.assertIn('latestCreatedRevisionName', source)
+        self.assertIn('observed!=sys.argv[4]', source)
+        self.assertIn('if serving(before)!=serving(after)', source)
+        self.assertIn('row.get("tag")==expected_tag', source)
+        self.assertIn('len(tags)!=1', source)
+        self.assertIn('deploy_cli_nonzero_but_new_ready_revision_readback=PASS', source)
+        self.assertNotIn('|| true', source)
+
     def test_candidate_success_automatically_starts_read_only_smoke(self):
         source = workflow("omniagent-ghcr-current-candidate-smoke.yml")
         self.assertRegex(source, r"(?m)^on:\n  workflow_run:")
