@@ -84,7 +84,7 @@ jobs:
           print(json.dumps({"service":sys.argv[2],"serving_traffic":allocation,"runtime_sa_configured":True},sort_keys=True))
           PY
           done < "$RUNNER_TEMP/image-receipts.tsv"
-      - name: Fail closed on disabled or unreadable Secret versions before ANY deployment
+      - name: Validate Secret versions and plan Gateway legacy detach BEFORE deployments
         shell: bash
         run: |
           set -euo pipefail
@@ -94,43 +94,69 @@ jobs:
 
           root,project=Path(sys.argv[1]),sys.argv[2]
           services=("omniagent-chat","omniagent-agent-gateway","omniagent-shared-codex")
-          lookups={}
-          blocked=False
+          known={}
+          blocked=[]
+          planned=[]
+          old_gateway={"JANUS_AGENT_PROVIDER_BUNDLE","MCP_OWNER_SIGNING_KEY"}
+          def state(name,version):
+              key=(name,version)
+              if key not in known:
+                  if not re.fullmatch(r"[A-Za-z0-9_-]{1,255}",name) or not re.fullmatch(r"(?:[0-9]+|latest)",version):
+                      return "INVALID_REFERENCE"
+                  try:
+                      result=subprocess.run(["gcloud","secrets","versions","describe",version,
+                          "--secret="+name,"--project="+project,"--format=value(state)"],
+                          capture_output=True,text=True,timeout=25,check=False)
+                      answer=result.stdout.strip().upper() if result.returncode==0 else ""
+                      known[key]=answer if answer in ("ENABLED","DISABLED","DESTROYED") else "NOT_VERIFIED"
+                  except (OSError,subprocess.TimeoutExpired):
+                      known[key]="NOT_VERIFIED"
+              return known[key]
+
           for service in services:
-              obj=json.loads((root/(service+"-before.json")).read_text())
-              spec=(((obj.get("spec") or {}).get("template") or {}).get("spec") or {})
-              refs=set()
+              doc=json.loads((root/(service+"-before.json")).read_text())
+              spec=(((doc.get("spec") or {}).get("template") or {}).get("spec") or {})
+              refs={}
               for container in spec.get("containers") or []:
                   for env in container.get("env") or []:
-                      secret=((env.get("valueFrom") or {}).get("secretKeyRef") or {})
-                      if secret:
-                          refs.add((str(secret.get("name","")),str(secret.get("key",""))))
-              for name,version in sorted(refs):
-                  if not re.fullmatch(r"[A-Za-z0-9_-]{1,255}",name) or not re.fullmatch(r"(?:[0-9]+|latest)",version):
-                      state="INVALID_REFERENCE"
-                  else:
-                      key=(name,version)
-                      if key not in lookups:
-                          try:
-                              p=subprocess.run(["gcloud","secrets","versions","describe",version,
-                                  "--secret="+name,"--project="+project,"--format=value(state)"],
-                                  capture_output=True,text=True,timeout=25,check=False)
-                              value=p.stdout.strip().upper() if p.returncode==0 else ""
-                              lookups[key]=value if value in ("ENABLED","DISABLED","DESTROYED") else "NOT_VERIFIED"
-                          except (OSError,subprocess.TimeoutExpired):
-                              lookups[key]="NOT_VERIFIED"
-                      state=lookups[key]
-                  # Print only a non-sensitive Secret name/version and metadata state.
-                  print(json.dumps({"service":service,"secret":name,"version":version,"state":state},sort_keys=True))
-                  if state!="ENABLED":
-                      blocked=True
+                      ref=((env.get("valueFrom") or {}).get("secretKeyRef") or {})
+                      if ref:
+                          key=str(env.get("name",""))
+                          if key in refs or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,127}",key):
+                              blocked.append("INVALID_OR_DUPLICATE_ENV:"+service)
+                              continue
+                          refs[key]=(str(ref.get("name","")),str(ref.get("key","")))
+              source=refs.get("OMNIAGENT_PROVIDER_BUNDLE")
+              source_healthy=(service=="omniagent-agent-gateway" and
+                  source==("omniagent-bundle","latest") and state(*source)=="ENABLED")
+              for envname,(name,version) in sorted(refs.items()):
+                  observed=state(name,version)
+                  print(json.dumps({"service":service,"env":envname,"secret":name,
+                                    "version":version,"state":observed},sort_keys=True))
+                  if observed=="ENABLED":
+                      continue
+                  # Allow *only* the two known old Gateway aliases to be
+                  # removed from the NEW 0%-traffic candidate. The current
+                  # Gateway runtime sources its signing key from its already
+                  # configured OMNIAGENT_PROVIDER_BUNDLE:latest JSON instead.
+                  if (service=="omniagent-agent-gateway" and envname in old_gateway
+                      and (name,version)==("omniagent-bundle","2")
+                      and observed=="DESTROYED" and source_healthy):
+                      planned.append(envname)
+                      continue
+                  blocked.append("UNUSABLE_SECRET_REFERENCE:"+service+":"+envname)
+              if service=="omniagent-agent-gateway" and planned and not source_healthy:
+                  blocked.append("GATEWAY_CURRENT_BUNDLE_NOT_ENABLED")
+
           if blocked:
               print("candidate_secret_version_preflight=BLOCKED")
-              print("No Cloud Run deployment attempted; grant Secret VERSION METADATA read "
-                    "to CI on the referenced Secret and repair destroyed references first.")
+              print("blocked_categories="+",".join(sorted(set(blocked))))
               raise SystemExit(1)
+          planned.sort()
+          (root/"gateway-legacy-detach.txt").write_text(",".join(planned))
           print("candidate_secret_version_preflight=PASS")
-          print("secret_payload_and_application_compatibility=NOT_VERIFIED")
+          print("gateway_legacy_secret_detach="+(",".join(planned) if planned else "NONE"))
+          print("payload_compatibility_and_signing_key_continuity=NOT_VERIFIED")
           PY
       - name: Deploy immutable public GHCR candidates with NO traffic
         shell: bash
