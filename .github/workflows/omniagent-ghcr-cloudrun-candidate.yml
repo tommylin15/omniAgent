@@ -147,8 +147,15 @@ jobs:
                       planned.append(envname)
                       continue
                   blocked.append("UNUSABLE_SECRET_REFERENCE:"+service+":"+envname)
-              if service=="omniagent-agent-gateway" and planned and not source_healthy:
-                  blocked.append("GATEWAY_CURRENT_BUNDLE_NOT_ENABLED")
+              if service=="omniagent-agent-gateway" and planned:
+                  # --set-secrets replaces *all* secret bindings. Require exactly
+                  # one already approved latest bundle and the two known dead
+                  # aliases; never discard another active secret.
+                  aliases={x for x in planned if approved_legacy(x) and x!="MCP_OWNER_SIGNING_KEY"}
+                  if (not source_healthy or len(planned)!=2 or len(aliases)!=1
+                          or "MCP_OWNER_SIGNING_KEY" not in planned
+                          or set(refs)!=(set(planned)|{"OMNIAGENT_PROVIDER_BUNDLE"})):
+                      blocked.append("GATEWAY_SECRET_REPLACEMENT_NOT_EXACT")
 
           if blocked:
               print("candidate_secret_version_preflight=BLOCKED")
@@ -177,8 +184,11 @@ jobs:
               fi
             fi
             if [[ -n "$detach" ]]; then
+              # Preflight proved the complete three-ref config; replace all
+              # broken refs with the existing single approved latest bundle.
               gcloud run deploy "$svc" --project="$PROJECT" --region="$REGION" \
-                --image="$image" --no-traffic --tag="$tag" --remove-secrets="$detach" --quiet > /dev/null
+                --image="$image" --no-traffic --tag="$tag" \
+                --set-secrets="OMNIAGENT_PROVIDER_BUNDLE=omniagent-bundle:latest" --quiet > /dev/null
             else
               gcloud run deploy "$svc" --project="$PROJECT" --region="$REGION" \
                 --image="$image" --no-traffic --tag="$tag" --quiet > /dev/null
