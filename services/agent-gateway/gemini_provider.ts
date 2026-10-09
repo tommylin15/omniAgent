@@ -63,8 +63,8 @@ export class GeminiProvider {
     if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(model)) throw new Error("Gemini model is invalid");
   }
 
-  static fromEnvironment(fetcher: Fetcher = fetch): GeminiProvider {
-    return new GeminiProvider(process.env.GEMINI_API_KEY ?? "", process.env.GEMINI_MODEL || "gemini-2.5-flash", fetcher);
+  static fromEnvironment(fetcher: Fetcher = fetch, model?: string): GeminiProvider {
+    return new GeminiProvider(process.env.GEMINI_API_KEY ?? "", model ?? (process.env.GEMINI_MODEL || "gemini-2.5-flash"), fetcher);
   }
 
   async generate(prompt: string, options: { grounding?: boolean; systemInstruction?: string; signal?: AbortSignal } = {}): Promise<GeminiResult> {

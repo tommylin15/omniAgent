@@ -1,6 +1,31 @@
 # omniAgent TODO
 
+**2026-10-09 model selection implementation:** Searchable editable model suggestions
+now cover Codex sol/luna/astra/terra, Gemini text models, OpenRouter free models,
+and Groq preview only. Gemini dispatch uses the thread model; OpenRouter IDs
+accept vendor/model syntax without relaxing thread or non-OpenRouter validation.
+Provider access remains subject to account entitlement and existing paid-tier gates.
+Browser-authorized owner UUID was obtained from the app's thread response; this
+does not enable owner dispatch. Codex Secret resource mapping and a bounded live
+provider test remain required. CI, candidate deploy and runtime evidence for this
+change are pending.
+
 ## Current delivery scope — NEW GitHub Actions → GHCR → Cloud Run only (2026-10-09)
+**2026-10-09 dispatch prerequisites revalidation — READ-ONLY PASS; LIVE DISPATCH BLOCKED:**
+[Fresh configuration preflight #37928424345](https://github.com/tommylin15/omniAgent/actions/runs/37928424345)
+PASS on `main@a216aa40f35d8a8187fec0a23f9ea132dade784f`.
+Current Chat `00038-yog` and Gateway `00029-ter` remain Ready with valid
+candidate routing. Dispatch remains DISABLED; approved owner count is 0;
+Gateway candidate URL and audience do not match Chat configuration;
+Gateway `CODEX_OWNER_SECRETS` is missing from the runtime environment.
+Next required inputs: an explicitly approved real owner UUID, provider/model
+and bounded test allowance; Codex also requires that owner's established
+Secret resource mapping. No owner IDs or credentials were inferred from
+browser OAuth PASS or the provider bundle. Positive live HMAC, provider
+execution and persisted PostgreSQL replay remain NOT VERIFIED.
+No Secret payload access, PostgreSQL writes, provider calls or formal
+traffic changes were performed by this preflight. This checkpoint records
+prerequisites only; it does not authorize enabling dispatch or release.
 
 **2026-10-09 latest new-GHCR-only live readback (post-candidate):**
 [Current primary/fallback #37925707793](https://github.com/tommylin15/omniAgent/actions/runs/37925707793)

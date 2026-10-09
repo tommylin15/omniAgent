@@ -79,7 +79,10 @@ function key(request: IncomingMessage): string {
 
 function threadInput(value: Record<string, unknown>): ThreadInput {
   if (!["openrouter","gemini","codex"].includes(String(value.runtime))) throw new InvalidRequest("runtime is invalid");
-  return { runtime: value.runtime as ThreadInput["runtime"], model: id(value.model,"model"),
+  const model = value.runtime === "openrouter" && typeof value.model === "string"
+    && value.model.length <= 128 && /^[A-Za-z0-9][A-Za-z0-9._:-]*(?:\/[A-Za-z0-9][A-Za-z0-9._:-]*)?$/.test(value.model)
+    ? value.model : id(value.model,"model");
+  return { runtime: value.runtime as ThreadInput["runtime"], model,
     assistantProfile: id(value.assistantProfile,"assistant profile"),
     ...(value.threadId === undefined ? {} : { threadId: id(value.threadId,"thread id") }),
     ...(value.skillProfile === undefined ? {} : { skillProfile: id(value.skillProfile,"skill profile") }),

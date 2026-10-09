@@ -38,6 +38,18 @@ async function app(dispatcher?: Pick<ChatDispatcher,"runOnce">) {
 }
 
 describe("omniAgent Chat API ownership boundary", () => {
+  it("accepts provider/model IDs without relaxing thread IDs", async () => {
+    const { base, store } = await app();
+    const headers = { Authorization: "Bearer alice", "Idempotency-Key": "key-1", "Content-Type": "application/json" };
+    const input = { runtime: "openrouter", model: "google/gemma-4-31b-it:free", assistantProfile: "default" };
+    expect((await fetch(base + "/v1/threads", { method: "POST", headers, body: JSON.stringify(input) })).status).toBe(201);
+    expect(store.createThread).toHaveBeenCalledWith("owner-alice", expect.objectContaining({ model: input.model }), "key-1");
+    for (const invalid of [{ ...input, threadId: "vendor/thread" }, { ...input, model: "vendor/../model" }, { ...input, runtime: "gemini", model: "vendor/model" }]) {
+      expect((await fetch(base + "/v1/threads", { method: "POST", headers, body: JSON.stringify(invalid) })).status).toBe(400);
+    }
+    expect(store.createThread).toHaveBeenCalledTimes(1);
+  });
+
   it("separates liveness from database readiness", async () => {
     const { base, store } = await app();
     expect((await fetch(base + "/health")).status).toBe(200);

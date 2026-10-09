@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { dispatchAssistant } from "../services/agent-gateway/assistant_dispatch.js";
 import { GeminiProvider } from "../services/agent-gateway/gemini_provider.js";
 
 function response(body: unknown, status = 200): Response {
@@ -6,6 +7,21 @@ function response(body: unknown, status = 200): Response {
 }
 
 describe("Gemini REST provider", () => {
+  it("dispatches the selected thread model instead of the environment default", async () => {
+    const fetcher = vi.fn().mockResolvedValue(response({ candidates: [{ content: { parts: [{ text: "Answer" }] } }] }));
+    vi.stubGlobal("fetch", fetcher);
+    vi.stubEnv("GEMINI_API_KEY", "test-key");
+    vi.stubEnv("GEMINI_MODEL", "gemini-2.5-flash");
+    try {
+      const result = await dispatchAssistant({ ownerId: "owner", threadId: "thread", turnId: "turn", runtime: "gemini",
+        model: "gemini-3.1-pro-preview", messages: [{ role: "user", content: "Question" }] });
+      expect(fetcher.mock.calls[0][0]).toContain("/models/gemini-3.1-pro-preview:generateContent");
+      expect(result).toMatchObject({ continuation: { model: "gemini-3.1-pro-preview" } });
+    } finally {
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+    }
+  });
   it("sends Google Search grounding and preserves citations and usage", async () => {
     const fetcher = vi.fn().mockResolvedValue(response({
       candidates: [{ content: { parts: [{ text: "Answer" }] }, finishReason: "STOP", groundingMetadata: {

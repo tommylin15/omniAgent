@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'chat_api.dart';
+import 'model_catalog.dart';
 import 'omni_theme.dart';
 import 'twin_beast_mascot.dart';
 
@@ -57,7 +58,7 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   Future<void> createThread() async {
-    if (busy || modelInput.text.trim().isEmpty) return;
+    if (busy || runtime == 'groq' || modelInput.text.trim().isEmpty) return;
     setState(() => busy = true);
     try {
       final value = await widget.api.post('/v1/threads', {
@@ -487,27 +488,40 @@ class _ChatPageState extends State<ChatPage> {
                               value: 'openrouter', child: Text('OpenRouter')),
                           DropdownMenuItem(
                               value: 'codex', child: Text('Codex')),
+                          DropdownMenuItem(
+                              value: 'groq', child: Text('Groq（型號預覽）')),
                         ],
                         onChanged: (value) {
                           if (value == null) return;
                           setState(() {
                             runtime = value;
-                            modelInput.text = {
-                              'gemini': 'gemini-2.5-flash',
-                              'openrouter': 'openai/gpt-4o-mini',
-                              'codex': 'gpt-5'
-                            }[value]!;
+                            modelInput.text = modelCatalog[value]!.first;
                           });
                         },
                       ),
                       const SizedBox(height: 14),
-                      TextField(
+                      DropdownMenu<String>(
+                        key: ValueKey(runtime),
                         controller: modelInput,
-                        decoration: const InputDecoration(labelText: '模型'),
+                        enableFilter: true,
+                        requestFocusOnTap: true,
+                        expandedInsets: EdgeInsets.zero,
+                        menuHeight: 240,
+                        label: const Text('模型（可搜尋或手填）'),
+                        dropdownMenuEntries: [
+                          for (final model in modelCatalog[runtime]!)
+                            DropdownMenuEntry(value: model, label: model),
+                        ],
                       ),
+                      if (runtime == 'groq')
+                        const Padding(
+                          padding: EdgeInsets.only(top: 8),
+                          child: Text('Groq 尚未接通，目前僅提供型號預覽。'),
+                        ),
                       const SizedBox(height: 16),
                       FilledButton(
-                        onPressed: busy ? null : createThread,
+                        onPressed:
+                            busy || runtime == 'groq' ? null : createThread,
                         child: const Text('建立對話'),
                       ),
                     ],

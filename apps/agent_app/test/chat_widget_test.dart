@@ -72,6 +72,45 @@ class FakeChatApi extends ChatApi {
 }
 
 void main() {
+  for (final selection in {
+    'Codex': 'gpt-6-luna',
+    'Gemini': 'gemini-3.1-pro-preview',
+    'OpenRouter': 'google/gemma-4-31b-it:free',
+    'Groq（型號預覽）': 'llama-3.1-8b-instant'
+  }.entries) {
+    testWidgets('selects ${selection.key} model', (tester) async {
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.binding.setSurfaceSize(const Size(1000, 900));
+      final api = FakeChatApi();
+      await tester.pumpWidget(MaterialApp(home: ChatPage(api)));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byType(DropdownButtonFormField<String>));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(selection.key).last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byType(TextField).first);
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField).first, selection.value);
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(MenuItemButton, selection.value).last);
+      await tester.pumpAndSettle();
+      if (selection.key.startsWith('Groq')) {
+        expect(find.text('Groq 尚未接通，目前僅提供型號預覽。'), findsOneWidget);
+        expect(
+            tester
+                .widget<FilledButton>(find.widgetWithText(FilledButton, '建立對話'))
+                .onPressed,
+            isNull);
+        expect(api.writes, isEmpty);
+      } else {
+        await tester.tap(find.text('建立對話'));
+        await tester.pumpAndSettle();
+        expect(api.writes.first['model'], selection.value);
+        expect(api.writes.first['runtime'], selection.key.toLowerCase());
+      }
+    });
+  }
+
   test('logout discards the previous Chat API session immediately', () async {
     final sessions = <String?>[];
     var failures = 0;
@@ -157,7 +196,8 @@ void main() {
         isFalse);
   });
 
-  testWidgets('new authenticated account discards old ChatPage state and event cursor',
+  testWidgets(
+      'new authenticated account discards old ChatPage state and event cursor',
       (tester) async {
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.binding.setSurfaceSize(const Size(1000, 800));
