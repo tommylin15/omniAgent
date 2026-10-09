@@ -41,6 +41,25 @@ describe("Chat -> Gateway durable one-shot dispatch", () => {
       "gateway-turn-a-failed","turn_error",{code:"gateway_outcome_uncertain"});
   });
 
+  it("refuses cross-owner Gateway metadata even for Codex-native IDs", async () => {
+    for (const runtime of ["gemini", "codex"] as const) {
+      const db = store();
+      db.claimNextQueuedTurn.mockReset().mockResolvedValueOnce({ ...claim, runtime });
+      const worker = new ChatDispatcher(db, async () => ({ events: [
+        { type:"text_delta", ownerId:"owner-b", threadId:"thread-a",
+          turnId:"turn-a", payload:{ text:"must not persist under owner-a" } },
+        { type:"turn_completed", ownerId:"owner-b", threadId:"thread-a",
+          turnId:"turn-a", payload:{ status:"completed" } }
+      ] }), ["owner-a"]);
+      expect(await worker.runOnce()).toEqual({
+        status:"error",turnId:"turn-a",reason:"gateway_outcome_uncertain"
+      });
+      expect(db.appendEvent).toHaveBeenCalledTimes(1);
+      expect(db.appendEvent).toHaveBeenCalledWith("owner-a","thread-a","turn-a",
+        "gateway-turn-a-failed","turn_error",{code:"gateway_outcome_uncertain"});
+    }
+  });
+
   it("quarantines incomplete events and credential-shaped response fields", async () => {
     for (const fake of [
       {events:[{type:"text_delta",payload:{text:"unfinished"}}]},

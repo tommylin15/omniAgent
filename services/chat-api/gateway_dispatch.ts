@@ -60,7 +60,11 @@ function validateEvents(value: unknown, claim: DispatchClaim): TurnEvent[] {
     if (!row || typeof row !== "object" || Array.isArray(row)) throw new Error("invalid event");
     const item = row as Record<string, unknown>;
     if (typeof item.type !== "string" || !types.has(item.type)) throw new Error("invalid event type");
-    // Codex uses native provider IDs, which must never route Chat database rows.
+    // The Gateway may echo an owner binding; never persist another owner's
+    // response under the claimed database owner, including Codex native turns.
+    if (item.ownerId !== undefined && item.ownerId !== claim.ownerId)
+      throw new Error("foreign owner binding");
+    // Codex native thread/turn IDs do not identify Chat database rows.
     if (claim.runtime !== "codex" &&
         ((item.threadId !== undefined && item.threadId !== claim.threadId) ||
          (item.turnId !== undefined && item.turnId !== claim.turnId))) throw new Error("foreign binding");
