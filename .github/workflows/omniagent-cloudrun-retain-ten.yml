@@ -11,6 +11,9 @@ on:
       acceptance_and_promotion_passed:
         type: boolean
         required: true
+      older_tag_dependencies_cleared:
+        type: boolean
+        required: true
       chat_promoted:
         type: string
         required: true
@@ -41,7 +44,7 @@ concurrency:
 jobs:
   retain-ten:
     name: Retain ten - ${{ matrix.service }}
-    if: github.repository == 'tommylin15/omniAgent' && github.ref == 'refs/heads/main' && inputs.acceptance_and_promotion_passed
+    if: github.repository == 'tommylin15/omniAgent' && github.ref == 'refs/heads/main' && inputs.acceptance_and_promotion_passed && inputs.older_tag_dependencies_cleared
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -74,12 +77,30 @@ jobs:
           remote="$(git ls-remote https://github.com/tommylin15/omniAgent.git refs/heads/main | cut -f1)"
           test "$remote" = "$RELEASE_SHA"
       - name: Test retention policy before GCP authorization
-        run: python3 -m unittest discover -s tests -p test_cloudrun_revision_retention.py -v
+        run: |
+          python3 -m unittest discover -s tests -p test_cloudrun_revision_retention.py -v
+          python3 -m unittest discover -s tests -p test_cloudrun_revision_tag_retirement.py -v
       - uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
           service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
       - uses: google-github-actions/setup-gcloud@v2
+      - name: Plan retirement of only obsolete outside-ten candidate tag routes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/cloudrun_revision_tag_retirement.py \
+            --service "$SERVICE" \
+            --promoted-revision "$PROMOTED" \
+            --rollback-revision "$ROLLBACK"
+      - name: Retire obsolete tag URLs only after audited GHCR promotion
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/cloudrun_revision_tag_retirement.py \
+            --service "$SERVICE" \
+            --promoted-revision "$PROMOTED" \
+            --rollback-revision "$ROLLBACK" --apply
       - name: Dry-run latest-ten retention
         shell: bash
         run: |
