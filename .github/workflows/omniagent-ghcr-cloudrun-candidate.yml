@@ -84,6 +84,54 @@ jobs:
           print(json.dumps({"service":sys.argv[2],"serving_traffic":allocation,"runtime_sa_configured":True},sort_keys=True))
           PY
           done < "$RUNNER_TEMP/image-receipts.tsv"
+      - name: Fail closed on disabled or unreadable Secret versions before ANY deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - "$RUNNER_TEMP" "$PROJECT" <<'PY'
+          import json,re,subprocess,sys
+          from pathlib import Path
+
+          root,project=Path(sys.argv[1]),sys.argv[2]
+          services=("omniagent-chat","omniagent-agent-gateway","omniagent-shared-codex")
+          lookups={}
+          blocked=False
+          for service in services:
+              obj=json.loads((root/(service+"-before.json")).read_text())
+              spec=(((obj.get("spec") or {}).get("template") or {}).get("spec") or {})
+              refs=set()
+              for container in spec.get("containers") or []:
+                  for env in container.get("env") or []:
+                      secret=((env.get("valueFrom") or {}).get("secretKeyRef") or {})
+                      if secret:
+                          refs.add((str(secret.get("name","")),str(secret.get("key",""))))
+              for name,version in sorted(refs):
+                  if not re.fullmatch(r"[A-Za-z0-9_-]{1,255}",name) or not re.fullmatch(r"(?:[0-9]+|latest)",version):
+                      state="INVALID_REFERENCE"
+                  else:
+                      key=(name,version)
+                      if key not in lookups:
+                          try:
+                              p=subprocess.run(["gcloud","secrets","versions","describe",version,
+                                  "--secret="+name,"--project="+project,"--format=value(state)"],
+                                  capture_output=True,text=True,timeout=25,check=False)
+                              value=p.stdout.strip().upper() if p.returncode==0 else ""
+                              lookups[key]=value if value in ("ENABLED","DISABLED","DESTROYED") else "NOT_VERIFIED"
+                          except (OSError,subprocess.TimeoutExpired):
+                              lookups[key]="NOT_VERIFIED"
+                      state=lookups[key]
+                  # Print only a non-sensitive Secret name/version and metadata state.
+                  print(json.dumps({"service":service,"secret":name,"version":version,"state":state},sort_keys=True))
+                  if state!="ENABLED":
+                      blocked=True
+          if blocked:
+              print("candidate_secret_version_preflight=BLOCKED")
+              print("No Cloud Run deployment attempted; grant Secret VERSION METADATA read "
+                    "to CI on the referenced Secret and repair destroyed references first.")
+              raise SystemExit(1)
+          print("candidate_secret_version_preflight=PASS")
+          print("secret_payload_and_application_compatibility=NOT_VERIFIED")
+          PY
       - name: Deploy immutable public GHCR candidates with NO traffic
         shell: bash
         run: |
