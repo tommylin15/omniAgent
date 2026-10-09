@@ -75,6 +75,18 @@ class GhcrAutomaticTriggerContractTest(unittest.TestCase):
         self.assertIn('deploy_cli_nonzero_but_new_ready_revision_readback=PASS', source)
         self.assertNotIn('|| true', source)
 
+    def test_new_only_rollback_preflight_excludes_unusable_secret_versions(self):
+        source = workflow("omniagent-ghcr-new-only-rollback-preflight.yml")
+        self.assertIn('new_only_rollback_readiness=BLOCKED', source)
+        self.assertIn('new_only_rollback_readiness=PASS', source)
+        self.assertIn('if state!="ENABLED"', source)
+        self.assertIn('FALLBACK_OR_PRIMARY_SECRET_NOT_ENABLED', source)
+        self.assertIn('digest_verified', source)
+        self.assertIn('legacy_rollback_dependency=NONE', source)
+        self.assertIn('production_traffic_mutated=NO', source)
+        self.assertNotIn('gcloud run services update-traffic', source)
+        self.assertNotIn('gcloud run revisions delete', source)
+
     def test_candidate_success_automatically_starts_read_only_smoke(self):
         source = workflow("omniagent-ghcr-current-candidate-smoke.yml")
         self.assertRegex(source, r"(?m)^on:\n  workflow_run:")
