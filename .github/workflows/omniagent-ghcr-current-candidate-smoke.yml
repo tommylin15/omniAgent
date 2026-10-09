@@ -1,0 +1,158 @@
+# Automatically verify only the current GitHub Actions -> GHCR -> Cloud Run
+# zero-traffic release. No legacy AR/GCS/Cloud Build inventory or mutations.
+name: omniAgent GHCR current candidate auto smoke
+on:
+  workflow_run:
+    workflows: ['omniAgent GHCR Cloud Run zero-traffic candidates']
+    types: [completed]
+  push:
+    branches: [main]
+    paths: ['.github/workflows/omniagent-ghcr-current-candidate-smoke.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: omniagent-ghcr-current-candidate-smoke
+  cancel-in-progress: false
+jobs:
+  smoke:
+    if: >-
+      github.repository == 'tommylin15/omniAgent' &&
+      github.ref == 'refs/heads/main' &&
+      (github.event_name != 'workflow_run' ||
+       (github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.head_repository.full_name == 'tommylin15/omniAgent' &&
+        github.event.workflow_run.head_branch == 'main'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 13
+    env:
+      P: gen-lang-client-0593591102
+      R: us-central1
+      RELEASE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+    steps:
+      - name: Reject stale and unapproved source
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_SHA" =~ ^[a-f0-9]{40}$ ]]
+          actual="$(git ls-remote https://github.com/tommylin15/omniAgent.git refs/heads/main | cut -f1)"
+          [[ "$actual" == "$RELEASE_SHA" ]] || { echo "candidate_sha=STALE_BLOCKED"; exit 1; }
+          echo "current_candidate_source=PASS"
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+          service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Validate current zero-percent candidates, immutable GHCR digests and production routing
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          tag="ghcr-$(printf '%s' "$RELEASE_SHA" | cut -c1-12)"
+          for svc in omniagent-chat omniagent-agent-gateway omniagent-shared-codex; do
+            gcloud run services describe "$svc" --project="$P" --region="$R" --format=json > "$RUNNER_TEMP/service.json"
+            python3 - "$RUNNER_TEMP/service.json" "$svc" "$tag" "$RUNNER_TEMP/$svc.tsv" <<'PY'
+          import json,sys,re,pathlib
+          service=json.load(open(sys.argv[1]))
+          name,tag,path=sys.argv[2:]
+          status=service.get("status") or {}
+          routes=status.get("traffic") or []
+          live=[r for r in routes if r.get("percent",0)>0]
+          tagged=[r for r in routes if r.get("tag")==tag and r.get("percent",0)==0]
+          if len(live)!=1 or live[0].get("percent")!=100 or len(tagged)!=1:
+              raise SystemExit("BLOCKED: unapproved traffic or missing zero-percent release")
+          current=tagged[0].get("revisionName","")
+          if not current or current==live[0].get("revisionName") or status.get("latestReadyRevisionName")!=current:
+              raise SystemExit("BLOCKED: candidate is not ready")
+          containers=((service.get("spec") or {}).get("template") or {}).get("spec") or {}
+          images=[str(c.get("image","")) for c in containers.get("containers") or []]
+          source="ghcr.io/tommylin15/"+name+"@sha256:"
+          if len(images)!=1 or not images[0].startswith(source) or not re.fullmatch(r"[a-f0-9]{64}",images[0][len(source):]):
+              raise SystemExit("BLOCKED: candidate source is not an immutable approved GHCR image")
+          tagurl=tagged[0].get("url","")
+          audience=status.get("url","")
+          if not (tagurl.startswith("https://") and audience.startswith("https://")):
+              raise SystemExit("BLOCKED: missing HTTPS candidate origin")
+          pathlib.Path(path).write_text("\t".join([tagurl.rstrip("/"),audience.rstrip("/"),current,live[0]["revisionName"],images[0].split("@")[-1]])+"\n")
+          print("current_ghcr_candidate="+name+" ready=PASS zero_traffic=PASS immutable_digest=PASS")
+          PY
+            IFS=$'\t' read -r url audience revision serving digest < "$RUNNER_TEMP/$svc.tsv"
+            gcloud run revisions describe "$revision" --project="$P" --region="$R" --format=json > "$RUNNER_TEMP/revision.json"
+            python3 - "$RUNNER_TEMP/revision.json" "$digest" "$svc" <<'PY'
+          import json,sys
+          rev=json.load(open(sys.argv[1]))
+          expected,svc=sys.argv[2:]
+          refs=[str(x.get("image","")) for x in (rev.get("spec") or {}).get("containers") or []]
+          if len(refs)!=1 or not refs[0].endswith("@"+expected):
+              raise SystemExit("BLOCKED: deployed immutable content does not match GHCR source")
+          if svc=="omniagent-chat":
+              env=(rev.get("spec") or {}).get("containers",[{}])[0].get("env") or []
+              flags=[x for x in env if x.get("name")=="CHAT_DISPATCH_ENABLED"]
+              if any(x.get("value")=="true" or x.get("valueFrom") for x in flags):
+                  raise SystemExit("BLOCKED: private Chat dispatcher unexpectedly enabled")
+              print("chat_dispatch_default_disabled=PASS")
+          print("current_revision_digest="+svc+" match=PASS")
+          PY
+          done
+      - name: Chat web and private caller health, unauthorized access denial
+        shell: bash
+        run: |
+          set -euo pipefail
+          IFS=$'\t' read -r chat audience candidate serving digest < "$RUNNER_TEMP/omniagent-chat.tsv"
+          for endpoint in /health /ready / /main.dart.js; do
+            actual="$(curl -sS --max-time 35 -o /dev/null -w '%{http_code}' "$chat$endpoint")"
+            echo "current_chat_candidate=$endpoint http=$actual"
+            [[ "$actual" == 200 ]] || exit 1
+          done
+          actual="$(curl -sS --max-time 35 -o /dev/null -w '%{http_code}' "$chat/v1/threads")"
+          echo "anonymous_chat_api_denied_http=$actual"
+          [[ "$actual" == 401 ]] || exit 1
+          actual="$(curl -sS --max-time 35 -o /dev/null -w '%{http_code}' \
+            -X POST -H 'Content-Type: application/json' -d '{}' "$chat/internal/v1/chat/dispatch:once")"
+          echo "anonymous_chat_dispatch_denied_http=$actual"
+          [[ "$actual" == 401 ]] || exit 1
+          for item in 'omniagent-agent-gateway omniagent-chat' 'omniagent-shared-codex omniagent-codex-chat-client'; do
+            read -r svc caller <<< "$item"
+            IFS=$'\t' read -r url audience candidate serving digest < "$RUNNER_TEMP/$svc.tsv"
+            token="$(gcloud auth print-identity-token \
+              --impersonate-service-account="$caller@$P.iam.gserviceaccount.com" \
+              --audiences="$audience" --include-email 2>/dev/null)" || {
+                echo "signed_candidate=$svc token_issue=BLOCKED"
+                exit 1
+              }
+            [[ -n "$token" ]] || exit 1
+            anon="$(curl -sS --max-time 35 -o /dev/null -w '%{http_code}' "$url/health")"
+            echo "anonymous_private_health=$svc http=$anon"
+            [[ "$anon" == 403 ]] || exit 1
+            paths=/health
+            [[ "$svc" == omniagent-shared-codex ]] && paths="/health /ready"
+            for endpoint in $paths; do
+              actual="$(curl -sS --max-time 35 -o /dev/null -w '%{http_code}' \
+                -H "Authorization: Bearer $token" "$url$endpoint")"
+              echo "signed_current_candidate=$svc $endpoint http=$actual"
+              [[ "$actual" == 200 ]] || exit 1
+            done
+            unset token
+          done
+          echo "current_ghcr_candidate_signed_smoke=PASS"
+      - name: Recheck candidate stays at zero percent, not a promotion
+        shell: bash
+        run: |
+          set -euo pipefail
+          for svc in omniagent-chat omniagent-agent-gateway omniagent-shared-codex; do
+            gcloud run services describe "$svc" --project="$P" --region="$R" --format=json > "$RUNNER_TEMP/final.json"
+            IFS=$'\t' read -r url audience candidate serving digest < "$RUNNER_TEMP/$svc.tsv"
+            python3 - "$RUNNER_TEMP/final.json" "$candidate" "$serving" <<'PY'
+          import json,sys
+          status=json.load(open(sys.argv[1])).get("status") or {}
+          routes=status.get("traffic") or []
+          serving=[r for r in routes if r.get("percent",0)>0]
+          release=[r for r in routes if r.get("revisionName")==sys.argv[2]]
+          if len(serving)!=1 or serving[0].get("revisionName")!=sys.argv[3] or serving[0].get("percent")!=100 or len(release)!=1 or release[0].get("percent",0)!=0:
+              raise SystemExit("BLOCKED: formal traffic drift")
+          PY
+          done
+          echo "formal_traffic_preserved=PASS"
+          echo "human_oauth_and_live_chat_gateway_provider_acceptance=OPEN"
+          echo "promotion_and_rollback=NOT_AUTHORIZED_BY_THIS_READ_ONLY_WORKFLOW"
