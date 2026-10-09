@@ -2,6 +2,18 @@
 
 ## Replacement CI/CD — GitHub Actions / public GHCR / Cloud Run (OPEN)
 
+**2026-10-09 browser A → B → A — OPERATOR-REPORTED MANUAL PASS:**
+The user finished the Google OAuth account-switch acceptance at the
+public 0%-traffic GHCR Chat candidate and confirmed that **B could
+not see A's thread**, then **A could see its earlier thread again**
+after signing back in. This closes the **manual UI two-account
+visibility/isolation check**, not the independent backend/live-owner
+database readback, and not Chat→Gateway/provider round-trip. No
+account details or OAuth credentials were requested or recorded.
+**Still NOT VERIFIED:** approved owner entitlement, positive signed
+Gateway provider dispatch, durable streamed response replay, real
+production release and GHCR-only rollback drill.
+
 **2026-10-09 actual zero-traffic Chat/Gateway authentication negative contract:**
 [GitHub Actions #37917980938](https://github.com/tommylin15/omniAgent/actions/runs/37917980938)
 **PASS** for candidate SHA `f2a5be4425953b26f2340694765362c7bdc943c9`.
@@ -9,8 +21,9 @@ Anonymous Chat API denied, anonymous Gateway health denied,
 actual `omniagent-chat` IAM principal granted signed Cloud Run
 Gateway health, and all absent/invalid/expired HMAC cases rejected
 HTTP 400. **No accepted HMAC/provider invocation**, no persisted
-events, no browser Google OAuth identity confirmation; these remain
-**NOT VERIFIED**. The test did not access Secret payloads or switch
+events in that automated test and no browser Google OAuth observation
+by the workflow. The separate two-account browser check is now
+**OPERATOR-REPORTED MANUAL PASS**, not independently backend-verified. The test did not access Secret payloads or switch
 traffic. Candidate browser URL discovered by authoritative GCP traffic
 tag readback is
 `https://ghcr-f2a5be442595---omniagent-chat-2oo7qbkd5q-uc.a.run.app`.
@@ -50,8 +63,8 @@ persistence evidence. No unapproved model/provider calls.
   (Chat 12, Gateway 10, Shared 3).
   Three old serving revisions still receive 100% formal traffic and
   lie outside the newest ten; deletion MUST NOT occur yet.
-- **BLOCKED — formal app/release gates:** actual two-human Google OAuth
-  isolation, approved owner dispatch, real Chat→Gateway/provider
+- **BLOCKED — formal app/release gates:** independently evidenced owner
+  binding plus approved owner dispatch, real Chat→Gateway/provider
   persistence, GHCR-only 100% traffic cutover and rollback rehearsal,
   older tag URL dependency audit and eventual last-ten cleanup.
   The old Cloud Build/AR rollback mechanism is NOT a prerequisite.

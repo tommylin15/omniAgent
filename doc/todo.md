@@ -2,7 +2,24 @@
 
 ## Current delivery scope — NEW GitHub Actions → GHCR → Cloud Run only (2026-10-09)
 
-**2026-10-09 latest real IAM/HMAC negative boundary — PASS, human OAuth action OPEN:**
+**2026-10-09 two-account Google browser OAuth — OPERATOR-REPORTED PASS:**
+User completed the 0%-traffic GHCR Chat candidate A → B → A browser
+sequence and expressly confirmed **both** essential isolation assertions:
+(1) after signing in as B, A's thread was not visible; and
+(2) returning to A restored A's earlier thread.
+Scope: human-observed login, account-switch UI isolation and A-thread
+visibility/persistence across sign-out; no passwords, OAuth tokens,
+account identifiers or owner UUIDs were supplied or stored.
+Evidence class: **OPERATOR-REPORTED MANUAL PASS**; not a replayable
+backend database query, a second independently observed human session,
+or proof of billable Provider dispatch. Candidate:
+`https://ghcr-f2a5be442595---omniagent-chat-2oo7qbkd5q-uc.a.run.app`.
+Next gates: verify approved Owner entitlement/real Chat→Gateway signed
+model dispatch → PostgreSQL event replay, and separate authorized
+GHCR-only production cutover/rollback. Do not turn on model execution
+or change production traffic based on UI OAuth PASS alone.
+
+**2026-10-09 real IAM/HMAC negative boundary — PASS (historical; browser manual OAuth now PASS):**
 The accepted exact GHCR candidate `f2a5be4425953b26f2340694765362c7bdc943c9`
 was tested in [live Chat↔Gateway security #37917980938](https://github.com/tommylin15/omniAgent/actions/runs/37917980938):
 anonymous Chat/Gateway denials PASS, Chat service identity can invoke
@@ -20,8 +37,7 @@ If OAuth rejects the unique tagged hostname, this is **BLOCKED for
 candidate browser validation**, not evidence that the two-owner gate
 passed. Actual authorized provider dispatch remains disabled and requires
 separately approved Owner entitlements and a bounded paid-call policy.
-**No user action needed for code/CI; human Google login is the only
-currently requested operator action.**
+**That human login action was subsequently completed and confirmed; see operator-reported PASS above.**
 
 **2026-10-09 latest retention implementation and GCP evidence — PARTIAL:**
 New post-promotion-only tag retirement implementation:

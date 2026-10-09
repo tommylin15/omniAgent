@@ -2,6 +2,22 @@
 
 **Current status: SOURCE / TEST INTEGRATION; LIVE AUTHENTICATED PROVIDER ACCEPTANCE OPEN.**
 
+### Browser OAuth and account isolation — operator-confirmed PASS
+
+**2026-10-09:** Operator performed the A → B → A sign-in sequence on
+the latest GHCR 0%-traffic Chat candidate and reported both checks
+successful: B could not view A's prior thread, and A could view its
+thread again after returning. Mark **OPERATOR-REPORTED MANUAL PASS**
+for this browser account-switch isolation and visible persistence only.
+Do not claim that backend independent queries, production end-to-end
+owner identity checks, positive Gateway HMAC, billable Codex inference
+or event replay were established by that report.
+No private credential, account ID, or Owner UUID is required to record
+the manual result. Pending steps are the bounded, approved-owner
+signed Chat→Gateway dispatch and durable persistence gate, followed
+by release/promotion and real GHCR-only rollback. Production formal
+routing stays unchanged.
+
 ### Latest 2026-10-09 zero-traffic live negative security check
 
 [Real IAM and HMAC-negative probe #37917980938](https://github.com/tommylin15/omniAgent/actions/runs/37917980938)
@@ -18,7 +34,7 @@ A currently verified, public 0%-traffic Chat candidate for a **real
 human** browser check:
 https://ghcr-f2a5be442595---omniagent-chat-2oo7qbkd5q-uc.a.run.app
 
-Manual browser OAuth acceptance recipe:
+Manual browser OAuth acceptance recipe (completed by operator, 2026-10-09; historical instructions):
 1. Sign in with Google account A; create one harmless thread/message;
    message remaining `QUEUED` is expected while dispatch is disabled.
 2. Sign out, sign in with account B; verify A's threads/messages are
