@@ -125,6 +125,9 @@ class _OmniAgentAppState extends State<OmniAgentApp> {
                   ),
                 ),
               )
-            : ChatPage(api!),
+            // A Google account change must destroy the previous ChatPage
+            // State (thread cache, event cursor and pending poller). Reusing
+            // an unkeyed StatefulWidget can leak the old owner's UI state.
+            : ChatPage(api!, key: ObjectKey(api)),
       );
 }
