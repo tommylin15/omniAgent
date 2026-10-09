@@ -2,6 +2,30 @@
 
 ## Current delivery scope — NEW GitHub Actions → GHCR → Cloud Run only (2026-10-09)
 
+**2026-10-09 automatic chain latest accepted checkpoint — PASS (gate #1):**
+source commit `c7f32b23d4ac4b60d43b3108e69e5b4019e31321`;
+[full quality and three public GHCR digests #37894051418](https://github.com/tommylin15/omniAgent/actions/runs/37894051418)
+SUCCESS → automatically triggered
+[three 0%-traffic Cloud Run candidates #37894312427](https://github.com/tommylin15/omniAgent/actions/runs/37894312427)
+SUCCESS → automatically triggered
+[signed and anonymous live candidate Smoke #37894440766](https://github.com/tommylin15/omniAgent/actions/runs/37894440766)
+SUCCESS. New revisions Chat `omniagent-chat-00034-vul`,
+Gateway `omniagent-agent-gateway-00025-jom`, Shared
+`omniagent-shared-codex-00014-lij`. All three Ready, correct
+immutable GHCR digests, candidate 0%, formal traffic preserved;
+Chat health/ready/Web 200, protected routes 401, private anonymous
+403, signed Gateway/Shared health (and Shared ready) 200.
+Gateway gcloud CLI returned nonzero because an *old* tagged failed
+revision `omniagent-agent-gateway-00021-boq` still points to
+DESTROYED Secret version 2; independently verified **new** Gateway
+revision `00025-jom` Ready with the enabled `omniagent-bundle:latest`.
+The workflow records the nonzero CLI exit and accepts it **only** after
+strict new-revision/digest/tag/runtime-config/traffic readback.
+This anomaly remains tracked separately; it is not a production
+acceptance or reason to delete historical revisions.
+**Gate #1 PASS; production application integration, cutover/rollback
+(gate #2), and ten-revision retention (gate #3) remain OPEN.**
+
 The operator explicitly excludes investigation/cleanup of legacy CI/CD
 Cloud Run revisions, historical Docker images, Cloud Build and GCS assets
 from the active completion path. Manual asset cleanup was reported by the
@@ -35,7 +59,7 @@ as a newly audited PASS. Preserve non-omniAgent data and backup safety.
   whose job was correctly SKIPPED because upstream was not successful.
   **Automatic event wiring and fail-closed downstream gating: PASS.**
   **Successful three-service deployment → automatic passing smoke: NOT VERIFIED.**
-- [ ] **2026-10-09 current GHCR deployment blocker (not legacy cleanup):**
+- [x] **2026-10-09 historical GHCR Secret deployment blocker — mitigated by verified current-path candidate:**
   all three newly published GHCR digests were anonymously accessible in
   candidate #37877047775. Chat `omniagent-chat-00030-puq` deployed at 0%
   with serving traffic preserved. Gateway candidate failed because existing
@@ -47,7 +71,7 @@ as a newly audited PASS. Preserve non-omniAgent data and backup safety.
   Do not guess a replacement Secret version or mutate credentials. An authorized
   operator must validate a working Secret version and controlled runtime
   reference/compatibility before retrying the exact-SHA auto chain.
-  **E2E result: BLOCKED**, not CI/CD DONE.
+  **Historical run result: BLOCKED; newer exact-SHA gate #1 E2E PASS above.**
 - [x] **2026-10-09 no-partial-deploy safeguard:** commit
   `e6ef98a7548b40d9807f5ce22e70a6b2795b8e75` passed full quality,
   Node Core and three GHCR publishes
@@ -64,7 +88,7 @@ as a newly audited PASS. Preserve non-omniAgent data and backup safety.
   Shared no environment Secret reference, with metadata unreadable to CI.
   Earlier Cloud Run deploy **explicitly** reported Gateway version `2`
   DESTROYED. **Safety regression PASS; recovered deployment NOT VERIFIED.**
-- [ ] **Admin-scoped recovery prerequisite:** grant `omniagent-ci` only
+- [x] **Admin-scoped recovery prerequisite — completed and observed:** granted `omniagent-ci` only
   `roles/secretmanager.viewer` on the specific `omniagent-bundle` Secret,
   not project-wide nor Secret Accessor. This permits version-state metadata
   reads but no payload reads. Inventory ENABLED versions; a destroyed
