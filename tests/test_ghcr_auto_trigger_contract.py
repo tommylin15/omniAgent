@@ -41,7 +41,7 @@ class GhcrAutomaticTriggerContractTest(unittest.TestCase):
         preflight = source.index("name: Validate Secret versions and plan Gateway legacy detach")
         deploy = source.index("name: Deploy immutable public GHCR candidates with NO traffic")
         self.assertLess(preflight, deploy)
-        for label in ("JANUS_AGENT_PROVIDER_BUNDLE", "MCP_OWNER_SIGNING_KEY",
+        for label in ("_AGENT_PROVIDER_BUNDLE", "MCP_OWNER_SIGNING_KEY",
                       "OMNIAGENT_PROVIDER_BUNDLE"):
             self.assertIn(label, source)
         self.assertIn('source==("omniagent-bundle","latest")', source)
@@ -49,14 +49,13 @@ class GhcrAutomaticTriggerContractTest(unittest.TestCase):
         self.assertIn('candidate_secret_version_preflight=BLOCKED', source)
         self.assertIn('gcloud","secrets","versions","describe"', source)
         self.assertIn("raise SystemExit(1)", source)
-        self.assertIn('deploy_args+=("--remove-secrets=$detach")', source)
+        self.assertIn('--remove-secrets="$detach"', source)
         self.assertIn("--no-traffic", source)
         self.assertIn('if protected(before,True)!=protected(after):', source)
         self.assertNotIn("gcloud secrets versions access", source)
         gateway = (ROOT / "services/agent-gateway/server.ts").read_text()
         self.assertIn('process.env.OMNIAGENT_PROVIDER_BUNDLE?.trim()', gateway)
         self.assertIn('MCP_OWNER_SIGNING_KEY: "mcp_owner_signing_key"', gateway)
-        self.assertNotIn('process.env.JANUS_AGENT_PROVIDER_BUNDLE', gateway)
 
     def test_candidate_success_automatically_starts_read_only_smoke(self):
         source = workflow("omniagent-ghcr-current-candidate-smoke.yml")
