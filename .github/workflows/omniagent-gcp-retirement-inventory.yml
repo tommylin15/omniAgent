@@ -187,3 +187,49 @@ jobs:
           fi
           echo "retirement_decision=BLOCKED_UNTIL_DEPENDENCY_AND_APPROVED_MANIFEST"
           echo "deletion_performed=NONE"
+
+      - name: Post-cleanup real serving revision probes (read only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          P=gen-lang-client-0593591102
+          R=us-central1
+          for row in "omniagent-chat anonymous" "omniagent-agent-gateway omniagent-chat" "omniagent-shared-codex omniagent-codex-chat-client"; do
+            read -r svc caller <<< "$row"
+            gcloud run services describe "$svc" --project="$P" --region="$R" --format=json > "$RUNNER_TEMP/live-service.json"
+            IFS=$'\t' read -r origin revision <<< "$(python3 - "$RUNNER_TEMP/live-service.json" <<'PY'
+          import json,sys
+          s=json.load(open(sys.argv[1])).get("status") or {}
+          live=[x for x in s.get("traffic") or [] if x.get("percent",0)>0]
+          if len(live)!=1 or live[0].get("percent")!=100:
+              raise SystemExit("BLOCKED: unexpected production split")
+          name=str(live[0].get("revisionName",""))
+          if not name.startswith("omniagent-") or not s.get("url","").startswith("https://"):
+              raise SystemExit("BLOCKED: invalid serving target")
+          print(s["url"].rstrip("/")+"\t"+name)
+          PY
+          )"
+            if [[ "$caller" == anonymous ]]; then
+              token=""
+            else
+              token="$(gcloud auth print-identity-token \
+                --impersonate-service-account="$caller@$P.iam.gserviceaccount.com" \
+                --audiences="$origin" --include-email 2>/dev/null)" || {
+                  echo "post_cleanup_health=$svc revision=$revision status=IDENTITY_UNAVAILABLE"
+                  exit 1
+                }
+              [[ -n "$token" ]] || exit 1
+            fi
+            for endpoint in /health $(if [[ "$svc" == omniagent-chat ]]; then echo /ready; fi); do
+              if [[ "$caller" == anonymous ]]; then
+                status="$(curl -sS --max-time 35 -o /dev/null -w '%{http_code}' "$origin$endpoint")"
+              else
+                status="$(curl -sS --max-time 35 -o /dev/null -w '%{http_code}' \
+                  -H "Authorization: Bearer $token" "$origin$endpoint")"
+              fi
+              echo "post_cleanup_health=$svc revision=$revision route=$endpoint http=$status"
+              [[ "$status" == 200 ]] || exit 1
+            done
+            unset token
+          done
+          echo "post_cleanup_production_health=PASS"
