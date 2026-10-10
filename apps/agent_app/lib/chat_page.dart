@@ -18,7 +18,7 @@ class ChatPage extends StatefulWidget {
 class _ChatPageState extends State<ChatPage> {
   late Future<dynamic> threads = widget.api.get('/v1/threads');
   final input = TextEditingController();
-  final modelInput = TextEditingController(text: 'gemini-2.5-flash');
+  final modelInput = TextEditingController(text: 'gemini-3.5-flash-lite');
   final events = <String, Map<String, dynamic>>{};
   final seenEvents = <String>{};
   final lockedApprovals = <String>{};
