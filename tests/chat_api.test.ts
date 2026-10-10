@@ -148,6 +148,21 @@ describe("omniAgent Chat API ownership boundary", () => {
     expect(events.headers.get("content-type")).toContain("charset=utf-8");
     expect(await events.text()).toContain("你好，世界");
   });
+  it("refuses non-Lite Gemini thread creation before persisting anything", async () => {
+    const {base,store}=await app();
+    const headers={Authorization:"Bearer alice","Idempotency-Key":"not-lite",
+      "Content-Type":"application/json"};
+    for (const model of ["gemini-3.8-flash","gemini-3.7-flash",
+      "gemini-3.6-flash","gemini-2.5-flash","gemini-3.1-pro-preview"]) {
+      const result=await fetch(base+"/v1/threads",{
+        method:"POST",headers,body:JSON.stringify({runtime:"gemini",model,
+          assistantProfile:"default"})});
+      expect(result.status).toBe(400);
+      expect(await result.json()).toEqual({error:"invalid_request"});
+    }
+    expect(store.createThread).not.toHaveBeenCalled();
+  });
+
   it("accepts provider/model IDs without relaxing thread IDs", async () => {
     const { base, store } = await app();
     const headers = { Authorization: "Bearer alice", "Idempotency-Key": "key-1", "Content-Type": "application/json" };
