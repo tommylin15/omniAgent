@@ -7,6 +7,19 @@ import 'package:omniagent_app/chat_api.dart';
 import 'package:omniagent_app/chat_page.dart';
 import 'package:omniagent_app/main.dart';
 
+class RestrictedChatApi extends ChatApi {
+  RestrictedChatApi() : super('test');
+  final writes = <String>[];
+  @override
+  Future<dynamic> get(String path) async => path == '/v1/models'
+      ? {'dispatchEnabled':false,'items':[]} : {'items':[]};
+  @override
+  Future<dynamic> post(String path, Map<String,dynamic> body) async {
+    writes.add(path);
+    return {'status':'unexpected'};
+  }
+}
+
 class FakeChatApi extends ChatApi {
   FakeChatApi({this.withApproval = false}) : super('test');
   final bool withApproval;
@@ -276,6 +289,16 @@ void main() {
         api.writes
             .any((write) => '${write['path']}'.startsWith('/api/v1/me/chats')),
         isFalse);
+  });
+
+  testWidgets('unentitled Owner sees disabled model creation', (tester) async {
+    final api = RestrictedChatApi();
+    await tester.pumpWidget(MaterialApp(home: ChatPage(api)));
+    await tester.pumpAndSettle();
+    expect(find.text('此帳號尚未取得所選模型的執行權限；不會送出付費推論。'), findsOneWidget);
+    final create = tester.widget<FilledButton>(find.widgetWithText(FilledButton,'建立對話'));
+    expect(create.onPressed, isNull);
+    expect(api.writes, isEmpty);
   });
 
   testWidgets(
