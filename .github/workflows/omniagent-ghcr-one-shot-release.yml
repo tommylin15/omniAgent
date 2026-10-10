@@ -1,0 +1,103 @@
+# One-time, explicitly owner-requested technical-scope release (2026-10-10).
+# Future pushes do NOT release unless their own commit is independently tagged.
+# No paid Provider inference is enabled. No actual rollback rehearsal.
+name: omniAgent one-shot GHCR formal release and retain ten
+on:
+  workflow_run:
+    workflows: ['omniAgent GHCR current candidate auto smoke']
+    types: [completed]
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: omniagent-ghcr-cloudrun-release
+  cancel-in-progress: false
+
+jobs:
+  formal-release:
+    if: >-
+      github.repository == 'tommylin15/omniAgent' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_repository.full_name == 'tommylin15/omniAgent' &&
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
+      RECEIPT: ${{ runner.temp }}/ghcr-one-shot-promotion.json
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+      - name: One-time authorization marker and immutable current main
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_SHA" =~ ^[a-f0-9]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
+          test "$(git ls-remote https://github.com/tommylin15/omniAgent.git refs/heads/main | cut -f1)" = "$RELEASE_SHA"
+          git log -1 --format=%B | grep -Fq '[release-once]'
+          echo "release_scope=DEPLOY_CODE_WITH_DISPATCH_AND_BYOK_DISABLED" >> "$GITHUB_STEP_SUMMARY"
+          echo "real_rollback_drill=WAIVED_BY_OWNER" >> "$GITHUB_STEP_SUMMARY"
+      - name: Run one integration acceptance of source, safety tests and live candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_*.py' -v
+          echo "upstream_current_GHCR_signed_candidate_smoke=PASS" >> "$GITHUB_STEP_SUMMARY"
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+          service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Verify actual current GHCR candidate and permitted disabled features
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ghcr_release_readiness.py "$RELEASE_SHA" "$RUNNER_TEMP/release-readiness.json"
+          echo "read_only_GHCR_technical_preflight=PASS" >> "$GITHUB_STEP_SUMMARY"
+      - name: Official traffic promotion, Shared then Gateway then Chat
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/ghcr_one_shot_promotion.py --release-sha "$RELEASE_SHA" --report-file "$RECEIPT" --apply
+          echo "formal_traffic_promotion=PASS" >> "$GITHUB_STEP_SUMMARY"
+      - name: Retire obsolete tags and retain newest ten AFTER promotion
+        shell: bash
+        run: |
+          set -euo pipefail
+          for service in omniagent-shared-codex omniagent-agent-gateway omniagent-chat; do
+            read -r promoted fallback < <(python3 - "$RECEIPT" "$service" <<'PY'
+          import json,sys
+          doc=json.load(open(sys.argv[1]))
+          assert doc["status"] == "PASS"
+          step=next(s for s in doc["steps"] if s["service"]==sys.argv[2])
+          print(step["candidate"],step["fallback"])
+          PY
+            )
+            python3 scripts/cloudrun_revision_tag_retirement.py --service "$service" --promoted-revision "$promoted" --rollback-revision "$fallback"
+            python3 scripts/cloudrun_revision_tag_retirement.py --service "$service" --promoted-revision "$promoted" --rollback-revision "$fallback" --apply
+            python3 scripts/cloudrun_revision_retention.py --service "$service" --promoted-revision "$promoted" --rollback-revision "$fallback"
+            python3 scripts/cloudrun_revision_retention.py --service "$service" --promoted-revision "$promoted" --rollback-revision "$fallback" --apply
+          done
+          echo "latest_ten_retention=PASS" >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve redacted production receipt, even on failure
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if test -f "$RECEIPT"; then cp "$RECEIPT" ghcr-one-shot-promotion.json; fi
+          if test -f "$RUNNER_TEMP/release-readiness.json"; then cp "$RUNNER_TEMP/release-readiness.json" ghcr-one-shot-readiness.json; fi
+      - name: Upload one-time release evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ghcr-one-shot-${{ github.event.workflow_run.head_sha }}
+          path: |
+            ghcr-one-shot-promotion.json
+            ghcr-one-shot-readiness.json
+          if-no-files-found: warn
+          retention-days: 90

@@ -1,3 +1,23 @@
+# 2026-10-10 Owner change: single integration / promotion / cleanup; rollback drill waived
+
+The operator explicitly waived the **real rollback rehearsal** for this release.
+A one-shot, commit-marker-bound workflow stages: full GitHub Actions quality
+(including disposable PostgreSQL, Flutter), current GHCR zero-traffic candidate,
+signed live smoke, read-only three-service preflight, guarded formal traffic
+promotion, and then guarded latest-ten Revision cleanup. This may be executed
+only from an exact current main commit carrying `[release-once]`; future pushes
+without that marker cannot promote via this workflow. It retains a previously
+validated GHCR fallback without exercising a rollback drill. Emergency
+restoration on a failed partial promotion remains enabled.
+
+**Important scope boundary:** the technical release can ship disabled-by-default
+dispatch/BYOK functionality; it does not authorize billable Owner Codex inference
+or convert missing owner/provider/SSE/approval/reconnect acceptance into PASS.
+If any workflow/Secret/traffic/retention gate fails, report PARTIAL/BLOCKED
+with its receipt rather than claiming success. Actual execution, CI run,
+Cloud Run traffic and deletion results must be checked against GitHub/runtime;
+this file records source policy, not deployment evidence.
+
 # omniAgent TODO
 
 ### 2026-10-10 Formal release request — actual promotion NOT YET AUTHORIZED BY ACCEPTANCE

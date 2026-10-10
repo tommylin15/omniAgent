@@ -1,3 +1,30 @@
+# 2026-10-10 One-time, rollback-rehearsal-waived GHCR formal deployment
+
+The owner authorized a one-time sequence: complete code / one integrated
+technical acceptance / formal Cloud Run promotion / protected latest-ten
+Revision cleanup. The **actual rollback exercise is waived**; keep a verified
+GHCR-only fallback and emergency recovery for a failed partial traffic update.
+No legacy Artifact Registry or Cloud Build rollback is required.
+
+`.github/workflows/omniagent-ghcr-one-shot-release.yml` is deliberately
+not a general automatic production deployer. It runs after the matching
+current-main signed zero-traffic candidate smoke, and only if that *exact*
+source commit message includes `[release-once]`. It reruns release safety
+tests and live readiness, checks the enabled state of env and volume Secret
+references, validates three GHCR image digests and 0% candidates, and verifies
+dispatch and BYOK remain disabled. It then promotes Shared → Gateway → Chat
+to 100% with readback and emergency recovery on failure. No paid inference
+or credential entitlement is implied. Only after a 100% promotion readback
+does it execute the existing obsolete-tag audits and latest-ten Revision
+retention checks. It never deletes DB backups, GCS content, GHCR images,
+Secrets, or legacy infrastructure.
+
+Remaining full-app acceptance (owner-authorized inference, durable SSE,
+approval/cancel/reconnect) must stay separately marked NOT VERIFIED
+until a later authorized test. The one-time technical deployment is not
+full Phase 9 application completion. Runtime evidence and workflow run
+conclusions, not this document, establish deployment success.
+
 # omniAgent CI/CD: GitHub Actions → public GHCR → Cloud Run
 
 ### 2026-10-10 current-main GHCR-only production readiness
