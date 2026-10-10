@@ -75,8 +75,9 @@ class _ChatPageState extends State<ChatPage> {
 
   bool get modelAllowed {
     final selected = modelInput.text.trim();
-    if (runtime == 'gemini' && !modelCatalog['gemini']!.contains(selected))
+    if (runtime == 'gemini' && !modelCatalog['gemini']!.contains(selected)) {
       return false;
+    }
     return entitledModels == null ||
         (entitledModels![runtime]?.contains(selected) ?? false);
   }
