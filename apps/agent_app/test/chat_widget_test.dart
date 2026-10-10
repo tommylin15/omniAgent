@@ -169,7 +169,7 @@ void main() {
   });
   for (final selection in {
     'Codex': 'gpt-6-luna',
-    'Gemini': 'gemini-3.1-pro-preview',
+    'Gemini': 'gemini-3.5-flash-lite',
     'OpenRouter': 'google/gemma-4-31b-it:free',
     'Groq（型號預覽）': 'llama-3.1-8b-instant'
   }.entries) {
