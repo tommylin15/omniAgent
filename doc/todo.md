@@ -1,5 +1,28 @@
 # 2026-10-10 Owner change: single integration / promotion / cleanup; rollback drill waived
 
+### 2026-10-10 Gemini Chat Owner policy — Flash-Lite only
+
+- Owner decision: Gemini Chat/UI and the signed Gateway dispatch entrypoint allow
+  only `gemini-3.5-flash-lite`, `gemini-3.1-flash-lite`,
+  `gemini-2.5-flash-lite`. Ordinary Flash / Pro and preview identifiers
+  cannot be selected for new Gemini Chat and are denied before provider network
+  execution. Historical thread/event records remain intact.
+- Chat `CHAT_DISPATCH_ENTITLEMENTS_JSON` must contain **only** these Gemini IDs;
+  configurations referencing removed Gemini models fail closed at startup if
+  dispatch is explicitly enabled. This policy does **not** turn on dispatch,
+  import Owner Codex credentials, enable BYOK, or authorize provider charges.
+- Google currently restricts Gemini 2.5 family API access to eligible
+  previously active projects; availability and free quotas must be verified
+  against the actual project's provider/runtime evidence, never inferred
+  from the UI catalog. Official sources:
+  https://ai.google.dev/gemini-api/docs/models and
+  https://ai.google.dev/gemini-api/docs/pricing.
+- Latest exact SHA tests / GHCR publish / 0%-candidate / full app runtime
+  acceptance must be tracked separately as PASS/FAIL/NOT VERIFIED. Previous
+  formal production revision remains the deployed baseline until a new
+  verified explicit promotion. No rollback exercise is newly required.
+
+
 ### 2026-10-10 12:04 Asia/Taipei — executed GHCR release and last-ten retention
 
 - Deployed application SHA: `d48865890038a8373d5abc27fb5da92dc511fc92`.
