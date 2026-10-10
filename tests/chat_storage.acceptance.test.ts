@@ -2,7 +2,11 @@ import { readFileSync } from "node:fs";
 import { Pool } from "pg";
 import { describe, expect, it } from "vitest";
 import { ChatConflict, ChatNotFound, ChatStore } from "../services/chat-api/storage.js";
-import { ChatDispatcher } from "../services/chat-api/gateway_dispatch.js";
+import { ChatDispatcher, makeSignedGatewayInvoker } from "../services/chat-api/gateway_dispatch.js";
+import { makeChatServer } from "../services/chat-api/server.js";
+import { makeServer } from "../services/agent-gateway/server.js";
+import { parseModelEntitlements } from "../services/chat-api/model_entitlements.js";
+import type { AddressInfo } from "node:net";
 import { CredentialRegistry } from "../services/chat-api/credential_management.js";
 
 const dsn = process.env.PG_TEST_URL;
@@ -258,6 +262,87 @@ describe.runIf(Boolean(dsn))("isolated PostgreSQL ChatStore acceptance", () => {
         .rejects.toThrow("skill revisions are immutable");
       await store.writeSkillRevision(b,"summary",1,{ prompt:"bob's skill" },"skill-1");
       expect((await store.skillState(b,"summary")).current_revision).toBe(1);
+
+      // True disposable PostgreSQL + both HTTP servers + signed HMAC
+      // + Owner capability endpoint + replay. Stubbed provider never bills.
+      const priorSigning = process.env.MCP_OWNER_SIGNING_KEY;
+      const signingKey = "0123456789abcdef0123456789abcdef";
+      process.env.MCP_OWNER_SIGNING_KEY = signingKey;
+      let requests = 0;
+      const gateway = makeServer(undefined,undefined,undefined,async request => {
+        requests++;
+        return {events:[
+          { ownerId:request.ownerId,threadId:request.threadId,turnId:request.turnId,
+            type:"text_delta",payload:{text:"bounded fixture answer"} },
+          { ownerId:request.ownerId,threadId:request.threadId,turnId:request.turnId,
+            type:"turn_completed",payload:{status:"completed"} }
+        ]};
+      });
+      let chat: ReturnType<typeof makeChatServer> | undefined;
+      try {
+        await new Promise<void>(resolve=>gateway.listen(0,"127.0.0.1",resolve));
+        const gatewayLocal = "http://127.0.0.1:"+(gateway.address() as AddressInfo).port;
+        const invoker = makeSignedGatewayInvoker({
+          url:"https://approved-private-gateway.example.com",
+          audience:"https://approved-gateway.example.com",
+          signingKey,
+          idToken:async()=>"fixture-signed-service-only",
+          fetcher: ((target: RequestInfo | URL,init?: RequestInit) =>
+            fetch(gatewayLocal+new URL(String(target)).pathname,init)) as typeof fetch
+        });
+        const entitlements = parseModelEntitlements(JSON.stringify([
+          {ownerId:a,runtime:"gemini",model:"gemini-2.5-flash",credentialMode:"platform"}
+        ]),[a]);
+        const worker = new ChatDispatcher(store,invoker,[a],entitlements);
+        chat = makeChatServer(store,async token => {
+          if (!["alice","bob"].includes(token)) throw new Error("unauthorized");
+          return {issuer:"https://accounts.google.com",subject:token};
+        },async token => {if(token!=="service")throw new Error("unauthorized");},worker);
+        await new Promise<void>(resolve=>chat!.listen(0,"127.0.0.1",resolve));
+        const url = "http://127.0.0.1:"+(chat.address() as AddressInfo).port;
+        const auth = (owner: string) => ({Authorization:"Bearer "+owner,
+          "Content-Type":"application/json"});
+        expect((await fetch(url+"/v1/models")).status).toBe(401);
+        expect(await (await fetch(url+"/v1/models",{headers:auth("alice")})).json())
+          .toEqual({dispatchEnabled:true,items:[{runtime:"gemini",model:"gemini-2.5-flash"}]});
+        expect(await (await fetch(url+"/v1/models",{headers:auth("bob")})).json())
+          .toEqual({dispatchEnabled:false,items:[]});
+        const threadResponse=await fetch(url+"/v1/threads",{
+          method:"POST",headers:{...auth("alice"),"Idempotency-Key":"joined-create-1"},
+          body:JSON.stringify({runtime:"gemini",model:"gemini-2.5-flash",
+            threadId:"joined-flow",assistantProfile:"default"})});
+        expect(threadResponse.status).toBe(201);
+        expect((await threadResponse.json()).owner_id).toBe(a);
+        const messageResponse=await fetch(url+"/v1/threads/joined-flow/messages",{
+          method:"POST",headers:{...auth("alice"),"Idempotency-Key":"joined-message-1"},
+          body:JSON.stringify({content:"owner-only fixture prompt"})});
+        expect(messageResponse.status).toBe(202);
+        expect((await messageResponse.json()).dispatch.status).toBe("completed");
+        expect(requests).toBe(1);
+        const replay=await fetch(url+"/v1/threads/joined-flow/events?cursor=-1",{
+          headers:auth("alice")});
+        expect(replay.status).toBe(200);
+        const stream=await replay.text();
+        expect(stream).toContain("event: text_delta");
+        expect(stream).toContain("bounded fixture answer");
+        expect(stream).toContain("event: turn_completed");
+        expect((await fetch(url+"/v1/threads/joined-flow/events?cursor=-1",{
+          headers:auth("bob")})).status).toBe(404);
+        expect((await fetch(url+"/v1/threads/joined-flow/messages",{
+          method:"POST",headers:{...auth("bob"),"Idempotency-Key":"foreign-1"},
+          body:JSON.stringify({content:"cross-owner request"})})).status).toBe(404);
+        expect(requests).toBe(1);
+        const replayFromCursor=await fetch(url+"/v1/threads/joined-flow/events?cursor=1",{
+          headers:auth("alice")});
+        const resumed=await replayFromCursor.text();
+        expect(resumed).not.toContain("owner-only fixture prompt");
+        expect(resumed).toContain("turn_completed");
+      } finally {
+        if (chat) await new Promise<void>(resolve=>chat!.close(()=>resolve()));
+        await new Promise<void>(resolve=>gateway.close(()=>resolve()));
+        if (priorSigning === undefined) delete process.env.MCP_OWNER_SIGNING_KEY;
+        else process.env.MCP_OWNER_SIGNING_KEY=priorSigning;
+      }
     } finally { await pool.end(); }
   },60_000);
 });
