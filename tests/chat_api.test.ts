@@ -20,7 +20,7 @@ async function app(dispatcher?: Pick<ChatDispatcher,"runOnce">,
     threads: vi.fn(async (ownerId: string) => [{ owner_id: ownerId, thread_id: "thread-1" }]),
     deleteThread: vi.fn(async () => undefined),
     thread: vi.fn(async (ownerId: string, threadId: string) => ({ owner_id: ownerId, thread_id: threadId,
-      runtime: "gemini", model: "gemini-2.5-flash", assistant_profile: "default" })),
+      runtime: "gemini", model: "gemini-3.5-flash-lite", assistant_profile: "default" })),
     message: vi.fn(async (ownerId: string, threadId: string, content: string) => ({ owner_id: ownerId,
       turn: { turn_id: "turn-1", status: "QUEUED" }, event: { payload: { content }, thread_id: threadId }, dispatch: { status: "QUEUED" } })),
     events: vi.fn(async (ownerId: string) => [{ owner_id: ownerId, seq: 0, event_type: "item_upsert", payload: { content: "hello" } }]),
@@ -59,7 +59,7 @@ describe("omniAgent Chat API ownership boundary", () => {
         "Content-Type":"application/json"},body:JSON.stringify({content:"not entitled"})});
     expect(response.status).toBe(503);
     expect(await response.json()).toEqual({error:"dispatch_unavailable"});
-    expect(worker.canDispatch).toHaveBeenCalledWith("owner-alice","gemini","gemini-2.5-flash");
+    expect(worker.canDispatch).toHaveBeenCalledWith("owner-alice","gemini","gemini-3.5-flash-lite");
     expect(store.message).not.toHaveBeenCalled();
     expect(worker.runOnce).not.toHaveBeenCalled();
   });
@@ -78,7 +78,7 @@ describe("omniAgent Chat API ownership boundary", () => {
   });
 
   it("reveals only verified Owner model entitlements and denies anonymous model inventory", async () => {
-    const ownerModel = {runtime:"gemini",model:"gemini-2.5-flash"};
+    const ownerModel = {runtime:"gemini",model:"gemini-3.5-flash-lite"};
     const worker={runOnce:vi.fn(),availableModels:vi.fn((ownerId:string) =>
       ownerId === "owner-alice" ? [ownerModel] : []),
       canDispatch:vi.fn((ownerId:string,runtime?:string,model?:string) =>
@@ -192,7 +192,7 @@ describe("omniAgent Chat API ownership boundary", () => {
     const { base, store } = await app(worker);
     const headers = { Authorization: "Bearer alice", "Idempotency-Key": "key-1", "Content-Type": "application/json" };
     const created = await fetch(base + "/v1/threads", { method: "POST", headers,
-      body: JSON.stringify({ runtime: "gemini", model: "gemini-2.5-flash", assistantProfile: "default", ownerId: "owner-bob" }) });
+      body: JSON.stringify({ runtime: "gemini", model: "gemini-3.5-flash-lite", assistantProfile: "default", ownerId: "owner-bob" }) });
     expect(created.status).toBe(201);
     expect((await created.json()).owner_id).toBe("owner-alice");
     const message = await fetch(base + "/v1/threads/thread-1/messages", { method: "POST", headers,
@@ -284,7 +284,7 @@ describe("omniAgent Chat API ownership boundary", () => {
       body:JSON.stringify({ threadId:"thread-2" }) });
     expect(fork.status).toBe(201);
     expect(store.createThread).toHaveBeenCalledWith("owner-alice",{
-      runtime:"gemini",model:"gemini-2.5-flash",assistantProfile:"default",
+      runtime:"gemini",model:"gemini-3.5-flash-lite",assistantProfile:"default",
       parentThreadId:"thread-1",threadId:"thread-2" },"fork-1");
     const cancel = await fetch(base + "/v1/threads/thread-1/turns/turn-1/cancel", { method:"POST", headers });
     expect(cancel.status).toBe(200);
