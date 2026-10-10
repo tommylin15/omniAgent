@@ -1,6 +1,7 @@
 import { GeminiProvider } from "./gemini_provider.js";
 import { OpenRouterProvider, type ChatMessage } from "./openrouter_provider.js";
 import type { Json } from "./server.js";
+import { isAllowedGeminiModel } from "../chat-api/model_entitlements.js";
 
 export type DispatchRequest = {
   ownerId: string;
@@ -30,6 +31,9 @@ export async function dispatchAssistant(request: DispatchRequest): Promise<Json>
     }
     return { events, continuation: { runtime: "openrouter", model } };
   }
+  // Signed Gateway calls cannot bypass the Gemini model restriction.
+  if (!isAllowedGeminiModel(request.model))
+    throw new Error("Gemini model is not on the Flash-Lite allowlist");
   const prompt = request.messages.map((message) => `${message.role}: ${message.content ?? ""}`).join("\n");
   const result = await GeminiProvider.fromEnvironment(undefined, request.model).generate(prompt, { grounding: request.grounding === true });
   return { events: [
