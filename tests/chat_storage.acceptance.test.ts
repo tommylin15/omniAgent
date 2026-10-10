@@ -120,6 +120,10 @@ describe.runIf(Boolean(dsn))("isolated PostgreSQL ChatStore acceptance", () => {
         "SELECT status FROM omni_chat.turns WHERE owner_id=$1 AND thread_id='model-denied'",
         [a])).rows[0].status).toBe("QUEUED");
       expect(blockedTurn.turn.status).toBe("QUEUED");
+      // Leave the shared test fixture queue clean for the subsequent test
+      // sections; the denial above has already been checked on the database.
+      expect((await store.cancelQueuedTurn(a,"model-denied",String(blockedTurn.turn.turn_id))).status)
+        .toBe("CANCELLED");
 
       // Real ephemeral Postgres persists Gateway replies under the claimed
       // owner only. The provider is stubbed: GCP live integration is separate.
