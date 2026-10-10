@@ -540,6 +540,10 @@ export class CodexTurnRegistry {
     if (!Number.isInteger(cursor) || cursor < -1) throw new Error("cursor is invalid");
     const result = session.bridge.eventsAfter(cursor);
     const events = result.events.filter((event) => event.turnId === session.nativeTurnId);
+    // A native read must advance the process-local cursor too. Otherwise the
+    // next approval/interrupt wait can replay already durable provider events.
+    if (events.length) session.lastReturnedSeq = Math.max(
+      session.lastReturnedSeq, events.at(-1)!.seq);
     const last=events.at(-1)?.type;
     const status=last==="turn_completed"?"COMPLETED":
       last==="turn_cancelled"?"CANCELLED":last==="turn_error"?"ERROR":
