@@ -1,0 +1,83 @@
+# Independent evidence-packaging test. Deliberately no Google auth, GHCR build,
+# Cloud Run traffic, tag removal, revision deletion, or model inference.
+name: omniAgent GHCR receipt packaging verification
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/omniagent-ghcr-receipt-verification.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-receipt:
+    if: github.repository == 'tommylin15/omniAgent' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify the actual promotion receipt copy command is harmless in both paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, pathlib, subprocess, tempfile
+          path = pathlib.Path(".github/workflows/omniagent-ghcr-one-shot-release.yml")
+          commands = [line.strip() for line in path.read_text().splitlines()
+                      if line.strip().startswith('if test -f "$RECEIPT"')]
+          if len(commands) != 1:
+              raise SystemExit("receipt_command_missing_or_ambiguous")
+          command = commands[0]
+          if 'test "$RECEIPT" != "ghcr-one-shot-promotion.json"' not in command:
+              raise SystemExit("receipt_same_file_guard_missing")
+          if 'cp "$RECEIPT" ghcr-one-shot-promotion.json' not in command:
+              raise SystemExit("receipt_copy_operation_missing")
+
+          with tempfile.TemporaryDirectory() as scratch:
+              working = pathlib.Path(scratch)
+              canonical = working / "ghcr-one-shot-promotion.json"
+              data = {"status": "PASS", "technical_scope": "receipt_only",
+                      "cloud_run_mutation": False}
+              original = json.dumps(data, sort_keys=True) + "\\n"
+              canonical.write_text(original)
+
+              # This was the exact failure mode in run #38022379285.
+              same = os.environ.copy()
+              same["RECEIPT"] = "ghcr-one-shot-promotion.json"
+              subprocess.run(["bash", "-euo", "pipefail", "-c", command],
+                             cwd=working, env=same, check=True, capture_output=True, text=True)
+              if canonical.read_text() != original:
+                  raise SystemExit("same_path_modified")
+
+              source = working / "different-source.json"
+              source.write_text('{"status":"PASS","source":"different"}\\n')
+              different = os.environ.copy()
+              different["RECEIPT"] = source.name
+              subprocess.run(["bash", "-euo", "pipefail", "-c", command],
+                             cwd=working, env=different, check=True,
+                             capture_output=True, text=True)
+              if canonical.read_text() != source.read_text():
+                  raise SystemExit("different_path_not_copied")
+
+              data["same_path"] = "PASS"
+              data["different_path"] = "PASS"
+              pathlib.Path("ghcr-receipt-verification.json").write_text(
+                  json.dumps(data, sort_keys=True, indent=2) + "\\n")
+              print("receipt_same_file_regression=PASS")
+              print("receipt_alternate_file_copy=PASS")
+          PY
+      - name: Upload receipt regression evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: ghcr-receipt-only-${{ github.sha }}
+          path: ghcr-receipt-verification.json
+          if-no-files-found: error
+          retention-days: 90
+      - name: Summarize isolated receipt validation
+        shell: bash
+        run: |
+          echo "receipt_packaging_ci=PASS" >> "$GITHUB_STEP_SUMMARY"
+          echo "scope=source_workflow_copy_command_and_evidence_artifact_only" >> "$GITHUB_STEP_SUMMARY"
+          echo "formal_promotion=NOT_RUN; revision_cleanup=NOT_RUN" >> "$GITHUB_STEP_SUMMARY"
