@@ -1,0 +1,64 @@
+# Read-only release-preflight handoff after signed 0% candidate smoke.
+# Never changes Cloud Run routing, accesses credential payloads or invokes models.
+name: omniAgent GHCR production readiness audit
+
+on:
+  workflow_run:
+    workflows: ['omniAgent GHCR current candidate auto smoke']
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: omniagent-ghcr-cloudrun-release
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    if: >-
+      github.repository == 'tommylin15/omniAgent' &&
+      (github.event_name == 'workflow_dispatch' ||
+        (github.event.workflow_run.conclusion == 'success' &&
+         github.event.workflow_run.head_branch == 'main' &&
+         github.event.workflow_run.head_repository.full_name == 'tommylin15/omniAgent'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          persist-credentials: false
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+          service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Audit current exact SHA, 3 GHCR candidates and fallback without mutation
+        shell: bash
+        env:
+          EXPECTED_SOURCE: ${{ github.event.workflow_run.head_sha || github.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE"
+          python3 -m unittest discover -s tests -p test_ghcr_release_readiness.py -v
+          python3 scripts/ghcr_release_readiness.py "$EXPECTED_SOURCE" "$RUNNER_TEMP/release-readiness.json"
+          {
+            echo "### GHCR production readiness (read-only)"
+            echo
+            echo "- Source: \`$EXPECTED_SOURCE\`"
+            echo "- Technical 3-service GHCR-only preflight: PASS"
+            echo "- Real Owner/Gateway/Provider/Approval/Reconnect acceptance: NOT VERIFIED"
+            echo "- GHCR-only actual rollback rehearsal: NOT PERFORMED"
+            echo "- **Formal release: BLOCKED** — no production traffic changed"
+          } >> "$GITHUB_STEP_SUMMARY"
+          cp "$RUNNER_TEMP/release-readiness.json" release-readiness.json
+      - name: Store redacted immutable-SHA readiness receipt
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ghcr-readiness-${{ github.event.workflow_run.head_sha || github.sha }}
+          path: release-readiness.json
+          retention-days: 90

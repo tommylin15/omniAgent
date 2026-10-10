@@ -1,5 +1,19 @@
 # omniAgent acceptance matrix
 
+### 2026-10-10 Production request evidence: preflight is NOT promotion
+
+Latest exact-source 78225a7f candidate CI, GHCR, 0% Cloud Run and signed
+Smoke all PASS: GHCR #38012644521, candidate #38012934671,
+Smoke #38013023792. New optional read-only production readiness audit uses
+a GHCR fallback at eb61d6e4 and must prove it Ready, digest-bound and
+Secret versions enabled in the *current* runtime. It must not change
+traffic, invoke models, access Secret payloads or fabricate human evidence.
+Owner-approved model execution, real durable Chat→Gateway persisted events,
+approval/cancel/reconnect, true Owner A/B isolation on this release,
+a full live Shared caller acceptance and actual GHCR-only rollback exercise
+remain OPEN. Formal promotion/cleanup must stay blocked until accepted.
+
+
 ### FR-013 BYOK credential metadata staging — 2026-10-10
 
 New additive schema 003, owner-scoped metadata registry, isolated Secret

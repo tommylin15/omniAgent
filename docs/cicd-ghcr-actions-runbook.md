@@ -1,5 +1,28 @@
 # omniAgent CI/CD: GitHub Actions → public GHCR → Cloud Run
 
+### 2026-10-10 current-main GHCR-only production readiness
+
+New `.github/workflows/omniagent-ghcr-production-readiness.yml` reacts
+only to successful signed candidate smoke for the exact reviewed SHA,
+or an operator-triggered read-only run. It shares the existing candidate
+release concurrency group. The Python audit
+`scripts/ghcr_release_readiness.py` validates 3 live Cloud Run services,
+all candidate GHCR SHA tags, immutable digests, Ready revisions, enabled
+Secret version references, formal traffic unchanged at exactly one 100%
+Revision, Chat dispatch/BYOK OFF, and the older independently successful
+GHCR fallback from `eb61d6e49746e73ef014bf3493560dc1fc9e6c16`.
+It produces an artifact and explicit `formal_release_gate=BLOCKED` when
+real owner/provider and rollback acceptance has not been proven.
+
+This job is **read only**, not production promotion. A green audit means
+the technical preflight passed, **not** that the application is ready for
+formal release. No app CI result or Smoke can override the required real
+OAuth/owner/provider/approval/reconnect/replay/rollback acceptance or
+authorize billable Codex calls. When acceptance is approved, a separate
+bounded traffic-promotion/rollback workflow and its real runtime evidence
+are required before marking DONE. No image or Revision cleanup runs now.
+
+
 ### 2026-10-10 BYOK additive staging
 
 The opt-in BYOK management endpoints require migration

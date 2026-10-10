@@ -1,5 +1,24 @@
 # omniAgent TODO
 
+### 2026-10-10 Formal release request — actual promotion NOT YET AUTHORIZED BY ACCEPTANCE
+
+- [x] Last source 78225a7f: exact-SHA Node/Flutter/PostgreSQL and all 3
+  GHCR images PASS, 0%-traffic candidate deployment PASS, signed smoke PASS.
+- [x] New protected read-only GHCR-only production readiness workflow checks
+  the *current* source/candidate and a separately verified new-GHCR fallback,
+  disabled dispatch/BYOK, Ready state, immutable digest, enabled Secret
+  reference state and unchanged formal traffic. Produces redacted evidence.
+- [ ] Real accepted Owner-scoped provider inference, persisted SSE replay,
+  approval/cancel/reconnect, fixed-origin human OAuth and accepted
+  GHCR-only formal rollback rehearsal are still NOT VERIFIED.
+- [ ] Authorize real paid Codex/other provider inference only after the
+  separate user permission and owner-specific credential/entitlement checks.
+- [ ] Once all real gates PASS, implement/execute safe formal traffic release
+  and independent recovery drill; then protected last-ten revision retention.
+- [ ] This read-only audit workflow never mutates formal traffic or
+  interprets static CI/healthy /ready as completion.
+
+
 ### 2026-10-10 FR-013 BYOK metadata / lifecycle — code staged
 
 - [x] Add owner-bound credential metadata schema migration 003.
