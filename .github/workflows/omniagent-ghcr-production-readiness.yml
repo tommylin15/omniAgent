@@ -54,9 +54,15 @@ jobs:
             echo "- GHCR-only actual rollback rehearsal: NOT PERFORMED"
             echo "- **Formal release: BLOCKED** — no production traffic changed"
           } >> "$GITHUB_STEP_SUMMARY"
-          cp "$RUNNER_TEMP/release-readiness.json" release-readiness.json
+      - name: Preserve success or redacted blocked preflight receipt
+        if: always()
+        shell: bash
+        run: |
+          if test -f "$RUNNER_TEMP/release-readiness.json"; then
+            cp "$RUNNER_TEMP/release-readiness.json" release-readiness.json
+          fi
       - name: Store redacted immutable-SHA readiness receipt
-        if: success()
+        if: always() && hashFiles('release-readiness.json') != ''
         uses: actions/upload-artifact@v4
         with:
           name: ghcr-readiness-${{ github.event.workflow_run.head_sha || github.sha }}
