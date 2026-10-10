@@ -1,4 +1,4 @@
-import { isAllowedGeminiModel } from "../chat-api/model_entitlements.js";
+import { isAllowedGeminiModel } from "./gemini_model_policy.js";
 
 export type GeminiCitation = { title: string; uri: string };
 export type GeminiUsage = { promptTokens: number; candidateTokens: number; totalTokens: number };
