@@ -85,6 +85,37 @@ class ReleaseReadiness(unittest.TestCase):
             with self.assertRaisesRegex(gate.Blocked,"unapproved"):
                 gate.audit(HEAD,services,revisions,lambda n,v:"ENABLED")
 
+    def test_secret_volumes_must_be_enabled_for_candidate_and_fallback(self):
+        for target in ("omniagent-chat-99999-candidate",
+                       "omniagent-chat-99998-fallback"):
+            services, revisions = fixture()
+            revisions[target]["spec"]["volumes"] = [{
+                "name": "provider-credentials",
+                "secret": {"secretName": "approved-provider",
+                           "items": [{"key": "3", "path": "provider.json"}]}
+            }]
+            checks = []
+            def read_secret(name, version):
+                checks.append((name, version))
+                return "DISABLED"
+            with self.assertRaisesRegex(gate.Blocked, "not_enabled"):
+                gate.audit(HEAD, services, revisions, read_secret)
+            self.assertEqual(checks, [("approved-provider", "3")])
+
+    def test_secret_volume_latest_and_invalid_reference(self):
+        services, revisions = fixture()
+        volume = {"name": "provider", "secret": {"secretName": "approved-provider"}}
+        revisions["omniagent-chat-99999-candidate"]["spec"]["volumes"] = [volume]
+        checks = []
+        def read_secret(name, version):
+            checks.append((name, version))
+            return "ENABLED"
+        gate.audit(HEAD, services, revisions, read_secret)
+        self.assertEqual(checks, [("approved-provider", "latest")])
+        volume["secret"]["items"] = [{"key": "not-a-version", "path": "x"}]
+        with self.assertRaisesRegex(gate.Blocked, "invalid_secret_reference"):
+            gate.audit(HEAD, services, revisions, read_secret)
+
     def test_uuid_free_config_prevents_cross_project_inference(self):
         services,revisions=fixture()
         services["omniagent-chat"]["status"]["traffic"][0]["revisionName"]=""
