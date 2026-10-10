@@ -33,39 +33,51 @@ jobs:
           ref: ${{ github.event.workflow_run.head_sha }}
           persist-credentials: false
       - name: One-time authorization marker and immutable current main
+        id: authorization
         shell: bash
         run: |
           set -euo pipefail
           [[ "$RELEASE_SHA" =~ ^[a-f0-9]{40}$ ]]
           test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
           test "$(git ls-remote https://github.com/tommylin15/omniAgent.git refs/heads/main | cut -f1)" = "$RELEASE_SHA"
-          git log -1 --format=%B | grep -Fq '[release-once]'
+          if ! git log -1 --format=%B | grep -Fq '[release-once]'; then
+            echo 'authorized=false' >> "$GITHUB_OUTPUT"
+            echo 'formal_release=NOT_RUN_NO_OWNER_RELEASE_MARKER' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          echo 'authorized=true' >> "$GITHUB_OUTPUT"
           echo "release_scope=DEPLOY_CODE_WITH_DISPATCH_AND_BYOK_DISABLED" >> "$GITHUB_STEP_SUMMARY"
           echo "real_rollback_drill=WAIVED_BY_OWNER" >> "$GITHUB_STEP_SUMMARY"
       - name: Run one integration acceptance of source, safety tests and live candidate
+        if: steps.authorization.outputs.authorized == 'true'
         shell: bash
         run: |
           set -euo pipefail
           python3 -m unittest discover -s tests -p 'test_*.py' -v
           echo "upstream_current_GHCR_signed_candidate_smoke=PASS" >> "$GITHUB_STEP_SUMMARY"
       - uses: google-github-actions/auth@v2
+        if: steps.authorization.outputs.authorized == 'true'
         with:
           workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
           service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
       - uses: google-github-actions/setup-gcloud@v2
+        if: steps.authorization.outputs.authorized == 'true'
       - name: Verify actual current GHCR candidate and permitted disabled features
+        if: steps.authorization.outputs.authorized == 'true'
         shell: bash
         run: |
           set -euo pipefail
           python3 scripts/ghcr_release_readiness.py "$RELEASE_SHA" "$RUNNER_TEMP/release-readiness.json"
           echo "read_only_GHCR_technical_preflight=PASS" >> "$GITHUB_STEP_SUMMARY"
       - name: Official traffic promotion, Shared then Gateway then Chat
+        if: steps.authorization.outputs.authorized == 'true'
         shell: bash
         run: |
           set -euo pipefail
           python3 scripts/ghcr_one_shot_promotion.py --release-sha "$RELEASE_SHA" --report-file "$RECEIPT" --apply
           echo "formal_traffic_promotion=PASS" >> "$GITHUB_STEP_SUMMARY"
       - name: Retire obsolete tags and retain newest ten AFTER promotion
+        if: steps.authorization.outputs.authorized == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -85,14 +97,14 @@ jobs:
           done
           echo "latest_ten_retention=PASS" >> "$GITHUB_STEP_SUMMARY"
       - name: Preserve redacted production receipt, even on failure
-        if: always()
+        if: always() && steps.authorization.outputs.authorized == 'true'
         shell: bash
         run: |
           set -euo pipefail
           if test -f "$RECEIPT" && test "$RECEIPT" != "ghcr-one-shot-promotion.json"; then cp "$RECEIPT" ghcr-one-shot-promotion.json; fi
           if test -f "$RUNNER_TEMP/release-readiness.json"; then cp "$RUNNER_TEMP/release-readiness.json" ghcr-one-shot-readiness.json; fi
       - name: Upload one-time release evidence
-        if: always()
+        if: always() && steps.authorization.outputs.authorized == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: ghcr-one-shot-${{ github.event.workflow_run.head_sha }}

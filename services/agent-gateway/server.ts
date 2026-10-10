@@ -540,8 +540,13 @@ export class CodexTurnRegistry {
     if (!Number.isInteger(cursor) || cursor < -1) throw new Error("cursor is invalid");
     const result = session.bridge.eventsAfter(cursor);
     const events = result.events.filter((event) => event.turnId === session.nativeTurnId);
-    if (events.some((event) => ["turn_completed", "turn_cancelled", "turn_error"].includes(event.type))) await this.cleanup(handle);
-    return { ...result, events, ownerId, threadId, nativeThreadId, turnId, nativeTurnId,
+    const last=events.at(-1)?.type;
+    const status=last==="turn_completed"?"COMPLETED":
+      last==="turn_cancelled"?"CANCELLED":last==="turn_error"?"ERROR":
+      events.some(e=>e.type==="approval_request")?"AWAITING_APPROVAL":"IN_PROGRESS";
+    if (["COMPLETED","CANCELLED","ERROR"].includes(status)) await this.cleanup(handle);
+    return { status, turnHandle:handle, cursor:events.at(-1)?.seq ?? cursor,
+      events, ownerId, threadId, nativeThreadId, turnId, nativeTurnId,
       continuation: { runtime: "codex", codexThreadId: nativeThreadId, codexTurnId: nativeTurnId, turnHandle: handle } } as unknown as Json;
   }
 

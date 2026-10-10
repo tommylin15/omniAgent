@@ -8,6 +8,7 @@ import { makeServer } from "../services/agent-gateway/server.js";
 import { parseModelEntitlements } from "../services/chat-api/model_entitlements.js";
 import type { AddressInfo } from "node:net";
 import { CredentialRegistry } from "../services/chat-api/credential_management.js";
+import { CodexSessionStore, parseCodexPhase } from "../services/chat-api/codex_session_store.js";
 
 const dsn = process.env.PG_TEST_URL;
 describe.runIf(Boolean(dsn))("isolated PostgreSQL ChatStore acceptance", () => {
@@ -20,7 +21,7 @@ describe.runIf(Boolean(dsn))("isolated PostgreSQL ChatStore acceptance", () => {
     try {
       expect((await pool.query("SELECT current_database() AS name")).rows[0].name).toBe("omniagent_acceptance");
       expect((await pool.query("SELECT to_regclass('omni_chat.owners') AS present")).rows[0].present).toBeNull();
-      for (const filename of ["001_chat_ownership.sql", "002_skill_storage.sql", "003_credential_metadata.sql"]) {
+      for (const filename of ["001_chat_ownership.sql", "002_skill_storage.sql", "003_credential_metadata.sql", "004_codex_live_turns.sql"]) {
         const sql = readFileSync("infra/postgres/migrations/" + filename,"utf8");
         await pool.query(sql);
         await pool.query(sql);
@@ -343,6 +344,83 @@ describe.runIf(Boolean(dsn))("isolated PostgreSQL ChatStore acceptance", () => {
         if (priorSigning === undefined) delete process.env.MCP_OWNER_SIGNING_KEY;
         else process.env.MCP_OWNER_SIGNING_KEY=priorSigning;
       }
+
+      // Bounded non-billable Codex native approval/cancel reconstruction.
+      // No provider process or credentials are launched by this fixture.
+      const native=new CodexSessionStore(pool);
+      await native.ready();
+      await store.createThread(b,{threadId:"native-approval",runtime:"codex",
+        model:"gpt-6-luna",assistantProfile:"default"},"native-create");
+      const pendingNative=await store.message(b,"native-approval","Codex mocked approval","native-message");
+      const nativeTurn=String(pendingNative.turn.turn_id);
+      expect(await store.claimNextQueuedTurn([b],{
+        ownerId:b,threadId:"native-approval",turnId:nativeTurn})).toMatchObject({ownerId:b});
+      const nativeBinding={ownerId:b,threadId:"native-approval",turnId:nativeTurn};
+      const approvalDigest="sha256:"+"e".repeat(64);
+      const future=new Date(Date.now()+180_000).toISOString();
+      const initial=parseCodexPhase({...nativeBinding,status:"AWAITING_APPROVAL",
+        turnHandle:"native-hidden-handle",nativeThreadId:"native-thread",
+        nativeTurnId:"native-turn",cursor:0,events:[
+          {seq:0,threadId:"native-thread",turnId:"native-turn",type:"approval_request",
+            payload:{requestId:"17",operation:"shell",paramsDigest:approvalDigest,
+              expiresAt:future,ownerId:b,threadId:"native-thread",turnId:"native-turn"}}
+        ]},nativeBinding);
+      await native.record(initial);
+      const saved=await store.events(b,"native-approval",-1,100);
+      expect(saved.map(event=>event.event_type)).toEqual(["item_upsert","approval_request"]);
+      expect(JSON.stringify(saved)).not.toContain("native-hidden-handle");
+      expect(JSON.stringify(saved)).not.toContain("native-thread");
+      await expect(native.begin(a,"native-approval",nativeTurn,"approval",{
+        requestId:"17",paramsDigest:approvalDigest,approved:true})).rejects.toBeInstanceOf(ChatNotFound);
+      await expect(native.begin(b,"native-approval",nativeTurn,"approval",{
+        requestId:"17",paramsDigest:"sha256:"+"a".repeat(64),approved:true}))
+        .rejects.toBeInstanceOf(ChatConflict);
+      const control=await native.begin(b,"native-approval",nativeTurn,"approval",{
+        requestId:"17",paramsDigest:approvalDigest,approved:true});
+      expect(control.turnHandle).toBe("native-hidden-handle");
+      expect(control.cursor).toBe(0);
+      await expect(native.begin(b,"native-approval",nativeTurn,"approval",{
+        requestId:"17",paramsDigest:approvalDigest,approved:true})).rejects.toBeInstanceOf(ChatConflict);
+      await native.record(parseCodexPhase({...nativeBinding,status:"COMPLETED",
+        turnHandle:"native-hidden-handle",nativeThreadId:"native-thread",
+        nativeTurnId:"native-turn",cursor:2,events:[
+          {seq:1,threadId:"native-thread",turnId:"native-turn",type:"approval_resolved",
+            payload:{requestId:"17",decision:"accept"}},
+          {seq:2,threadId:"native-thread",turnId:"native-turn",type:"turn_completed",
+            payload:{status:"completed"}}
+        ]},nativeBinding),{requestId:"17",approved:true});
+      expect((await pool.query(
+        "SELECT status FROM omni_chat.turns WHERE owner_id=$1 AND thread_id=$2 AND turn_id=$3",
+        [b,"native-approval",nativeTurn])).rows[0].status).toBe("COMPLETED");
+      expect((await pool.query(
+        "SELECT status FROM omni_chat.approvals WHERE owner_id=$1 AND thread_id=$2 AND turn_id=$3",
+        [b,"native-approval",nativeTurn])).rows[0].status).toBe("APPROVED");
+      expect((await pool.query(
+        "SELECT count(*)::int AS count FROM omni_chat.codex_turn_sessions WHERE owner_id=$1",
+        [b])).rows[0].count).toBe(0);
+      await expect(native.begin(b,"native-approval",nativeTurn,"poll"))
+        .rejects.toBeInstanceOf(ChatNotFound);
+      await expect(store.events(a,"native-approval",-1,100)).rejects.toBeInstanceOf(ChatNotFound);
+
+      await store.createThread(b,{threadId:"native-cancel",runtime:"codex",
+        model:"gpt-6-luna",assistantProfile:"default"},"native-cancel-create");
+      const toCancel=await store.message(b,"native-cancel","Mock pending native work","native-cancel-message");
+      const cancelTurn=String(toCancel.turn.turn_id);
+      expect(await store.claimNextQueuedTurn([b],{
+        ownerId:b,threadId:"native-cancel",turnId:cancelTurn})).toMatchObject({ownerId:b});
+      const cancelBinding={ownerId:b,threadId:"native-cancel",turnId:cancelTurn};
+      await native.record(parseCodexPhase({...cancelBinding,status:"IN_PROGRESS",
+        turnHandle:"cancel-handle",nativeThreadId:"cancel-thread",nativeTurnId:"cancel-native",
+        cursor:-1,events:[]},cancelBinding));
+      expect((await native.begin(b,"native-cancel",cancelTurn,"cancel")).turnHandle).toBe("cancel-handle");
+      await native.record(parseCodexPhase({...cancelBinding,status:"CANCELLED",
+        turnHandle:"cancel-handle",nativeThreadId:"cancel-thread",nativeTurnId:"cancel-native",
+        cursor:0,events:[{seq:0,threadId:"cancel-thread",turnId:"cancel-native",
+          type:"turn_cancelled",payload:{status:"interrupted"}}]},cancelBinding));
+      expect((await store.events(b,"native-cancel",-1,100)).at(-1)!.event_type).toBe("turn_cancelled");
+      expect((await pool.query(
+        "SELECT status FROM omni_chat.turns WHERE owner_id=$1 AND thread_id=$2 AND turn_id=$3",
+        [b,"native-cancel",cancelTurn])).rows[0].status).toBe("CANCELLED");
     } finally { await pool.end(); }
   },60_000);
 });

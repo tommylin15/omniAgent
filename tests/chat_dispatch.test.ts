@@ -1,6 +1,6 @@
 import { createHmac } from "node:crypto";
 import type { AddressInfo } from "node:net";
-import { makeServer, type Json } from "../services/agent-gateway/server.js";
+import { makeServer, CodexTurnRegistry, type Json } from "../services/agent-gateway/server.js";
 import { describe, expect, it, vi } from "vitest";
 import { ChatDispatcher, makeSignedGatewayInvoker } from "../services/chat-api/gateway_dispatch.js";
 import type { DispatchClaim } from "../services/chat-api/storage.js";
@@ -142,6 +142,52 @@ describe("Gateway private HTTP authentication", () => {
     expect(()=>makeSignedGatewayInvoker({...base,url:"https://gateway.example.com/?x=1"})).toThrow("unsafe");
     expect(()=>makeSignedGatewayInvoker({...base,url:"https://gateway.example.com",
       signingKey:"short"})).toThrow("unsafe");
+  });
+});
+
+describe("signed Codex native turn and control transport, fixture only", () => {
+  it("uses the Owner-bound start/approval/cancel/events endpoints without CLI or keys", async () => {
+    const oldKey=process.env.MCP_OWNER_SIGNING_KEY;
+    const signingKey="0123456789abcdef0123456789abcdef";
+    process.env.MCP_OWNER_SIGNING_KEY=signingKey;
+    const ownerId="00000000-0000-4000-8000-000000000001";
+    const bind={ownerId,threadId:"chat-thread",turnId:"chat-turn",
+      nativeThreadId:"native-thread",nativeTurnId:"native-turn",turnHandle:"hidden"};
+    const fixture={...bind,status:"IN_PROGRESS",cursor:-1,events:[]};
+    const turns={
+      start:vi.fn(async()=>fixture),
+      events:vi.fn(async()=>fixture),
+      resolve:vi.fn(async()=>fixture),
+      cancel:vi.fn(async()=>fixture)
+    };
+    const gateway=makeServer(undefined,undefined,turns as unknown as CodexTurnRegistry);
+    try {
+      await new Promise<void>(resolve=>gateway.listen(0,"127.0.0.1",resolve));
+      const local="http://127.0.0.1:"+(gateway.address() as AddressInfo).port;
+      const fetcher:typeof fetch=(url,options)=>
+        fetch(local+new URL(String(url)).pathname,options);
+      const invoker=makeSignedGatewayInvoker({
+        url:"https://gateway-candidate.example.com",audience:"https://gateway.example.com",
+        signingKey,idToken:async()=>"test-only-id-token",fetcher
+      });
+      const claim:DispatchClaim={ownerId,threadId:"chat-thread",turnId:"chat-turn",
+        runtime:"codex",model:"gpt-6-luna",content:"nonbillable prompt"};
+      expect(await invoker(claim)).toMatchObject(fixture);
+      expect(turns.start).toHaveBeenCalledOnce();
+      const payload={...bind,cursor:-1};
+      expect(await invoker.control!("turn:events",payload)).toMatchObject(fixture);
+      expect(await invoker.control!("approval",{
+        ...bind,requestId:"12",paramsDigest:"sha256:"+"f".repeat(64),decision:"decline"
+      })).toMatchObject(fixture);
+      expect(await invoker.control!("turn:cancel",bind)).toMatchObject(fixture);
+      expect(turns.events).toHaveBeenCalledOnce();
+      expect(turns.resolve).toHaveBeenCalledOnce();
+      expect(turns.cancel).toHaveBeenCalledOnce();
+    } finally {
+      await new Promise<void>(resolve=>gateway.close(()=>resolve()));
+      if(oldKey===undefined) delete process.env.MCP_OWNER_SIGNING_KEY;
+      else process.env.MCP_OWNER_SIGNING_KEY=oldKey;
+    }
   });
 });
 

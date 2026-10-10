@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { makeChatServer } from "../services/chat-api/server.js";
 import type { ChatDispatcher } from "../services/chat-api/gateway_dispatch.js";
 import type { CredentialManager } from "../services/chat-api/credential_management.js";
-import { safeRecord, type ChatStore } from "../services/chat-api/storage.js";
+import { ChatConflict, safeRecord, type ChatStore } from "../services/chat-api/storage.js";
 
 const servers: ReturnType<typeof makeChatServer>[] = [];
 afterEach(async () => Promise.all(servers.splice(0).map((server) => new Promise<void>((resolve) => server.close(() => resolve())))));
@@ -220,6 +220,57 @@ describe("omniAgent Chat API ownership boundary", () => {
     expect(await replay.text()).toContain("event: item_upsert");
     expect(store.message).toHaveBeenCalledWith("owner-alice","thread-1","hello","key-1");
     expect((await (await fetch(base + "/v1/threads", { headers: { Authorization: "Bearer bob" } })).json()).items[0].owner_id).toBe("owner-bob");
+  });
+
+  it("resumes SSE replay from Last-Event-ID without cross-owner cursor injection", async () => {
+    const {base,store}=await app();
+    const auth={Authorization:"Bearer alice"};
+    const ok=await fetch(base+"/v1/threads/thread-1/events",{headers:{
+      ...auth,"Last-Event-ID":"42"}});
+    expect(ok.status).toBe(200);
+    expect(store.events).toHaveBeenCalledWith("owner-alice","thread-1",42,200);
+    const override=await fetch(base+"/v1/threads/thread-1/events?cursor=1",{
+      headers:{...auth,"Last-Event-ID":"42"}});
+    expect(override.status).toBe(200);
+    expect(store.events).toHaveBeenLastCalledWith("owner-alice","thread-1",1,200);
+    expect((await fetch(base+"/v1/threads/thread-1/events",{
+      headers:{...auth,"Last-Event-ID":"NaN"}})).status).toBe(400);
+  });
+
+  it("routes Codex approvals and polling to the native Owner-bound worker", async () => {
+    const worker={
+      runOnce:vi.fn(),
+      canDispatch:vi.fn((ownerId:string,runtime?:string) =>
+        ownerId==="owner-alice" && runtime==="codex"),
+      continueCodex:vi.fn(async () => ({status:"completed" as const,turnId:"turn-1"}))
+    };
+    const {base,store}=await app(worker);
+    store.thread.mockResolvedValue({owner_id:"owner-alice",thread_id:"thread-1",
+      runtime:"codex",model:"gpt-6-luna"});
+    const headers={Authorization:"Bearer alice","Content-Type":"application/json"};
+    const resumed=await fetch(base+"/v1/threads/thread-1/turns/turn-1/refresh",{
+      method:"POST",headers});
+    expect(resumed.status).toBe(200);
+    expect(worker.continueCodex).toHaveBeenCalledWith(
+      "owner-alice","thread-1","turn-1","poll");
+    const digest="sha256:"+"e".repeat(64);
+    const approved=await fetch(base+"/v1/threads/thread-1/turns/turn-1/approvals/17",{
+      method:"POST",headers,body:JSON.stringify({paramsDigest:digest,approved:true})});
+    expect(approved.status).toBe(200);
+    expect(worker.continueCodex).toHaveBeenCalledWith(
+      "owner-alice","thread-1","turn-1","approval",
+      {requestId:"17",paramsDigest:digest,approved:true});
+    expect(store.decideApproval).not.toHaveBeenCalled();
+    store.cancelQueuedTurn.mockRejectedValueOnce(new ChatConflict("already running"));
+    const cancelled=await fetch(base+"/v1/threads/thread-1/turns/turn-1/cancel",{
+      method:"POST",headers});
+    expect(cancelled.status).toBe(200);
+    expect(worker.continueCodex).toHaveBeenCalledWith(
+      "owner-alice","thread-1","turn-1","cancel");
+    const denied=await fetch(base+"/v1/threads/thread-1/turns/turn-1/refresh",{
+      method:"POST",headers:{Authorization:"Bearer bob"}});
+    expect(denied.status).toBe(503);
+    expect(worker.continueCodex).toHaveBeenCalledTimes(3);
   });
 
   it("requires separate user and service identities for decisions and runtime writes", async () => {

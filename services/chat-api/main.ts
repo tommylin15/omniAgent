@@ -4,6 +4,7 @@ import { parseModelEntitlements } from "./model_entitlements.js";
 import { Pool } from "pg";
 import { makeChatServer } from "./server.js";
 import { ChatStore } from "./storage.js";
+import { CodexSessionStore } from "./codex_session_store.js";
 import { CredentialManager, CredentialRegistry } from "./credential_management.js";
 import { GoogleSecretManagerVault } from "./credential_vault.js";
 import { chatDatabasePoolConfig, chatDatabaseUrl } from "./database.js";
@@ -60,7 +61,7 @@ if (process.env.CHAT_DISPATCH_ENABLED === "true") {
       const client = await auth.getIdTokenClient(audience);
       return client.idTokenProvider.fetchIdToken(audience);
     }
-  }),approvedOwners,entitlements);
+  }),approvedOwners,entitlements,new CodexSessionStore(pool));
 }
 // BYOK is not enabled on deployed Cloud Run candidates by default.
 // GCP IAM/Secret Manager/project and migration 003 require independent approval.

@@ -1,10 +1,13 @@
 import { createHmac } from "node:crypto";
 import { safeRecord, type ChatStore, type DispatchClaim } from "./storage.js";
 import { allowsModel, type ModelEntitlement } from "./model_entitlements.js";
+import { parseCodexPhase, type CodexSessionStore } from "./codex_session_store.js";
 
-export type DispatchOutcome = { status: "idle" | "completed" | "cancelled" | "error"; turnId?: string; reason?: string };
+export type DispatchOutcome = { status: "idle" | "completed" | "cancelled" | "error" | "running" | "approval_required"; turnId?: string; reason?: string };
 type TurnEvent = { type: string; payload: unknown };
-type Invoke = (claim: DispatchClaim) => Promise<unknown>;
+export type GatewayControl = (operation:"turn:events"|"turn:cancel"|"approval",
+  body:Record<string,unknown>) => Promise<unknown>;
+type Invoke = ((claim: DispatchClaim) => Promise<unknown>) & {control?:GatewayControl};
 type Store = Pick<ChatStore, "claimNextQueuedTurn" | "appendGatewayEvents"> &
   Partial<Pick<ChatStore, "runningReconciliationCandidates">>;
 
@@ -16,7 +19,8 @@ const terminal = new Set(["turn_completed", "turn_cancelled", "turn_error"]);
 export class ChatDispatcher {
   constructor(private readonly store: Store, private readonly invoke: Invoke,
               private readonly approvedOwners: readonly string[],
-              private readonly entitlements?: readonly ModelEntitlement[]) {}
+              private readonly entitlements?: readonly ModelEntitlement[],
+              private readonly codex?: CodexSessionStore) {}
 
   async inspectRunningCandidates(): Promise<{ status: string; ageBasis: string; items: Record<string, unknown>[] }> {
     if (!this.store.runningReconciliationCandidates) throw new Error("reconciliation store is unavailable");
@@ -37,6 +41,7 @@ export class ChatDispatcher {
     if (!this.approvedOwners.some(owner => owner.toLowerCase() === ownerId.toLowerCase())) return false;
     if (!this.entitlements) return true; // Non-production fixture compatibility only.
     return runtime !== undefined && model !== undefined &&
+      (runtime !== "codex" || (Boolean(this.codex) && Boolean(this.invoke.control))) &&
       allowsModel(this.entitlements,ownerId,runtime,model);
   }
 
@@ -44,6 +49,11 @@ export class ChatDispatcher {
     if (!this.approvedOwners.length) throw new Error("dispatch approval not configured");
     if (target && !this.approvedOwners.some(owner => owner.toLowerCase() === target.ownerId.toLowerCase()))
       throw new Error("dispatch owner not approved");
+    if (this.entitlements?.some(entry=>entry.runtime==="codex")) {
+      if (!this.codex || !this.invoke.control)
+        throw new Error("Codex runtime control is not configured");
+      await this.codex.ready();
+    }
     const claim = this.entitlements
       ? await this.store.claimNextQueuedTurn(this.approvedOwners,target,this.entitlements)
       : await this.store.claimNextQueuedTurn(this.approvedOwners,target);
@@ -51,11 +61,29 @@ export class ChatDispatcher {
     if (this.entitlements && !this.canDispatch(claim.ownerId,claim.runtime,claim.model))
       throw new Error("model entitlement claim needs reconciliation");
     let events: TurnEvent[];
+    let result: unknown;
     try {
-      events = validateEvents(await this.invoke(claim), claim);
+      result=await this.invoke(claim);
     } catch {
       return this.fail(claim);
     }
+    if (claim.runtime==="codex" && this.codex && result &&
+        typeof result==="object" && "status" in result) {
+      let phase;
+      try { phase=parseCodexPhase(result,claim); }
+      catch { return this.fail(claim); }
+      try { await this.codex.record(phase); }
+      catch {
+        // The transaction may have committed; never overwrite its outcome.
+        throw new Error("codex_persistence_needs_reconciliation");
+      }
+      return {turnId:claim.turnId,status:phase.status==="COMPLETED"?"completed":
+        phase.status==="CANCELLED"?"cancelled":
+        phase.status==="ERROR" || phase.status==="CLEANUP_PENDING"?"error":
+        phase.status==="AWAITING_APPROVAL"?"approval_required":"running"};
+    }
+    try { events=validateEvents(result,claim); }
+    catch { return this.fail(claim); }
     try {
       await this.store.appendGatewayEvents(claim.ownerId, claim.threadId, claim.turnId,
         events.map((event,index) => ({
@@ -69,6 +97,37 @@ export class ChatDispatcher {
     const last = events.at(-1)!.type;
     return { status: last === "turn_completed" ? "completed" :
       last === "turn_cancelled" ? "cancelled" : "error", turnId: claim.turnId };
+  }
+
+  async continueCodex(ownerId:string,threadId:string,turnId:string,
+    operation:"poll"|"cancel"|"approval",
+    approval?:{requestId:string;paramsDigest:string;approved:boolean}):Promise<DispatchOutcome> {
+    if (!this.approvedOwners.some(o=>o.toLowerCase()===ownerId.toLowerCase()))
+      throw new Error("dispatch owner not approved");
+    if (!this.codex || !this.invoke.control) throw new Error("native Codex control unavailable");
+    // begin() atomically reserves the Owner-bound handle and approval digest
+    // BEFORE external side effects. An uncertain RPC is NEVER retried.
+    const session=await this.codex.begin(ownerId,threadId,turnId,operation,approval);
+    const binding={ownerId,threadId,turnId,turnHandle:session.turnHandle,
+      nativeThreadId:session.nativeThreadId,nativeTurnId:session.nativeTurnId};
+    const body=operation==="poll"?{...binding,cursor:session.cursor}:
+      operation==="cancel"?binding:
+      {...binding,requestId:approval!.requestId,paramsDigest:approval!.paramsDigest,
+        decision:approval!.approved?"accept":"decline"};
+    let raw:unknown;
+    try {
+      raw=await this.invoke.control(operation==="poll"?"turn:events":
+        operation==="cancel"?"turn:cancel":"approval",body);
+    } catch {
+      throw new Error("native_Codex_outcome_uncertain_needs_reconciliation");
+    }
+    const phase=parseCodexPhase(raw,{ownerId,threadId,turnId});
+    await this.codex.record(phase,operation==="approval"?{
+      requestId:approval!.requestId,approved:approval!.approved}:undefined);
+    return {turnId,status:phase.status==="COMPLETED"?"completed":
+      phase.status==="CANCELLED"?"cancelled":
+      phase.status==="ERROR" || phase.status==="CLEANUP_PENDING"?"error":
+      phase.status==="AWAITING_APPROVAL"?"approval_required":"running"};
   }
 
   private async fail(claim: DispatchClaim): Promise<DispatchOutcome> {
@@ -126,23 +185,29 @@ export function makeSignedGatewayInvoker(options: {
       target.pathname !== "/" || audience.pathname !== "/" ||
       options.signingKey.length < 32) throw new Error("unsafe Gateway configuration");
   const fetcher = options.fetcher ?? fetch;
-  return async claim => {
-    const token = await options.idToken();
+  const post = async(path:string,payload:Record<string,unknown>):Promise<unknown> => {
+    const token=await options.idToken();
     if (!token) throw new Error("Gateway identity unavailable");
-    const timestamp = String(Date.now());
-    const body = JSON.stringify({ ownerId: claim.ownerId, threadId: claim.threadId,
-      turnId: claim.turnId, runtime: claim.runtime, model: claim.model,
-      messages: [{ role: "user", content: claim.content }] });
-    const signature = createHmac("sha256", options.signingKey)
+    const timestamp=String(Date.now());
+    const body=JSON.stringify(payload);
+    const signature=createHmac("sha256",options.signingKey)
       .update(timestamp).update(".").update(body).digest("hex");
-    const response = await fetcher(new URL("/internal/v1/assistant/turn", target), {
-      method: "POST", signal: AbortSignal.timeout(100_000),
-      headers: { Authorization: "Bearer " + token, "Content-Type": "application/json",
-        "X-OmniAgent-Timestamp": timestamp, "X-OmniAgent-Signature": "v1=" + signature },
+    const response=await fetcher(new URL(path,target),{
+      method:"POST",signal:AbortSignal.timeout(100_000),
+      headers:{Authorization:"Bearer "+token,"Content-Type":"application/json",
+        "X-OmniAgent-Timestamp":timestamp,"X-OmniAgent-Signature":"v1="+signature},
       body
     });
-    // Never log provider HTTP error bodies.
     if (!response.ok) throw new Error("Gateway request failed");
     return response.json() as Promise<unknown>;
   };
+  const invoke:Invoke=async claim => post(claim.runtime==="codex"
+    ? "/internal/v1/assistant/turn:start" : "/internal/v1/assistant/turn",{
+    ownerId:claim.ownerId,threadId:claim.threadId,turnId:claim.turnId,
+    runtime:claim.runtime,model:claim.model,
+    messages:[{role:"user",content:claim.content}]
+  });
+  invoke.control=(operation,payload)=>post("/internal/v1/assistant/"+
+    (operation==="approval"?"approval":operation),payload);
+  return invoke;
 }

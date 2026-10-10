@@ -27,6 +27,7 @@ class _ChatPageState extends State<ChatPage> {
   String runtime = 'gemini';
   String connection = 'idle';
   String? queuedTurn;
+  String turnPhase = 'queued';
   int cursor = -1;
   bool busy = false;
   int selectionEpoch = 0;
@@ -105,6 +106,7 @@ class _ChatPageState extends State<ChatPage> {
       seenEvents.clear();
       lockedApprovals.clear();
       queuedTurn = null;
+      turnPhase = 'queued';
       cursor = -1;
       connection = 'idle';
     });
@@ -119,6 +121,7 @@ class _ChatPageState extends State<ChatPage> {
       seenEvents.clear();
       lockedApprovals.clear();
       queuedTurn = null;
+      turnPhase = 'queued';
       cursor = -1;
       connection = 'connecting';
     });
@@ -201,6 +204,15 @@ class _ChatPageState extends State<ChatPage> {
     // from an older thread cannot prevent the new thread's initial replay.
     pollingEpoch = epoch;
     try {
+      final currentTurn = queuedTurn;
+      if (currentTurn != null && turnPhase == 'running') {
+        final result = await widget.api.post(
+            '/v1/threads/$id/turns/$currentTurn/refresh', {});
+        if (!mounted || selectionEpoch != epoch || thread?['thread_id'] != id) return;
+        if (result is Map && result['status'] is String) {
+          setState(() => turnPhase = result['status'] as String);
+        }
+      }
       final rows = await widget.api.events('$id', cursor);
       if (!mounted || selectionEpoch != epoch ||
           thread?['thread_id'] != id) {
@@ -234,10 +246,14 @@ class _ChatPageState extends State<ChatPage> {
         ? '${row['item_id'] ?? eventId}'
         : eventId;
     events[key] = {...?events[key], ...row};
+    if (row['event_type'] == 'approval_request') {
+      turnPhase = 'approval_required';
+    }
     if (row['event_type'] == 'turn_cancelled' ||
         row['event_type'] == 'turn_completed' ||
         row['event_type'] == 'turn_error') {
       queuedTurn = null;
+      turnPhase = 'queued';
     }
   }
 
@@ -251,9 +267,13 @@ class _ChatPageState extends State<ChatPage> {
           .post('/v1/threads/$id/messages', {'content': content});
       if (!mounted) return;
       input.clear();
-      setState(() => queuedTurn = (value['dispatch'] is Map &&
-              ['completed', 'cancelled', 'error'].contains(value['dispatch']['status']))
-          ? null : '${value['turn']['turn_id']}');
+      final phase = value['dispatch'] is Map
+          ? '${value['dispatch']['status']}' : 'queued';
+      setState(() {
+        turnPhase = phase;
+        queuedTurn = ['completed','cancelled','error'].contains(phase)
+            ? null : '${value['turn']['turn_id']}';
+      });
       await refresh();
     } catch (error) {
       if (mounted) _error(error is StateError ? error.message.toString() : '訊息送出失敗，請稍後重試');
@@ -268,11 +288,19 @@ class _ChatPageState extends State<ChatPage> {
     if (id == null || turn == null || busy) return;
     setState(() => busy = true);
     try {
-      await widget.api.post('/v1/threads/$id/turns/$turn/cancel', {});
-      if (mounted) setState(() => queuedTurn = null);
+      final result = await widget.api.post('/v1/threads/$id/turns/$turn/cancel', {});
+      if (mounted) setState(() {
+        if (result is Map && ['CANCELLED','cancelled','completed','error']
+            .contains(result['status'])) {
+          queuedTurn = null;
+          turnPhase = 'queued';
+        } else if (result is Map && result['status'] is String) {
+          turnPhase = result['status'] as String;
+        }
+      });
       await refresh();
     } catch (_) {
-      if (mounted) _error('只有尚未執行的回合可以取消');
+      if (mounted) _error('目前無法取消；執行狀態可能已變更，請重新整理');
     } finally {
       if (mounted) setState(() => busy = false);
     }
@@ -293,9 +321,12 @@ class _ChatPageState extends State<ChatPage> {
     }
     setState(() => lockedApprovals.add('$requestId'));
     try {
-      await widget.api.post(
+      final result = await widget.api.post(
           '/v1/threads/$threadId/turns/$turnId/approvals/$requestId',
           {'approved': approved, 'paramsDigest': digest});
+      if (mounted && result is Map && result['status'] is String) {
+        setState(() => turnPhase = result['status'] as String);
+      }
       await refresh();
     } catch (_) {
       if (mounted) {
@@ -747,12 +778,17 @@ class _ChatPageState extends State<ChatPage> {
                 children: [
                   const Icon(Icons.schedule_rounded, size: 20),
                   const SizedBox(width: 10),
-                  const Expanded(
-                    child: Text('訊息已排隊，等待執行環境接手'),
+                  Expanded(
+                    child: Text(turnPhase == 'approval_required'
+                         ? '正在等待核准決策'
+                         : turnPhase == 'running'
+                             ? '模型正在執行，可嘗試中斷'
+                             : '訊息已排隊，等待執行環境接手'),
                   ),
                   TextButton(
                     onPressed: busy ? null : cancelQueued,
-                    child: const Text('取消排隊'),
+                    child: Text(turnPhase == 'running' || turnPhase == 'approval_required'
+                        ? '中斷執行' : '取消排隊'),
                   ),
                 ],
               ),

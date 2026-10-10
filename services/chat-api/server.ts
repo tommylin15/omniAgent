@@ -94,7 +94,7 @@ function threadInput(value: Record<string, unknown>): ThreadInput {
 }
 
 export function makeChatServer(store: ChatStore, verifyUser: VerifyUser, verifyService: VerifyService,
-                               dispatcher?: Pick<ChatDispatcher,"runOnce"> & Partial<Pick<ChatDispatcher,"canDispatch" | "inspectRunningCandidates" | "availableModels">>,
+                               dispatcher?: Pick<ChatDispatcher,"runOnce"> & Partial<Pick<ChatDispatcher,"canDispatch" | "inspectRunningCandidates" | "availableModels" | "continueCodex">>,
                                credentials?: Pick<CredentialManager,"create" | "list" | "revoke">) {
   return createServer(async (request, response) => {
     const url = new URL(request.url ?? "/", "http://localhost");
@@ -216,12 +216,18 @@ export function makeChatServer(store: ChatStore, verifyUser: VerifyUser, verifyS
           return send(response,503,{ error:"dispatch_unavailable" });
         const result = await store.message(ownerId,messages[1],value.content,key(request));
         // Keep the request alive during inference; Cloud Run can suspend work after a response.
-        const outcome = await dispatcher.runOnce({ ownerId,threadId:messages[1],turnId:String((result.turn as Record<string,unknown>).turn_id) });
+        const turn=result.turn as Record<string,unknown>;
+        if (turn.status !== "QUEUED")
+          return send(response,200,{...result,dispatch:{status:String(turn.status).toLowerCase()}});
+        const outcome = await dispatcher.runOnce({ ownerId,threadId:messages[1],turnId:String(turn.turn_id) });
         return send(response,202,{ ...result, dispatch:outcome });
       }
       const events = /^\/v1\/threads\/([A-Za-z0-9][A-Za-z0-9._:-]{0,127})\/events$/.exec(url.pathname);
       if (request.method === "GET" && events) {
-        const cursor = Number(url.searchParams.get("cursor") ?? "-1");
+        const resume = url.searchParams.has("cursor") ? url.searchParams.get("cursor") :
+          request.headers["last-event-id"] ?? "-1";
+        const cursor = typeof resume==="string" && /^-?[0-9]{1,16}$/.test(resume)
+          ? Number(resume) : NaN;
         const limit = Number(url.searchParams.get("limit") ?? "200");
         if (!Number.isInteger(cursor) || cursor < -1 || !Number.isInteger(limit) || limit < 1 || limit > 200) {
           throw new InvalidRequest("event cursor or limit is invalid");
@@ -234,13 +240,38 @@ export function makeChatServer(store: ChatStore, verifyUser: VerifyUser, verifyS
       }
       const approval = /^\/v1\/threads\/([A-Za-z0-9][A-Za-z0-9._:-]{0,127})\/turns\/([A-Za-z0-9][A-Za-z0-9._:-]{0,127})\/approvals\/([A-Za-z0-9][A-Za-z0-9._:-]{0,127})$/.exec(url.pathname);
       const cancel = /^\/v1\/threads\/([A-Za-z0-9][A-Za-z0-9._:-]{0,127})\/turns\/([A-Za-z0-9][A-Za-z0-9._:-]{0,127})\/cancel$/.exec(url.pathname);
+      const refresh = new RegExp("^/v1/threads/([A-Za-z0-9][A-Za-z0-9._:-]{0,127})/turns/([A-Za-z0-9][A-Za-z0-9._:-]{0,127})/refresh$").exec(url.pathname);
+            if (request.method === "POST" && refresh) {
+        const selected=await store.thread(ownerId,refresh[1]);
+        if (selected.runtime!=="codex" || !dispatcher?.continueCodex ||
+            !dispatcher?.canDispatch?.(ownerId,String(selected.runtime),String(selected.model)))
+          return send(response,503,{error:"dispatch_unavailable"});
+        return send(response,200,await dispatcher.continueCodex(ownerId,refresh[1],refresh[2],"poll"));
+      }
       if (request.method === "POST" && cancel) {
-        return send(response,200,await store.cancelQueuedTurn(ownerId,cancel[1],cancel[2]));
+        try {
+          return send(response,200,await store.cancelQueuedTurn(ownerId,cancel[1],cancel[2]));
+        } catch(error) {
+          if (!(error instanceof ChatConflict)) throw error;
+          const selected=await store.thread(ownerId,cancel[1]);
+          if (selected.runtime!=="codex" || !dispatcher?.continueCodex ||
+              !dispatcher?.canDispatch?.(ownerId,String(selected.runtime),String(selected.model)))
+            throw error;
+          return send(response,200,await dispatcher.continueCodex(ownerId,cancel[1],cancel[2],"cancel"));
+        }
       }
       if (request.method === "POST" && approval) {
         const value = await body(request);
         if (typeof value.approved !== "boolean" || typeof value.paramsDigest !== "string" || !DIGEST.test(value.paramsDigest)) {
           throw new InvalidRequest("approval decision is invalid");
+        }
+        const selected=await store.thread(ownerId,approval[1]);
+        if (selected.runtime==="codex") {
+          if (!dispatcher?.continueCodex ||
+              !dispatcher?.canDispatch?.(ownerId,String(selected.runtime),String(selected.model)))
+            return send(response,503,{error:"dispatch_unavailable"});
+          return send(response,200,await dispatcher.continueCodex(ownerId,approval[1],approval[2],
+            "approval",{requestId:approval[3],paramsDigest:value.paramsDigest,approved:value.approved}));
         }
         return send(response,200,await store.decideApproval(ownerId,approval[1],approval[2],approval[3],value.paramsDigest,value.approved));
       }

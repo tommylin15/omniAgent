@@ -90,6 +90,26 @@ class FakeChatApi extends ChatApi {
       ];
 }
 
+class NativeTurnChatApi extends FakeChatApi {
+  @override
+  Future<dynamic> post(String path, Map<String,dynamic> body) async {
+    if (path.endsWith('/messages')) {
+      writes.add({'path':path,...body});
+      return {'turn':{'turn_id':'turn-1','status':'QUEUED'},
+        'dispatch':{'status':'running','turnId':'turn-1'}};
+    }
+    if (path.endsWith('/refresh')) {
+      writes.add({'path':path,...body});
+      return {'status':'approval_required','turnId':'turn-1'};
+    }
+    if (path.endsWith('/cancel')) {
+      writes.add({'path':path,...body});
+      return {'status':'cancelled','turnId':'turn-1'};
+    }
+    return super.post(path,body);
+  }
+}
+
 class DelayedReplayApi extends FakeChatApi {
   final pending = <String, Completer<List<Map<String, dynamic>>>>{};
 
@@ -289,6 +309,26 @@ void main() {
         api.writes
             .any((write) => '${write['path']}'.startsWith('/api/v1/me/chats')),
         isFalse);
+  });
+
+  testWidgets('native running turn becomes approval-required and can be cancelled',
+      (tester) async {
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.binding.setSurfaceSize(const Size(1000,800));
+    final api=NativeTurnChatApi();
+    await tester.pumpWidget(MaterialApp(home: ChatPage(api)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('建立對話'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).last,'hello');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+    expect(api.writes.any((row)=>'${row['path']}'.endsWith('/refresh')),isTrue);
+    expect(find.text('正在等待核准決策'),findsOneWidget);
+    await tester.tap(find.text('中斷執行'));
+    await tester.pumpAndSettle();
+    expect(api.writes.any((row)=>'${row['path']}'.endsWith('/cancel')),isTrue);
+    expect(find.text('正在等待核准決策'),findsNothing);
   });
 
   testWidgets('unentitled Owner sees disabled model creation', (tester) async {
