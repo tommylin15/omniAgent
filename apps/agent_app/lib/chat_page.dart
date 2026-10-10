@@ -289,15 +289,17 @@ class _ChatPageState extends State<ChatPage> {
     setState(() => busy = true);
     try {
       final result = await widget.api.post('/v1/threads/$id/turns/$turn/cancel', {});
-      if (mounted) setState(() {
-        if (result is Map && ['CANCELLED','cancelled','completed','error']
-            .contains(result['status'])) {
-          queuedTurn = null;
-          turnPhase = 'queued';
-        } else if (result is Map && result['status'] is String) {
-          turnPhase = result['status'] as String;
-        }
-      });
+      if (mounted) {
+        setState(() {
+          if (result is Map && ['CANCELLED','cancelled','completed','error']
+              .contains(result['status'])) {
+            queuedTurn = null;
+            turnPhase = 'queued';
+          } else if (result is Map && result['status'] is String) {
+            turnPhase = result['status'] as String;
+          }
+        });
+      }
       await refresh();
     } catch (_) {
       if (mounted) _error('目前無法取消；執行狀態可能已變更，請重新整理');
