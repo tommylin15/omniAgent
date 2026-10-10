@@ -1,5 +1,35 @@
 # Chat → Gateway one-shot dispatch: bounded integration
 
+## 2026-10-10 Transactional Gateway event persistence — implementation staged
+
+The Chat dispatcher now hands each already-validated Gateway response to
+`ChatStore.appendGatewayEvents` rather than writing individual events
+across separate transactions. The PostgreSQL method locks the
+owner/thread/turn, checks it is RUNNING, rejects any existing event ID,
+writes all response rows with monotonically increasing thread-local
+sequences and changes the turn to its terminal status within **one**
+transaction. Any insertion, binding, credential-sanitization, or terminal
+state failure rolls the transaction back; clients must not observe a
+partially committed Gateway answer. A subsequent replay attempt is
+rejected for explicit reconciliation; the provider is **never**
+automatically re-invoked on an uncertain outcome. The failure-response
+`turn_error` uses the same transactional path.
+
+The disposable PostgreSQL acceptance test injects a deliberate
+constraint failure **on the second event** and verifies that the first
+event and final turn state were not committed. It then commits a
+valid response, verifies ordered replay, terminal state, duplicate
+rejection, cross-owner denial and credential exclusion. All tests run
+against CI's disposable DB only; no live owner/model/Secret or paid
+provider is invoked.
+
+**Status: STAGED-CODE** pending exact-SHA tests/CI. Even a green test
+does not verify real Chat → Gateway provider execution or owner-scoped
+live PostgreSQL SSE replay. Model entitlements and billable Codex remain
+disabled pending the user's explicit decision; unified application
+acceptance and formal traffic changes remain later gates.
+
+
 **Current status: SOURCE / TEST INTEGRATION; LIVE AUTHENTICATED PROVIDER ACCEPTANCE OPEN.**
 
 ### 2026-10-09 signed boundary: verified local, live owner prerequisites missing

@@ -1,5 +1,16 @@
 # omniAgent TODO
 
+### 2026-10-10 Chat durable response commit — staged source
+
+- Implement `appendGatewayEvents` with owner/thread/turn row checks, a
+  single transaction for all validated Gateway events and final status,
+  no partial SSE response and explicit uncertain-commit reconciliation.
+- Add disposable PostgreSQL failure injection on second event,
+  atomic rollback, replay ordering, duplicate/cross-owner and secret safety.
+- **STAGED-CODE / CI PENDING**; this is not a real provider or live
+  owner-level acceptance. No enablement of model execution or final
+  production release.
+
 ## 2026-10-10 集中開發批次 — 最後統一驗收
 
 本輪只新增不需付費推論或 Owner 私密憑證的部署安全實作：

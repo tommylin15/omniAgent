@@ -4,7 +4,7 @@ import { safeRecord, type ChatStore, type DispatchClaim } from "./storage.js";
 export type DispatchOutcome = { status: "idle" | "completed" | "cancelled" | "error"; turnId?: string; reason?: string };
 type TurnEvent = { type: string; payload: unknown };
 type Invoke = (claim: DispatchClaim) => Promise<unknown>;
-type Store = Pick<ChatStore, "claimNextQueuedTurn" | "appendEvent">;
+type Store = Pick<ChatStore, "claimNextQueuedTurn" | "appendGatewayEvents">;
 
 const types = new Set(["text_delta", "item_upsert", "tool_request", "tool_result",
   "approval_request", "approval_resolved", "citation", "usage",
@@ -30,14 +30,15 @@ export class ChatDispatcher {
     } catch {
       return this.fail(claim);
     }
-    for (const [index, event] of events.entries()) {
-      try {
-        await this.store.appendEvent(claim.ownerId, claim.threadId, claim.turnId,
-          `gateway-${claim.turnId}-${index}`, event.type, event.payload);
-      } catch {
-        // A provider may already have acted. Do not replay it after a DB fault.
-        throw new Error("dispatch_persistence_needs_reconciliation");
-      }
+    try {
+      await this.store.appendGatewayEvents(claim.ownerId, claim.threadId, claim.turnId,
+        events.map((event,index) => ({
+          eventId:`gateway-${claim.turnId}-${index}`, type:event.type, payload:event.payload
+        })));
+    } catch {
+      // No partial event stream becomes visible. Never repeat a provider request
+      // after an unknown DB commit outcome; reconcile the claimed RUNNING turn.
+      throw new Error("dispatch_persistence_needs_reconciliation");
     }
     const last = events.at(-1)!.type;
     return { status: last === "turn_completed" ? "completed" :
@@ -46,9 +47,10 @@ export class ChatDispatcher {
 
   private async fail(claim: DispatchClaim): Promise<DispatchOutcome> {
     try {
-      await this.store.appendEvent(claim.ownerId, claim.threadId, claim.turnId,
-        `gateway-${claim.turnId}-failed`, "turn_error",
-        { code: "gateway_outcome_uncertain" });
+      await this.store.appendGatewayEvents(claim.ownerId, claim.threadId, claim.turnId, [
+        { eventId:`gateway-${claim.turnId}-failed`, type:"turn_error",
+          payload:{ code:"gateway_outcome_uncertain" } }
+      ]);
     } catch {
       throw new Error("dispatch_failure_persistence_needs_reconciliation");
     }

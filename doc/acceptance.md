@@ -1,5 +1,14 @@
 # omniAgent acceptance matrix
 
+### Chat Gateway transactional event batch (2026-10-10)
+
+A single owner-scoped PostgreSQL transaction now encompasses every
+validated Gateway response event and terminal turn update. Disposable
+DB acceptance injects a failure on event #2 to prove event #1 is rolled
+back and the turn remains RUNNING; no automatic provider retry is
+permitted. Source/test change is **STAGED-CODE**, not real provider
+inference/replay PASS; exact-SHA CI and live owner acceptance are pending.
+
 ## 2026-10-10 staged code and deferred unified acceptance
 
 Fixed Preview guarded publisher and non-destructive safety tests are

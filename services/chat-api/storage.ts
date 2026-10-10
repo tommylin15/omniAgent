@@ -302,6 +302,82 @@ export class ChatStore {
     } finally { client.release(); }
   }
 
+
+  /**
+   * Persist one validated Gateway response as a single PostgreSQL transaction.
+   * Every event and its terminal turn state commit together, or none do.
+   * Deliberately fail closed on replay: a provider must never be invoked again
+   * after an uncertain crash/commit, even if no response is visible to clients.
+   */
+  async appendGatewayEvents(ownerId: string, threadId: string, turnId: string,
+    events: readonly { eventId: string; type: string; payload: unknown }[]): Promise<void> {
+    const acceptedTypes = new Set(["text_delta","item_upsert","tool_request","tool_result",
+      "approval_request","approval_resolved","citation","usage",
+      "turn_completed","turn_cancelled","turn_error"]);
+    const terminalTypes = new Set(["turn_completed","turn_cancelled","turn_error"]);
+    if (!events.length || events.length > 200 ||
+        !terminalTypes.has(events[events.length - 1].type) ||
+        events.filter(event => terminalTypes.has(event.type)).length !== 1) {
+      throw new ChatConflict("invalid Gateway event batch");
+    }
+    const seen = new Set<string>();
+    const prepared = events.map(event => {
+      if (!/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/.test(event.eventId) ||
+          seen.has(event.eventId) || !acceptedTypes.has(event.type)) {
+        throw new ChatConflict("invalid Gateway event id or type");
+      }
+      seen.add(event.eventId);
+      const payload = safeRecord(event.payload);
+      if (!payload || typeof payload !== "object" || Array.isArray(payload) ||
+          Buffer.byteLength(JSON.stringify(payload)) > 65_536) {
+        throw new ChatConflict("invalid Gateway event payload");
+      }
+      return { eventId:event.eventId,type:event.type,payload:JSON.stringify(payload) };
+    });
+    const terminal = prepared[prepared.length - 1].type;
+    const status = terminal === "turn_completed" ? "COMPLETED" :
+      terminal === "turn_cancelled" ? "CANCELLED" : "ERROR";
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const thread = (await client.query(
+        `SELECT 1 FROM omni_chat.threads WHERE owner_id=$1 AND thread_id=$2 FOR UPDATE`,
+        [ownerId,threadId])).rows[0];
+      const turn = (await client.query(
+        `SELECT status FROM omni_chat.turns WHERE owner_id=$1 AND thread_id=$2 AND turn_id=$3 FOR UPDATE`,
+        [ownerId,threadId,turnId])).rows[0];
+      if (!thread || !turn) throw new ChatNotFound("Gateway turn not found");
+      if (turn.status !== "RUNNING") throw new ChatConflict("Gateway turn is not running");
+      const existing = (await client.query(
+        `SELECT 1 FROM omni_chat.events WHERE owner_id=$1 AND thread_id=$2
+         AND event_id=ANY($3::varchar[]) LIMIT 1`,
+        [ownerId,threadId,prepared.map(event => event.eventId)])).rows;
+      if (existing.length) throw new ChatConflict("Gateway response requires reconciliation");
+      const seq = Number((await client.query(
+        `SELECT COALESCE(MAX(seq),-1)+1 AS seq FROM omni_chat.events
+         WHERE owner_id=$1 AND thread_id=$2`, [ownerId,threadId])).rows[0].seq);
+      if (!Number.isSafeInteger(seq) || seq < 0 || !Number.isSafeInteger(seq+prepared.length))
+        throw new ChatConflict("Gateway event sequence overflow");
+      for (const [index,event] of prepared.entries()) {
+        await client.query(
+          `INSERT INTO omni_chat.events(owner_id,thread_id,turn_id,event_id,seq,event_type,payload)
+           VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+          [ownerId,threadId,turnId,event.eventId,seq+index,event.type,event.payload]);
+      }
+      const updated = await client.query(
+        `UPDATE omni_chat.turns SET status=$4::varchar,completed_at=now()
+         WHERE owner_id=$1 AND thread_id=$2 AND turn_id=$3 AND status='RUNNING'`,
+        [ownerId,threadId,turnId,status]);
+      if (updated.rowCount !== 1) throw new ChatConflict("Gateway terminal status conflict");
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async appendEvent(ownerId: string, threadId: string, turnId: string, eventId: string,
                     type: string, payload: unknown): Promise<Record<string, unknown>> {
     const safePayload = safeRecord(payload);

@@ -119,6 +119,50 @@ describe.runIf(Boolean(dsn))("isolated PostgreSQL ChatStore acceptance", () => {
       await expect(store.appendEvent(a,"thread-b",pending.turn.turn_id as string,
         "foreign","text_delta",{text:"not allowed"})).rejects.toBeInstanceOf(ChatNotFound);
 
+      // An entire Gateway response must be visible atomically: a database
+      // failure on the second event rolls back the first and leaves RUNNING
+      // for explicit reconciliation, never a partial streamed answer.
+      await store.createThread(a,{...input,threadId:"atomic-thread"},"atomic-create");
+      const atomicQueued = await store.message(a,"atomic-thread","atomic prompt","atomic-message");
+      const atomicId = String(atomicQueued.turn.turn_id);
+      expect(await store.claimNextQueuedTurn([a],{
+        ownerId:a,threadId:"atomic-thread",turnId:atomicId
+      })).toMatchObject({ownerId:a,threadId:"atomic-thread",turnId:atomicId});
+      const batch = [
+        {eventId:"gateway-atomic-success",type:"text_delta",payload:{text:"你好"}},
+        {eventId:"gateway-atomic-fail",type:"turn_completed",payload:{status:"completed"}}
+      ];
+      await pool.query(`ALTER TABLE omni_chat.events ADD CONSTRAINT reject_atomic_second
+        CHECK (event_id <> 'gateway-atomic-fail')`);
+      try {
+        await expect(store.appendGatewayEvents(a,"atomic-thread",atomicId,batch))
+          .rejects.toMatchObject({code:"23514"});
+        const partial = await store.events(a,"atomic-thread",-1,200);
+        expect(partial.map(row=>row.event_type)).toEqual(["item_upsert"]);
+        expect((await pool.query(`SELECT status FROM omni_chat.turns WHERE
+          owner_id=$1 AND thread_id='atomic-thread' AND turn_id=$2`,[a,atomicId])).rows[0].status)
+          .toBe("RUNNING");
+      } finally {
+        await pool.query("ALTER TABLE omni_chat.events DROP CONSTRAINT reject_atomic_second");
+      }
+      await store.appendGatewayEvents(a,"atomic-thread",atomicId,batch);
+      const committed = await store.events(a,"atomic-thread",-1,200);
+      expect(committed.map(row=>row.event_type)).toEqual(
+        ["item_upsert","text_delta","turn_completed"]);
+      expect(committed.map(row=>Number(row.seq))).toEqual([0,1,2]);
+      expect(committed[1].payload).toEqual({text:"你好"});
+      expect((await pool.query(`SELECT status FROM omni_chat.turns WHERE
+        owner_id=$1 AND thread_id='atomic-thread' AND turn_id=$2`,[a,atomicId])).rows[0].status)
+        .toBe("COMPLETED");
+      await expect(store.appendGatewayEvents(a,"atomic-thread",atomicId,batch))
+        .rejects.toBeInstanceOf(ChatConflict);
+      await expect(store.appendGatewayEvents(b,"atomic-thread",atomicId,batch))
+        .rejects.toBeInstanceOf(ChatNotFound);
+      await expect(store.appendGatewayEvents(a,"atomic-thread",atomicId,[
+        {eventId:"gateway-invalid-secret",type:"turn_error",payload:{api_key:"never-store"}}
+      ])).rejects.toThrow("credential");
+      expect((await store.events(a,"atomic-thread",-1,200))).toHaveLength(3);
+
       const disposable = await store.createThread(a,{...input,threadId:"delete-me"},"delete-create");
       await store.message(a,String(disposable.thread_id),"永久刪除測試","delete-message");
       const running = await store.claimNextQueuedTurn([a], {ownerId:a,threadId:"delete-me",turnId:String((await store.message(a,"delete-me","永久刪除測試","delete-message")).turn.turn_id)});
