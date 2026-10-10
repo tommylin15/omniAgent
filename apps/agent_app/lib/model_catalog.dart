@@ -1,4 +1,4 @@
-// Catalog checked 2026-10-09 against provider docs and the Codex model cache.
+// Catalog checked 2026-10-10 against provider docs and the Codex model cache.
 // Gemini: https://ai.google.dev/gemini-api/docs/models
 // OpenRouter: https://openrouter.ai/api/v1/models
 // Groq: https://console.groq.com/docs/models
@@ -13,18 +13,12 @@ const modelCatalog = <String, List<String>>{
     'gpt-5.6-terra',
     'gpt-5.6-luna',
   ],
+  // 2026-10-10 Owner policy: Gemini Chat exposes only Flash-Lite.
+  // Model availability still depends on the provider and project eligibility.
   'gemini': [
-    'gemini-2.5-flash',
-    'gemini-3.8-flash',
-    'gemini-3.7-flash',
-    'gemini-3.6-flash',
-    'gemini-3.5-flash',
     'gemini-3.5-flash-lite',
     'gemini-3.1-flash-lite',
-    'gemini-3.1-pro-preview',
-    'gemini-3-flash-preview',
     'gemini-2.5-flash-lite',
-    'gemini-2.5-pro',
   ],
   'openrouter': [
     'openrouter/free',
