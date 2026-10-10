@@ -140,6 +140,13 @@ export function makeChatServer(store: ChatStore, verifyUser: VerifyUser, verifyS
       }
       const principal = await verifyUser(token);
       const ownerId = await store.owner(principal.issuer,principal.subject);
+      if (request.method === "GET" && url.pathname === "/v1/me") {
+        // Owner UUID comes from the authenticated DB mapping, never from the
+        // client. It is a locator for configuring entitlements, not a secret.
+        return send(response,200,{ownerId,modelDispatchEnabled:
+          (dispatcher?.availableModels?.(ownerId)?.length ?? 0) > 0,
+          byokManagementEnabled:Boolean(credentials)});
+      }
       if (request.method === "GET" && url.pathname === "/v1/models") {
         const items = dispatcher?.availableModels?.(ownerId) ?? [];
         return send(response,200,{dispatchEnabled:items.length > 0,items});
