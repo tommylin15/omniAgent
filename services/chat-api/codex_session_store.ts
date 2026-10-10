@@ -73,8 +73,9 @@ export function parseCodexPhase(input: unknown, bind: Binding): CodexPhase {
     // A clean native terminal must be committed atomically with every delta.
     if (String(item.status)!=="CLEANUP_PENDING" && (terminalCount!==1 || !last || !terminals.has(last)))
       throw new ChatConflict("native terminal event missing");
-  } else if (terminalCount>0 || (item.status==="AWAITING_APPROVAL" &&
-      !events.some(e=>e.type==="approval_request")))
+  } else if (terminalCount>0 ||
+      (item.status==="AWAITING_APPROVAL" && !events.some(e=>e.type==="approval_request")) ||
+      (item.status==="IN_PROGRESS" && events.some(e=>e.type==="approval_request")))
     throw new ChatConflict("Codex nonterminal phase invalid");
   return {...bind,status:String(item.status),turnHandle:String(item.turnHandle),
     nativeThreadId:String(item.nativeThreadId),nativeTurnId:String(item.nativeTurnId),
