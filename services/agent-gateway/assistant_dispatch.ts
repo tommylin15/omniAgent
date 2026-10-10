@@ -1,7 +1,7 @@
 import { GeminiProvider } from "./gemini_provider.js";
 import { OpenRouterProvider, type ChatMessage } from "./openrouter_provider.js";
 import type { Json } from "./server.js";
-import { isAllowedGeminiModel } from "../chat-api/model_entitlements.js";
+import { isAllowedGeminiModel } from "./gemini_model_policy.js";
 
 export type DispatchRequest = {
   ownerId: string;
