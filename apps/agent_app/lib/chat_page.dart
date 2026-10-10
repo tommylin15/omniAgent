@@ -74,7 +74,9 @@ class _ChatPageState extends State<ChatPage> {
     // Never re-enable a poller for a thread that was switched or deleted
     // while its initial SSE replay request was still in flight.
     if (!mounted || selectionEpoch != epoch ||
-        thread?['thread_id'] != value['thread_id']) return;
+        thread?['thread_id'] != value['thread_id']) {
+      return;
+    }
     poller = Timer.periodic(const Duration(seconds: 2), (_) => refresh());
   }
 
@@ -162,7 +164,9 @@ class _ChatPageState extends State<ChatPage> {
         setState(() => connection = 'disconnected');
       }
     } finally {
-      if (pollingEpoch == epoch) pollingEpoch = null;
+      if (pollingEpoch == epoch) {
+        pollingEpoch = null;
+      }
     }
   }
 
