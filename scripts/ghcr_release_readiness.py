@@ -77,18 +77,44 @@ def image_digest(revision: dict, service: str) -> str:
 
 
 def enabled_secrets(revision: dict, secret_state) -> None:
-    containers = (revision.get("spec") or {}).get("containers") or []
-    for container in containers:
-        for row in container.get("env", []):
+    """Check both Secret Manager env refs and mounted Secret volumes.
+
+    GCP may allow an old tagged revision to remain Ready even after a
+    referenced secret is disabled. Neither kind of reference may be skipped.
+    """
+    def require_enabled(name, version) -> None:
+        if (not isinstance(name, str) or
+            not re.fullmatch(r"[A-Za-z0-9_-]{1,255}", name) or
+            not isinstance(version, str) or
+            not re.fullmatch(r"(latest|[0-9]+)", version)):
+            raise Blocked("invalid_secret_reference")
+        if secret_state(name, version) != "ENABLED":
+            raise Blocked("release_or_fallback_secret_not_enabled")
+
+    spec = revision.get("spec") or {}
+    for container in spec.get("containers") or []:
+        for row in container.get("env") or []:
             ref = (row.get("valueFrom") or {}).get("secretKeyRef") or {}
-            if not ref:
-                continue
-            name, version = ref.get("name"), ref.get("key")
-            if (not isinstance(name, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,255}", name) or
-                not isinstance(version, str) or not re.fullmatch(r"(latest|[0-9]+)", version)):
-                raise Blocked("invalid_secret_reference")
-            if secret_state(name, version) != "ENABLED":
-                raise Blocked("release_or_fallback_secret_not_enabled")
+            if ref:
+                require_enabled(ref.get("name"), ref.get("key"))
+
+    for volume in spec.get("volumes") or []:
+        secret = volume.get("secret")
+        if secret is None:
+            continue
+        if not isinstance(secret, dict):
+            raise Blocked("invalid_secret_reference")
+        name = secret.get("secretName")
+        items = secret.get("items")
+        if items is None:
+            require_enabled(name, "latest")
+        elif not isinstance(items, list) or not items:
+            raise Blocked("invalid_secret_reference")
+        else:
+            for item in items:
+                if not isinstance(item, dict):
+                    raise Blocked("invalid_secret_reference")
+                require_enabled(name, item.get("key"))
 
 
 def audit(source_sha: str, services: dict[str, dict], revisions: dict[str, dict],
