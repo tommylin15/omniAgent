@@ -26,7 +26,7 @@ jobs:
     timeout-minutes: 35
     env:
       RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
-      RECEIPT: ${{ runner.temp }}/ghcr-one-shot-promotion.json
+      RECEIPT: ghcr-one-shot-promotion.json
     steps:
       - uses: actions/checkout@v4
         with:
