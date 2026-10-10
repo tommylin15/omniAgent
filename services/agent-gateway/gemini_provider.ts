@@ -1,3 +1,5 @@
+import { isAllowedGeminiModel } from "../chat-api/model_entitlements.js";
+
 export type GeminiCitation = { title: string; uri: string };
 export type GeminiUsage = { promptTokens: number; candidateTokens: number; totalTokens: number };
 export type GeminiResult = {
@@ -54,17 +56,17 @@ function result(body: unknown, model: string, queriedAt: string): GeminiResult {
 export class GeminiProvider {
   constructor(
     private readonly apiKey: string,
-    private readonly model = "gemini-2.5-flash",
+    private readonly model = "gemini-3.5-flash-lite",
     private readonly fetcher: Fetcher = fetch,
     private readonly baseUrl = "https://generativelanguage.googleapis.com/v1beta",
   ) {
     if (!apiKey.trim()) throw new Error("GEMINI_API_KEY is required");
     if (process.env.GEMINI_PAID_ENABLED === "true") throw new Error("Gemini paid tier is disabled");
-    if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(model)) throw new Error("Gemini model is invalid");
+    if (!isAllowedGeminiModel(model)) throw new Error("Gemini model is not on the Flash-Lite allowlist");
   }
 
   static fromEnvironment(fetcher: Fetcher = fetch, model?: string): GeminiProvider {
-    return new GeminiProvider(process.env.GEMINI_API_KEY ?? "", model ?? (process.env.GEMINI_MODEL || "gemini-2.5-flash"), fetcher);
+    return new GeminiProvider(process.env.GEMINI_API_KEY ?? "", model ?? (process.env.GEMINI_MODEL || "gemini-3.5-flash-lite"), fetcher);
   }
 
   async generate(prompt: string, options: { grounding?: boolean; systemInstruction?: string; signal?: AbortSignal } = {}): Promise<GeminiResult> {
