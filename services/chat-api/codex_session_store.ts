@@ -70,9 +70,17 @@ export function parseCodexPhase(input: unknown, bind: Binding): CodexPhase {
   const last = events.at(-1)?.type;
   const terminalCount = events.filter(e=>terminals.has(e.type)).length;
   if (finalStates.has(String(item.status))) {
-    // A clean native terminal must be committed atomically with every delta.
-    if (String(item.status)!=="CLEANUP_PENDING" && (terminalCount!==1 || !last || !terminals.has(last)))
-      throw new ChatConflict("native terminal event missing");
+    // Never turn a native cancellation/error into a successful Chat turn.
+    const expected = item.status==="COMPLETED"?"turn_completed":
+      item.status==="CANCELLED"?"turn_cancelled":"turn_error";
+    if (item.status!=="CLEANUP_PENDING" && (terminalCount!==1 || last!==expected))
+      throw new ChatConflict("native terminal status mismatch");
+    if (item.status==="CLEANUP_PENDING") {
+      // A completed native response with failed cleanup is NOT a successful
+      // Chat completion; replace its terminal with an auditable error.
+      const prior=events.filter(e=>!terminals.has(e.type));
+      events.splice(0,events.length,...prior);
+    }
   } else if (terminalCount>0 ||
       (item.status==="AWAITING_APPROVAL" && !events.some(e=>e.type==="approval_request")) ||
       (item.status==="IN_PROGRESS" && events.some(e=>e.type==="approval_request")))

@@ -90,6 +90,16 @@ class FakeChatApi extends ChatApi {
       ];
 }
 
+class ResumedNativeChatApi extends FakeChatApi {
+  @override
+  Future<dynamic> get(String path) async {
+    if (path.endsWith('/turns/active')) {
+      return {'active':{'turnId':'turn-1','status':'approval_required'}};
+    }
+    return super.get(path);
+  }
+}
+
 class NativeTurnChatApi extends FakeChatApi {
   @override
   Future<dynamic> post(String path, Map<String,dynamic> body) async {
@@ -309,6 +319,22 @@ void main() {
         api.writes
             .any((write) => '${write['path']}'.startsWith('/api/v1/me/chats')),
         isFalse);
+  });
+
+  testWidgets('reopened Chat restores native approval status from Owner DB', (tester) async {
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.binding.setSurfaceSize(const Size(1000,800));
+    final resumed=ResumedNativeChatApi();
+    await tester.pumpWidget(MaterialApp(home:ChatPage(resumed)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('建立對話'));
+    await tester.pumpAndSettle();
+    expect(find.text('正在等待核准決策'),findsOneWidget);
+    expect(find.text('中斷執行'),findsOneWidget);
+    final other=FakeChatApi();
+    await tester.pumpWidget(MaterialApp(home:ChatPage(other,key:ObjectKey(other))));
+    await tester.pumpAndSettle();
+    expect(find.text('正在等待核准決策'),findsNothing);
   });
 
   testWidgets('native running turn becomes approval-required and can be cancelled',

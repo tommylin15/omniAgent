@@ -44,6 +44,9 @@ provider readback, production application P0 is **NOT VERIFIED**.
 - `POST /v1/threads/:thread/turns/:turn/refresh` polls one claimed native
   turn; approval and cancellation use the existing Owner-bound routes
   and signed Gateway `approval` / `turn:cancel` RPCs.
+- `GET /v1/threads/:thread/turns/active` returns one unfinished
+  Owner-bound Chat turn ID/status to restore controls after browser reload,
+  without exposing native Gateway handles.
 - `GET /v1/threads/:thread/events?cursor=N`, or `Last-Event-ID` if
   cursor is omitted, replays committed PostgreSQL SSE rows only from the
   authenticated Owner. UI reconnects from the last committed sequence.

@@ -366,6 +366,10 @@ describe.runIf(Boolean(dsn))("isolated PostgreSQL ChatStore acceptance", () => {
               expiresAt:future,ownerId:b,threadId:"native-thread",turnId:"native-turn"}}
         ]},nativeBinding);
       await native.record(initial);
+      expect(await store.activeTurn(b,"native-approval")).toEqual({
+        turnId:nativeTurn,status:"approval_required"});
+      await expect(store.activeTurn(a,"native-approval"))
+        .rejects.toBeInstanceOf(ChatNotFound);
       const saved=await store.events(b,"native-approval",-1,100);
       expect(saved.map(event=>event.event_type)).toEqual(["item_upsert","approval_request"]);
       expect(JSON.stringify(saved)).not.toContain("native-hidden-handle");
@@ -392,6 +396,7 @@ describe.runIf(Boolean(dsn))("isolated PostgreSQL ChatStore acceptance", () => {
       expect((await pool.query(
         "SELECT status FROM omni_chat.turns WHERE owner_id=$1 AND thread_id=$2 AND turn_id=$3",
         [b,"native-approval",nativeTurn])).rows[0].status).toBe("COMPLETED");
+      expect(await store.activeTurn(b,"native-approval")).toBeNull();
       expect((await pool.query(
         "SELECT status FROM omni_chat.approvals WHERE owner_id=$1 AND thread_id=$2 AND turn_id=$3",
         [b,"native-approval",nativeTurn])).rows[0].status).toBe("APPROVED");
@@ -412,6 +417,8 @@ describe.runIf(Boolean(dsn))("isolated PostgreSQL ChatStore acceptance", () => {
       await native.record(parseCodexPhase({...cancelBinding,status:"IN_PROGRESS",
         turnHandle:"cancel-handle",nativeThreadId:"cancel-thread",nativeTurnId:"cancel-native",
         cursor:-1,events:[]},cancelBinding));
+      expect(await store.activeTurn(b,"native-cancel")).toEqual({
+        turnId:cancelTurn,status:"running"});
       expect((await native.begin(b,"native-cancel",cancelTurn,"cancel")).turnHandle).toBe("cancel-handle");
       await native.record(parseCodexPhase({...cancelBinding,status:"CANCELLED",
         turnHandle:"cancel-handle",nativeThreadId:"cancel-thread",nativeTurnId:"cancel-native",

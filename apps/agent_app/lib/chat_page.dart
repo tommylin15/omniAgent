@@ -126,6 +126,26 @@ class _ChatPageState extends State<ChatPage> {
       connection = 'connecting';
     });
     await refresh();
+    // Recover active status from PostgreSQL after browser reload. Do not
+    // assume an in-memory queuedTurn survived a new session.
+    try {
+      final active = await widget.api.get(
+          '/v1/threads/${value['thread_id']}/turns/active');
+      if (mounted && selectionEpoch == epoch &&
+          thread?['thread_id'] == value['thread_id'] &&
+          active is Map && active['active'] is Map) {
+        final running = active['active'] as Map;
+        if (running['turnId'] is String && running['status'] is String) {
+          setState(() {
+            queuedTurn = running['turnId'] as String;
+            turnPhase = running['status'] as String;
+          });
+        }
+      }
+    } catch (_) {
+      // The SSE cursor remains authoritative; a status lookup outage does
+      // not revive a previous Owner's in-memory state.
+    }
     // Never re-enable a poller for a thread that was switched or deleted
     // while its initial SSE replay request was still in flight.
     if (!mounted || selectionEpoch != epoch ||
@@ -247,6 +267,9 @@ class _ChatPageState extends State<ChatPage> {
         : eventId;
     events[key] = {...?events[key], ...row};
     if (row['event_type'] == 'approval_request') {
+      if (row['turn_id'] is String) {
+        queuedTurn = row['turn_id'] as String;
+      }
       turnPhase = 'approval_required';
     }
     if (row['event_type'] == 'turn_cancelled' ||

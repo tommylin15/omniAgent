@@ -38,6 +38,14 @@ describe("native Codex phase authorization before persistence", () => {
   });
   it("denies a success without a matching terminal native event", () => {
     expect(()=>parseCodexPhase({...native,status:"COMPLETED"},binding)).toThrow();
+    expect(()=>parseCodexPhase({...native,status:"CANCELLED",events:[
+      {seq:0,threadId:"native-thread",turnId:"native-turn",type:"turn_completed",
+        payload:{status:"completed"}}
+    ]},binding)).toThrow();
+    expect(()=>parseCodexPhase({...native,status:"COMPLETED",events:[
+      {seq:0,threadId:"native-thread",turnId:"native-turn",type:"turn_error",
+        payload:{status:"failed"}}
+    ]},binding)).toThrow();
     expect(()=>parseCodexPhase({...native,status:"IN_PROGRESS"},binding)).toThrow();
     expect(parseCodexPhase({...native,status:"IN_PROGRESS",cursor:-1,events:[]},binding)
       .status).toBe("IN_PROGRESS");

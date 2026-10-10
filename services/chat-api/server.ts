@@ -222,6 +222,10 @@ export function makeChatServer(store: ChatStore, verifyUser: VerifyUser, verifyS
         const outcome = await dispatcher.runOnce({ ownerId,threadId:messages[1],turnId:String(turn.turn_id) });
         return send(response,202,{ ...result, dispatch:outcome });
       }
+      const activeTurn = new RegExp("^/v1/threads/([A-Za-z0-9][A-Za-z0-9._:-]{0,127})/turns/active$").exec(url.pathname);
+      if (request.method === "GET" && activeTurn) {
+        return send(response,200,{active:await store.activeTurn(ownerId,activeTurn[1])});
+      }
       const events = /^\/v1\/threads\/([A-Za-z0-9][A-Za-z0-9._:-]{0,127})\/events$/.exec(url.pathname);
       if (request.method === "GET" && events) {
         const resume = url.searchParams.has("cursor") ? url.searchParams.get("cursor") :

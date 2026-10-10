@@ -294,6 +294,27 @@ export class ChatStore {
       [approvedOwners])).rows;
   }
 
+  /** Read back one active turn for UI restart/reconnect; never returns a
+   * Gateway native handle or data outside the verified database Owner.
+   */
+  async activeTurn(ownerId:string,threadId:string):Promise<{turnId:string;status:string}|null> {
+    await this.thread(ownerId,threadId);
+    const row=(await this.pool.query(
+      `SELECT t.turn_id,t.status,EXISTS (
+          SELECT 1 FROM omni_chat.approvals AS a
+          WHERE a.owner_id=t.owner_id AND a.thread_id=t.thread_id
+            AND a.turn_id=t.turn_id AND a.status='PENDING'
+            AND a.expires_at>now()
+        ) AS awaiting_approval
+        FROM omni_chat.turns AS t
+        WHERE t.owner_id=$1 AND t.thread_id=$2 AND t.status IN ('QUEUED','RUNNING')
+        ORDER BY t.created_at DESC,t.turn_id DESC LIMIT 1`,
+      [ownerId,threadId])).rows[0];
+    if (!row) return null;
+    return {turnId:String(row.turn_id),status:row.awaiting_approval?"approval_required":
+      row.status==="RUNNING"?"running":"queued"};
+  }
+
   async events(ownerId: string, threadId: string, cursor: number, limit: number): Promise<Record<string, unknown>[]> {
     await this.thread(ownerId,threadId);
     return (await this.pool.query(

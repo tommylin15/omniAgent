@@ -15,6 +15,8 @@ async function app(dispatcher?: Pick<ChatDispatcher,"runOnce">,
                    credentials?: Pick<CredentialManager,"create" | "list" | "revoke">) {
   const store = {
     ready: vi.fn(async () => undefined),
+    activeTurn:vi.fn(async (_ownerId:string,_threadId:string) => null as
+      null | {turnId:string;status:string}),
     owner: vi.fn(async (_issuer: string, subject: string) => "owner-" + subject),
     createThread: vi.fn(async (ownerId: string, input: unknown) => ({ owner_id: ownerId, thread_id: "thread-1", input })),
     threads: vi.fn(async (ownerId: string) => [{ owner_id: ownerId, thread_id: "thread-1" }]),
@@ -220,6 +222,22 @@ describe("omniAgent Chat API ownership boundary", () => {
     expect(await replay.text()).toContain("event: item_upsert");
     expect(store.message).toHaveBeenCalledWith("owner-alice","thread-1","hello","key-1");
     expect((await (await fetch(base + "/v1/threads", { headers: { Authorization: "Bearer bob" } })).json()).items[0].owner_id).toBe("owner-bob");
+  });
+
+  it("restores only the signed-in Owner active-turn status without native handles", async () => {
+    const {base,store}=await app();
+    store.activeTurn.mockImplementation(async(ownerId:string) =>
+      ownerId==="owner-alice"?{turnId:"turn-alice",status:"approval_required"}:null);
+    expect((await fetch(base+"/v1/threads/thread-1/turns/active")).status).toBe(401);
+    const alice=await fetch(base+"/v1/threads/thread-1/turns/active",{
+      headers:{Authorization:"Bearer alice"}});
+    expect(await alice.json()).toEqual({active:{
+      turnId:"turn-alice",status:"approval_required"}});
+    const bob=await fetch(base+"/v1/threads/thread-1/turns/active",{
+      headers:{Authorization:"Bearer bob"}});
+    expect(await bob.json()).toEqual({active:null});
+    expect(store.activeTurn).toHaveBeenCalledWith("owner-alice","thread-1");
+    expect(store.activeTurn).toHaveBeenCalledWith("owner-bob","thread-1");
   });
 
   it("resumes SSE replay from Last-Event-ID without cross-owner cursor injection", async () => {
