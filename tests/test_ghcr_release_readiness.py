@@ -2,6 +2,8 @@
 import copy
 import importlib.util
 from pathlib import Path
+from tempfile import TemporaryDirectory
+import json
 import unittest
 
 spec=importlib.util.spec_from_file_location("ghcr_release_readiness",
@@ -115,6 +117,23 @@ class ReleaseReadiness(unittest.TestCase):
         volume["secret"]["items"] = [{"key": "not-a-version", "path": "x"}]
         with self.assertRaisesRegex(gate.Blocked, "invalid_secret_reference"):
             gate.audit(HEAD, services, revisions, read_secret)
+
+    def test_failure_receipt_is_redacted_and_still_blocks_release(self):
+        with TemporaryDirectory() as directory:
+            path = str(Path(directory) / "release-readiness.json")
+            gate.write_blocked_receipt(
+                HEAD, path, gate.Blocked("release_or_fallback_secret_not_enabled"))
+            receipt = json.loads(Path(path).read_text())
+            self.assertEqual(receipt["technical_preflight"], "BLOCKED")
+            self.assertEqual(receipt["formal_release_gate"], "BLOCKED")
+            self.assertFalse(receipt["production_traffic_mutated"])
+            self.assertEqual(receipt["category"],
+                             "release_or_fallback_secret_not_enabled")
+            gate.write_blocked_receipt(
+                HEAD, path, RuntimeError("sensitive-provider-response"))
+            receipt = json.loads(Path(path).read_text())
+            self.assertEqual(receipt["category"], "runtime_readback_failed")
+            self.assertNotIn("sensitive-provider-response", Path(path).read_text())
 
     def test_uuid_free_config_prevents_cross_project_inference(self):
         services,revisions=fixture()
