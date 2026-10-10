@@ -1,5 +1,21 @@
 # omniAgent TODO
 
+### 2026-10-10 Flutter stale-replay isolation — staged source
+
+The Chat UI now gives each thread selection a generation identifier.
+A replay request that belongs to an older/deleted thread cannot replace
+the new thread's connection state or schedule a stale polling timer.
+Switching threads can start the new replay immediately even when the old
+request has not finished; pressing "new conversation" or deleting the
+selected thread cancels the old timer, clears selection state, and
+invalidates pending responses. Widget regression exercises overlapping
+requests with an old-thread network failure followed by the new thread's
+cursor update. Existing two-second polling remains; this change does
+**not** claim completed streaming/reconnect acceptance.
+
+**STAGED-CODE** until the exact SHA's Flutter CI completes, then the
+later unified live browser/mobile acceptance. No formal release.
+
 ### 2026-10-10 Chat durable response commit — staged source
 
 - Implement `appendGatewayEvents` with owner/thread/turn row checks, a

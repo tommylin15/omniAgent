@@ -29,7 +29,8 @@ class _ChatPageState extends State<ChatPage> {
   String? queuedTurn;
   int cursor = -1;
   bool busy = false;
-  bool polling = false;
+  int selectionEpoch = 0;
+  int? pollingEpoch;
 
   @override
   void dispose() {
@@ -42,7 +43,24 @@ class _ChatPageState extends State<ChatPage> {
   void reloadThreads() =>
       setState(() => threads = widget.api.get('/v1/threads'));
 
+  void clearSelection() {
+    poller?.cancel();
+    selectionEpoch++;
+    pollingEpoch = null;
+    setState(() {
+      thread = null;
+      events.clear();
+      seenEvents.clear();
+      lockedApprovals.clear();
+      queuedTurn = null;
+      cursor = -1;
+      connection = 'idle';
+    });
+  }
+
   Future<void> select(Map<String, dynamic> value) async {
+    poller?.cancel();
+    final epoch = ++selectionEpoch;
     setState(() {
       thread = value;
       events.clear();
@@ -52,8 +70,11 @@ class _ChatPageState extends State<ChatPage> {
       cursor = -1;
       connection = 'connecting';
     });
-    poller?.cancel();
     await refresh();
+    // Never re-enable a poller for a thread that was switched or deleted
+    // while its initial SSE replay request was still in flight.
+    if (!mounted || selectionEpoch != epoch ||
+        thread?['thread_id'] != value['thread_id']) return;
     poller = Timer.periodic(const Duration(seconds: 2), (_) => refresh());
   }
 
@@ -108,8 +129,7 @@ class _ChatPageState extends State<ChatPage> {
       await widget.api.delete('/v1/threads/${value['thread_id']}');
       if (!mounted) return;
       if (thread?['thread_id'] == value['thread_id']) {
-        poller?.cancel();
-        setState(() { thread = null; events.clear(); seenEvents.clear(); lockedApprovals.clear(); queuedTurn = null; cursor = -1; connection = 'idle'; });
+        clearSelection();
       }
       reloadThreads();
     } catch (_) {
@@ -121,11 +141,15 @@ class _ChatPageState extends State<ChatPage> {
 
   Future<void> refresh() async {
     final id = thread?['thread_id'];
-    if (id == null || polling) return;
-    polling = true;
+    final epoch = selectionEpoch;
+    if (id == null || pollingEpoch == epoch) return;
+    // Each selected thread gets its own in-flight slot. A delayed request
+    // from an older thread cannot prevent the new thread's initial replay.
+    pollingEpoch = epoch;
     try {
       final rows = await widget.api.events('$id', cursor);
-      if (!mounted || thread?['thread_id'] != id) return;
+      if (!mounted || selectionEpoch != epoch ||
+          thread?['thread_id'] != id) return;
       setState(() {
         for (final row in rows) {
           _merge(row);
@@ -133,9 +157,12 @@ class _ChatPageState extends State<ChatPage> {
         connection = 'connected';
       });
     } catch (_) {
-      if (mounted) setState(() => connection = 'disconnected');
+      if (mounted && selectionEpoch == epoch &&
+          thread?['thread_id'] == id) {
+        setState(() => connection = 'disconnected');
+      }
     } finally {
-      polling = false;
+      if (pollingEpoch == epoch) pollingEpoch = null;
     }
   }
 
@@ -331,7 +358,7 @@ class _ChatPageState extends State<ChatPage> {
             Padding(
               padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
               child: FilledButton.icon(
-                onPressed: () => setState(() => thread = null),
+                onPressed: clearSelection,
                 icon: const Icon(Icons.add_rounded),
                 label: const Text('新對話'),
               ),

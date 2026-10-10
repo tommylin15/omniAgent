@@ -1,5 +1,15 @@
 # omniAgent acceptance matrix
 
+### Flutter owner/thread selection race (2026-10-10)
+
+A per-selection generation guard invalidates stale, failed or delayed
+event replay responses and prevents the prior selection's poller from
+being resurrected. A new selection no longer waits on the previous
+thread's in-flight request. Widget regression tests this overlap.
+Source-only until exact-SHA Flutter CI and live visual verification
+prove success; periodic polling is still present and streaming upgrade
+remains OPEN.
+
 ### Chat Gateway transactional event batch (2026-10-10)
 
 A single owner-scoped PostgreSQL transaction now encompasses every

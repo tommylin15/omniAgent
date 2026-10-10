@@ -77,7 +77,64 @@ class FakeChatApi extends ChatApi {
       ];
 }
 
+class DelayedReplayApi extends FakeChatApi {
+  final pending = <String, Completer<List<Map<String, dynamic>>>>{};
+
+  @override
+  Future<dynamic> get(String path) async => {
+        'items': [
+          {'thread_id': 'thread-a', 'runtime': 'gemini', 'model': 'model-a'},
+          {'thread_id': 'thread-b', 'runtime': 'gemini', 'model': 'model-b'},
+        ],
+      };
+
+  @override
+  Future<List<Map<String, dynamic>>> events(String threadId, int cursor) =>
+      pending.putIfAbsent(threadId,
+          () => Completer<List<Map<String, dynamic>>>()).future;
+}
+
 void main() {
+  testWidgets('switching threads isolates pending SSE replays and failed old requests',
+      (tester) async {
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.binding.setSurfaceSize(const Size(1200, 900));
+    final api = DelayedReplayApi();
+    await tester.pumpWidget(MaterialApp(home: ChatPage(api)));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('thread-a'));
+    await tester.pump();
+    expect(api.pending.containsKey('thread-a'), isTrue);
+    await tester.tap(find.text('thread-b'));
+    await tester.pump();
+    expect(api.pending.containsKey('thread-b'), isTrue);
+
+    // Old request is still alive when B starts. Its error may not put B
+    // into disconnected state or reschedule a poller for A.
+    api.pending['thread-a']!.completeError(StateError('old request failed'));
+    await tester.pump();
+    expect(find.text('正在同步事件'), findsOneWidget);
+    expect(find.text('連線中斷，請重新載入事件'), findsNothing);
+
+    api.pending['thread-b']!.complete([
+      {
+        'event_id': 'b-event',
+        'seq': 0,
+        'event_type': 'text_delta',
+        'payload': {'text': 'response B'}
+      }
+    ]);
+    await tester.pump();
+    expect(find.text('事件已同步 · 游標 0'), findsOneWidget);
+
+    await tester.tap(find.text('新對話'));
+    await tester.pump();
+    expect(find.text('事件已同步 · 游標 0'), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+
   testWidgets('permanent thread deletion requires confirmation', (tester) async {
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.binding.setSurfaceSize(const Size(1200, 900));
