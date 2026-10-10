@@ -1,5 +1,10 @@
 # Chat → Gateway one-shot dispatch: bounded integration
 
+### 2026-10-10 Safe running-turn inspection
+
+GET /internal/v1/chat/reconciliation:candidates requires the existing trusted internal-service identity and configured dispatch. It provides bounded owner-scoped identifiers only, with no prompts, credentials, queue mutations or provider invocations. Age is based on created_at, not claim time, and must not imply safe retry.
+
+
 ## 2026-10-10 Model-entitlement and OpenRouter SSE integrity — CODE ONLY
 
 Chat dispatch remains OFF by default. Enabling `CHAT_DISPATCH_ENABLED=true`

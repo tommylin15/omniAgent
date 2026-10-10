@@ -90,7 +90,7 @@ function threadInput(value: Record<string, unknown>): ThreadInput {
 }
 
 export function makeChatServer(store: ChatStore, verifyUser: VerifyUser, verifyService: VerifyService,
-                               dispatcher?: Pick<ChatDispatcher,"runOnce"> & Partial<Pick<ChatDispatcher,"canDispatch">>) {
+                               dispatcher?: Pick<ChatDispatcher,"runOnce"> & Partial<Pick<ChatDispatcher,"canDispatch" | "inspectRunningCandidates">>) {
   return createServer(async (request, response) => {
     const url = new URL(request.url ?? "/", "http://localhost");
     if (request.method === "GET" && url.pathname === "/health") return send(response,200,{ status: "ok" });
@@ -112,6 +112,11 @@ export function makeChatServer(store: ChatStore, verifyUser: VerifyUser, verifyS
         if (request.method === "POST" && url.pathname === "/internal/v1/chat/dispatch:once") {
           if (!dispatcher) return send(response,404,{ error:"not_found" });
           return send(response,200,await dispatcher.runOnce());
+        }
+        if (request.method === "GET" && url.pathname === "/internal/v1/chat/reconciliation:candidates") {
+          if (!dispatcher?.inspectRunningCandidates)
+            return send(response,404,{ error:"not_found" });
+          return send(response,200,await dispatcher.inspectRunningCandidates());
         }
         const value = await body(request);
         const ownerId = id(value.ownerId,"owner id");

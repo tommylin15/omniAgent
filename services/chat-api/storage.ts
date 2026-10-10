@@ -278,6 +278,22 @@ export class ChatStore {
     } finally { client.release(); }
   }
 
+  /**
+   * Read-only candidates for manual reconciliation. created_at is the queue
+   * creation clock, NOT proof that the worker has been stuck for this long.
+   * No payloads, credentials, automatic retries or status mutations.
+   */
+  async runningReconciliationCandidates(approvedOwners: readonly string[]): Promise<Record<string, unknown>[]> {
+    if (!approvedOwners.length) return [];
+    return (await this.pool.query(
+      `SELECT owner_id,thread_id,turn_id,status,created_at
+       FROM omni_chat.turns
+       WHERE owner_id=ANY($1::uuid[]) AND status='RUNNING'
+         AND created_at <= now() - interval '10 minutes'
+       ORDER BY created_at,owner_id,thread_id,turn_id LIMIT 50`,
+      [approvedOwners])).rows;
+  }
+
   async events(ownerId: string, threadId: string, cursor: number, limit: number): Promise<Record<string, unknown>[]> {
     await this.thread(ownerId,threadId);
     return (await this.pool.query(

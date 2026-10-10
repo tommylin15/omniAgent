@@ -158,6 +158,28 @@ describe("omniAgent Chat API ownership boundary", () => {
     expect(store.appendEvent).toHaveBeenCalledWith("owner-alice","thread-1","turn-1","event-1","text_delta",{});
   });
 
+  it("exposes only service-authenticated read-only reconciliation metadata", async () => {
+    const worker={
+      canDispatch:vi.fn(() => false),
+      runOnce:vi.fn(),
+      inspectRunningCandidates:vi.fn(async () => ({
+        status:"read_only",ageBasis:"queued_created_at_not_claimed_at",
+        items:[{owner_id:"owner-alice",thread_id:"thread-1",turn_id:"turn-1",
+          status:"RUNNING",created_at:"2026-10-10T00:00:00Z"}]
+      }))
+    };
+    const {base}=await app(worker);
+    const route=base+"/internal/v1/chat/reconciliation:candidates";
+    expect((await fetch(route)).status).toBe(401);
+    expect((await fetch(route,{headers:{Authorization:"Bearer alice"}})).status).toBe(401);
+    const result=await fetch(route,{headers:{Authorization:"Bearer service"}});
+    expect(result.status).toBe(200);
+    expect(await result.json()).toMatchObject({status:"read_only",
+      items:[{status:"RUNNING",thread_id:"thread-1"}]});
+    expect(worker.inspectRunningCandidates).toHaveBeenCalledOnce();
+    expect(worker.runOnce).not.toHaveBeenCalled();
+  });
+
   it("rejects anonymous and human requests to disabled internal dispatch", async () => {
     const { base } = await app();
     const url = base + "/internal/v1/chat/dispatch:once";

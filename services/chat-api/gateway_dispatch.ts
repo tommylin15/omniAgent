@@ -5,7 +5,8 @@ import { allowsModel, type ModelEntitlement } from "./model_entitlements.js";
 export type DispatchOutcome = { status: "idle" | "completed" | "cancelled" | "error"; turnId?: string; reason?: string };
 type TurnEvent = { type: string; payload: unknown };
 type Invoke = (claim: DispatchClaim) => Promise<unknown>;
-type Store = Pick<ChatStore, "claimNextQueuedTurn" | "appendGatewayEvents">;
+type Store = Pick<ChatStore, "claimNextQueuedTurn" | "appendGatewayEvents"> &
+  Partial<Pick<ChatStore, "runningReconciliationCandidates">>;
 
 const types = new Set(["text_delta", "item_upsert", "tool_request", "tool_result",
   "approval_request", "approval_resolved", "citation", "usage",
@@ -16,6 +17,12 @@ export class ChatDispatcher {
   constructor(private readonly store: Store, private readonly invoke: Invoke,
               private readonly approvedOwners: readonly string[],
               private readonly entitlements?: readonly ModelEntitlement[]) {}
+
+  async inspectRunningCandidates(): Promise<{ status: string; ageBasis: string; items: Record<string, unknown>[] }> {
+    if (!this.store.runningReconciliationCandidates) throw new Error("reconciliation store is unavailable");
+    const items = await this.store.runningReconciliationCandidates(this.approvedOwners);
+    return { status:"read_only", ageBasis:"queued_created_at_not_claimed_at", items };
+  }
 
   canDispatch(ownerId: string, runtime?: string, model?: string): boolean {
     if (!this.approvedOwners.some(owner => owner.toLowerCase() === ownerId.toLowerCase())) return false;

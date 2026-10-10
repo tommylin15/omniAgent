@@ -1,5 +1,10 @@
 # omniAgent TODO
 
+### 2026-10-10 Read-only running-turn diagnostic
+
+Implemented a service-authenticated, read-only GET at /internal/v1/chat/reconciliation:candidates. Returns up to 50 RUNNING identifiers from explicitly authorized owners if the queue creation timestamp is at least 10 minutes old. No model calls, requeueing, approval changes, prompts or secrets. Queue creation age does not prove claim duration. Source/CI/runtime acceptance are tracked separately.
+
+
 ### 2026-10-10 Owner-model authorization / SSE integrity development
 
 - [x] Exact Owner UUID + Provider runtime + Model platform entitlement

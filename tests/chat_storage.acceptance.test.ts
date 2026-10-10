@@ -99,6 +99,17 @@ describe.runIf(Boolean(dsn))("isolated PostgreSQL ChatStore acceptance", () => {
       // No automatic replay of in-flight provider effects after a crash.
       expect(await store.claimNextQueuedTurn([a,b])).toBeNull();
 
+      // Read-only diagnostics expose only old RUNNING identifiers from
+      // explicitly approved owners, never prompts or other owners' rows.
+      await pool.query(`UPDATE omni_chat.turns SET created_at=now()-interval '11 minutes'
+        WHERE owner_id=$1 AND turn_id=$2`,[a,observed.get(a)!.turnId]);
+      const candidates=await store.runningReconciliationCandidates([a]);
+      expect(candidates.some(row=>row.turn_id===observed.get(a)!.turnId)).toBe(true);
+      expect(candidates.every(row=>row.owner_id===a && row.status==="RUNNING")).toBe(true);
+      expect(JSON.stringify(candidates)).not.toContain("dispatch alice");
+      expect(JSON.stringify(candidates)).not.toContain("dispatch bob");
+      expect(await store.runningReconciliationCandidates([])).toEqual([]);
+
       // A worker may only claim the exact allowlisted owner/runtime/model.
       // A denied model stays QUEUED and must never be sent to a provider.
       await store.createThread(a,{...input,threadId:"model-denied",model:"unlisted-model"},"denied-create");

@@ -1,5 +1,10 @@
 # omniAgent acceptance matrix
 
+### 2026-10-10 Read-only reconciliation diagnostic
+
+An internal-service-only endpoint and owner-scoped SQL report RUNNING candidates based on queue creation age, with a maximum of 50 entries. No mutations or provider calls. Explicitly NOT an authoritative runtime-duration measurement and not a license to retry. Source changes need exact-SHA CI and runtime verification.
+
+
 ### 2026-10-10 model entitlement and OpenRouter SSE test scope
 
 Source adds a second explicit Owner/Runtime/Model platform credential
