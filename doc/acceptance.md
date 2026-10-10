@@ -1,5 +1,17 @@
 # omniAgent acceptance matrix
 
+### Groq adapter source contract (2026-10-10)
+
+The isolated text-only Groq Chat Completions adapter and its mocked
+contract cases are staged without Gateway routing, credentials, runtime
+environment changes or UI enablement. A separate execution gate defaults
+off, even when a valid API key exists. Validation includes safe HTTP
+failure mapping, strict provider-response projection, bounded messages,
+model identifiers and completion cap. **SOURCE ONLY**; does not count as
+real Groq inference or owner-credential acceptance. Do not expose Groq
+as live in Flutter without the approved credential resolver, entitlements
+and an independently accepted provider end-to-end test.
+
 ### Flutter owner/thread selection race (2026-10-10)
 
 A per-selection generation guard invalidates stale, failed or delayed

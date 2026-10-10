@@ -1,5 +1,19 @@
 # omniAgent TODO
 
+### 2026-10-10 Groq bounded adapter — SOURCE ONLY (NOT WIRED)
+
+- Source: `services/agent-gateway/groq_provider.ts`; contract fixtures:
+  `tests/groq_provider.test.ts`. Based on the official Groq Chat Completions
+  API and its current HTTPS endpoint. Text-only output; no tools/remote MCP.
+- Requires an explicit `GROQ_EXECUTION_ENABLED=true` in addition to a
+  valid `GROQ_API_KEY` before making any external request; validates model,
+  message bounds and returned text, caps completion tokens, redacts
+  provider failure bodies. Unit fixtures never use real credentials.
+- **NOT CONNECTED** to Gateway request routing, Chat runtime or Flutter
+  model selection; the UI continues to show Groq as preview only.
+  No Groq Secret is created, execution flag enabled or paid inference made.
+  Owner entitlement/BYOK and actual live acceptance remain OPEN.
+
 ### 2026-10-10 Flutter stale-replay isolation — staged source
 
 The Chat UI now gives each thread selection a generation identifier.

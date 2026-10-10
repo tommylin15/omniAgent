@@ -151,7 +151,9 @@ class _ChatPageState extends State<ChatPage> {
     try {
       final rows = await widget.api.events('$id', cursor);
       if (!mounted || selectionEpoch != epoch ||
-          thread?['thread_id'] != id) return;
+          thread?['thread_id'] != id) {
+        return;
+      }
       setState(() {
         for (final row in rows) {
           _merge(row);
