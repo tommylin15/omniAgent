@@ -11,6 +11,18 @@ export type ModelEntitlement = Readonly<{
   credentialMode: "platform";
 }>;
 
+// User-approved Gemini Chat policy: only text Flash-Lite model IDs.
+// Provider API eligibility, quota and billing are separate checks.
+export const GEMINI_LITE_MODELS = [
+  "gemini-3.5-flash-lite",
+  "gemini-3.1-flash-lite",
+  "gemini-2.5-flash-lite",
+] as const;
+const geminiLite = new Set<string>(GEMINI_LITE_MODELS);
+export function isAllowedGeminiModel(model: string): boolean {
+  return geminiLite.has(model);
+}
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const SIMPLE_MODEL = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const ROUTER_MODEL = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}(?:\/[A-Za-z0-9][A-Za-z0-9._:-]{0,127})?$/;
@@ -40,6 +52,8 @@ export function parseModelEntitlements(raw: string, approvedOwners: readonly str
       // BYOK requires separate approved Secret lifecycle before enablement.
       throw new Error("model entitlement is not authorized");
     }
+    if (row.runtime === "gemini" && !isAllowedGeminiModel(row.model))
+      throw new Error("Gemini Chat platform models must be approved Flash-Lite");
     if (row.runtime === "openrouter" &&
         row.model !== "openrouter/free" && !row.model.endsWith(":free"))
       throw new Error("OpenRouter platform models must use free-only mode");
@@ -55,6 +69,7 @@ export function parseModelEntitlements(raw: string, approvedOwners: readonly str
 
 export function allowsModel(entries: readonly ModelEntitlement[],
   ownerId: string, runtime: string, model: string): boolean {
+  if (runtime === "gemini" && !isAllowedGeminiModel(model)) return false;
   return entries.some(row => row.ownerId === ownerId.toLowerCase() &&
     row.runtime === runtime && row.model === model && row.credentialMode === "platform");
 }
