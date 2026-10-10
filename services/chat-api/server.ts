@@ -5,6 +5,7 @@ import { extname, isAbsolute, relative, resolve } from "node:path";
 import { ChatConflict, ChatNotFound, type ChatStore, type ThreadInput } from "./storage.js";
 import type { ChatDispatcher } from "./gateway_dispatch.js";
 import type { CredentialManager } from "./credential_management.js";
+import { isAllowedGeminiModel } from "./model_entitlements.js";
 
 export type Principal = { issuer: string; subject: string };
 export type VerifyUser = (token: string) => Promise<Principal>;
@@ -83,6 +84,8 @@ function threadInput(value: Record<string, unknown>): ThreadInput {
   const model = value.runtime === "openrouter" && typeof value.model === "string"
     && value.model.length <= 128 && /^[A-Za-z0-9][A-Za-z0-9._:-]*(?:\/[A-Za-z0-9][A-Za-z0-9._:-]*)?$/.test(value.model)
     ? value.model : id(value.model,"model");
+  if (value.runtime === "gemini" && !isAllowedGeminiModel(model))
+    throw new InvalidRequest("only approved Gemini Flash-Lite models are supported");
   return { runtime: value.runtime as ThreadInput["runtime"], model,
     assistantProfile: id(value.assistantProfile,"assistant profile"),
     ...(value.threadId === undefined ? {} : { threadId: id(value.threadId,"thread id") }),
