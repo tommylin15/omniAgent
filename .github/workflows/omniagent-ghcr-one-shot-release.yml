@@ -89,7 +89,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if test -f "$RECEIPT"; then cp "$RECEIPT" ghcr-one-shot-promotion.json; fi
+          if test -f "$RECEIPT" && test "$RECEIPT" != "ghcr-one-shot-promotion.json"; then cp "$RECEIPT" ghcr-one-shot-promotion.json; fi
           if test -f "$RUNNER_TEMP/release-readiness.json"; then cp "$RUNNER_TEMP/release-readiness.json" ghcr-one-shot-readiness.json; fi
       - name: Upload one-time release evidence
         if: always()

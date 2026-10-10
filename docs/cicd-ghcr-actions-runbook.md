@@ -1,5 +1,21 @@
 # 2026-10-10 One-time, rollback-rehearsal-waived GHCR formal deployment
 
+### 2026-10-10 12:04 Asia/Taipei — executed GHCR release and last-ten retention
+
+- Deployed application SHA: `d48865890038a8373d5abc27fb5da92dc511fc92`.
+- Full quality and three GHCR images: PASS [#38022086997](https://github.com/tommylin15/omniAgent/actions/runs/38022086997).
+- Three 0% Cloud Run candidates: PASS [#38022276090](https://github.com/tommylin15/omniAgent/actions/runs/38022276090).
+- Signed runtime candidate smoke: PASS [#38022346384](https://github.com/tommylin15/omniAgent/actions/runs/38022346384).
+- Read-only current GHCR candidate/fallback technical audit: PASS [#38022379125](https://github.com/tommylin15/omniAgent/actions/runs/38022379125).
+- One-shot release [#38022379285](https://github.com/tommylin15/omniAgent/actions/runs/38022379285): protected formal traffic promotion step PASS, and protected obsolete-tag/latest-ten cleanup step PASS. **Overall Actions run FAIL solely because the later receipt preservation step attempted `cp` onto the same path.** Its artifact upload succeeded; this patch corrects the packaging script for future runs, but it does NOT retroactively make the historical run green.
+- Three 100%-traffic promoted revisions (release script readback PASS): Chat `omniagent-chat-00048-mak`, Gateway `omniagent-agent-gateway-00039-qoz`, Shared `omniagent-shared-codex-00027-qiy`.
+- Protected fallback revisions retained without a rehearsal: Chat `00045-fer`, Gateway `00036-hid`, Shared `00024-naw`.
+- Cleanup actual apply receipts: Chat 25 deleted; Gateway 21 deleted; Shared 16 deleted. **62 deleted, exactly 10 retained per service; 51 obsolete tags removed** (21 Chat, 18 Gateway, 12 Shared). These values come from the release job's GCP deletion/readback output, not a document inference.
+- Rollback rehearsal deliberately WAIVED by owner; disabled-by-default dispatch/BYOK remains disabled. Real owner-specific inference, persisted provider SSE and approval/cancel/reconnect are NOT VERIFIED; final complete product acceptance remains PARTIAL.
+- This post-release source/doc receipt maintenance commit is `[skip ci]`, intentionally does not launch new GHCR candidates after the completed latest-ten cleanup. Promoted application digest/source remains the release SHA above.
+
+
+
 The owner authorized a one-time sequence: complete code / one integrated
 technical acceptance / formal Cloud Run promotion / protected latest-ten
 Revision cleanup. The **actual rollback exercise is waived**; keep a verified
