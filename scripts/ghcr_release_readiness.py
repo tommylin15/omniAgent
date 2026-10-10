@@ -174,6 +174,23 @@ def audit(source_sha: str, services: dict[str, dict], revisions: dict[str, dict]
             "services":output}
 
 
+def failure_category(error: Exception) -> str:
+    # Never serialize upstream CLI errors, Secret names, tokens or response bodies.
+    value = str(error) if isinstance(error, Blocked) else ""
+    return value if re.fullmatch(r"[A-Za-z0-9_-]{1,128}", value) else "runtime_readback_failed"
+
+
+def write_blocked_receipt(source_sha: str, target: str, error: Exception) -> None:
+    receipt = {
+        "sha": source_sha,
+        "technical_preflight": "BLOCKED",
+        "category": failure_category(error),
+        "formal_release_gate": "BLOCKED",
+        "production_traffic_mutated": False,
+    }
+    Path(target).write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n")
+
+
 def main(argv: list[str]) -> int:
     if len(argv) != 3 or not SHA.fullmatch(argv[1]):
         raise SystemExit("usage: ghcr_release_readiness.py FULL_SHA output.json")
@@ -204,6 +221,11 @@ if __name__ == "__main__":
     try:
         sys.exit(main(sys.argv))
     except (Blocked, subprocess.SubprocessError, ValueError, KeyError, OSError) as error:
+        if len(sys.argv) == 3 and SHA.fullmatch(sys.argv[1]):
+            try:
+                write_blocked_receipt(sys.argv[1], sys.argv[2], error)
+            except OSError:
+                print("release_readiness_receipt=UNAVAILABLE")
         print("technical_ghcr_only_release_preflight=BLOCKED")
-        print("category=" + (str(error) if isinstance(error, Blocked) else "runtime_readback_failed"))
+        print("category=" + failure_category(error))
         sys.exit(1)
