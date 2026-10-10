@@ -16,6 +16,7 @@ on:
       - 'tsconfig.json'
       - 'setup-omniagent-db-dev.sh'
       - '.github/workflows/omniagent-ghcr-publish.yml'
+      - '.github/workflows/omniagent-ghcr-one-shot-release.yml'
   workflow_dispatch:
 permissions:
   contents: read
