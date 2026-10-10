@@ -24,6 +24,15 @@ export class ChatDispatcher {
     return { status:"read_only", ageBasis:"queued_created_at_not_claimed_at", items };
   }
 
+  /** Client-visible metadata is derived only from the explicit Owner entitlements. */
+  availableModels(ownerId: string): { runtime: string; model: string }[] {
+    if (!this.entitlements || !this.approvedOwners.some(owner =>
+        owner.toLowerCase() === ownerId.toLowerCase())) return [];
+    return this.entitlements.filter(entry => entry.ownerId === ownerId.toLowerCase() &&
+      entry.credentialMode === "platform").map(({runtime,model}) => ({runtime,model}))
+      .sort((a,b) => a.runtime.localeCompare(b.runtime) || a.model.localeCompare(b.model));
+  }
+
   canDispatch(ownerId: string, runtime?: string, model?: string): boolean {
     if (!this.approvedOwners.some(owner => owner.toLowerCase() === ownerId.toLowerCase())) return false;
     if (!this.entitlements) return true; // Non-production fixture compatibility only.

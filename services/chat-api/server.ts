@@ -91,7 +91,7 @@ function threadInput(value: Record<string, unknown>): ThreadInput {
 }
 
 export function makeChatServer(store: ChatStore, verifyUser: VerifyUser, verifyService: VerifyService,
-                               dispatcher?: Pick<ChatDispatcher,"runOnce"> & Partial<Pick<ChatDispatcher,"canDispatch" | "inspectRunningCandidates">>,
+                               dispatcher?: Pick<ChatDispatcher,"runOnce"> & Partial<Pick<ChatDispatcher,"canDispatch" | "inspectRunningCandidates" | "availableModels">>,
                                credentials?: Pick<CredentialManager,"create" | "list" | "revoke">) {
   return createServer(async (request, response) => {
     const url = new URL(request.url ?? "/", "http://localhost");
@@ -140,6 +140,10 @@ export function makeChatServer(store: ChatStore, verifyUser: VerifyUser, verifyS
       }
       const principal = await verifyUser(token);
       const ownerId = await store.owner(principal.issuer,principal.subject);
+      if (request.method === "GET" && url.pathname === "/v1/models") {
+        const items = dispatcher?.availableModels?.(ownerId) ?? [];
+        return send(response,200,{dispatchEnabled:items.length > 0,items});
+      }
       // Explicitly disabled by default. Never echo API keys, vault locators
       // or vendor errors to browsers. Ownership is derived from verified OAuth.
       if (url.pathname === "/v1/credentials") {

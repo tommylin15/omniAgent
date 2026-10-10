@@ -52,6 +52,18 @@ describe("per-owner / runtime / exact model platform entitlement", () => {
     expect(invoke).toHaveBeenCalledExactlyOnceWith(claim);
   });
 
+  it("lists only the exact models granted to an authenticated Owner", () => {
+    const entitlement = parseModelEntitlements(JSON.stringify(policy),[owner]);
+    const worker = new ChatDispatcher({ claimNextQueuedTurn:vi.fn(), appendGatewayEvents:vi.fn() },
+      vi.fn(),[owner],entitlement);
+    expect(worker.availableModels(owner)).toEqual([
+      {runtime:"gemini",model:"gemini-2.5-flash"},
+      {runtime:"openrouter",model:"openrouter/free"}]);
+    expect(worker.availableModels(other)).toEqual([]);
+    expect(new ChatDispatcher({ claimNextQueuedTurn:vi.fn(),appendGatewayEvents:vi.fn() },
+      vi.fn(),[owner]).availableModels(owner)).toEqual([]);
+  });
+
   it("blocks an unapproved claim before provider invocation even if the store misbehaves", async () => {
     const entitlement = parseModelEntitlements(JSON.stringify([policy[0]]),[owner]);
     const db = {

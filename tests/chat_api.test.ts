@@ -64,6 +64,23 @@ describe("omniAgent Chat API ownership boundary", () => {
     expect(worker.runOnce).not.toHaveBeenCalled();
   });
 
+  it("reveals only verified Owner model entitlements and denies anonymous model inventory", async () => {
+    const ownerModel = {runtime:"gemini",model:"gemini-2.5-flash"};
+    const worker={runOnce:vi.fn(),availableModels:vi.fn((ownerId:string) =>
+      ownerId === "owner-alice" ? [ownerModel] : []),
+      canDispatch:vi.fn((ownerId:string,runtime?:string,model?:string) =>
+        ownerId === "owner-alice" && runtime === ownerModel.runtime && model === ownerModel.model)};
+    const {base}=await app(worker);
+    expect((await fetch(base+"/v1/models")).status).toBe(401);
+    const alice=await fetch(base+"/v1/models",{headers:{Authorization:"Bearer alice"}});
+    expect(await alice.json()).toEqual({dispatchEnabled:true,items:[ownerModel]});
+    const bob=await fetch(base+"/v1/models",{headers:{Authorization:"Bearer bob"}});
+    expect(await bob.json()).toEqual({dispatchEnabled:false,items:[]});
+    const disabled=await app();
+    const result=await fetch(disabled.base+"/v1/models",{headers:{Authorization:"Bearer alice"}});
+    expect(await result.json()).toEqual({dispatchEnabled:false,items:[]});
+  });
+
   it("keeps BYOK disabled by default and never exposes an uploaded provider key", async () => {
     const disabled=await app();
     expect((await fetch(disabled.base+"/v1/credentials",{
