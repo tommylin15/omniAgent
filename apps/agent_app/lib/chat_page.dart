@@ -31,6 +31,51 @@ class _ChatPageState extends State<ChatPage> {
   bool busy = false;
   int selectionEpoch = 0;
   int? pollingEpoch;
+  Map<String, List<String>>? entitledModels;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(loadOwnerModels());
+  }
+
+  Future<void> loadOwnerModels() async {
+    try {
+      final raw = await widget.api.get('/v1/models');
+      if (!mounted || raw is! Map || raw['dispatchEnabled'] is! bool) return;
+      final allowed = <String, List<String>>{};
+      if (raw['dispatchEnabled'] == true && raw['items'] is List) {
+        for (final entry in raw['items'] as List) {
+          if (entry is! Map) continue;
+          final mode = entry['runtime'];
+          final name = entry['model'];
+          if (mode is String && name is String && modelCatalog.containsKey(mode) &&
+              mode != 'groq' && name.isNotEmpty) {
+            allowed.putIfAbsent(mode, () => <String>[]).add(name);
+          }
+        }
+      }
+      for (final entries in allowed.values) { entries.sort(); }
+      setState(() {
+        entitledModels = allowed;
+        if (allowed.isNotEmpty && !allowed.containsKey(runtime)) {
+          runtime = allowed.keys.first;
+          modelInput.text = allowed[runtime]!.first;
+        } else if (allowed.containsKey(runtime) &&
+            !allowed[runtime]!.contains(modelInput.text)) {
+          modelInput.text = allowed[runtime]!.first;
+        }
+      });
+    } catch (_) {
+      // A failed capability lookup must not grant model execution.
+      if (mounted) setState(() => entitledModels = <String, List<String>>{});
+    }
+  }
+
+  bool get modelAllowed => entitledModels == null ||
+      (entitledModels![runtime]?.contains(modelInput.text.trim()) ?? false);
+  List<String> get selectableModels => entitledModels == null
+      ? modelCatalog[runtime]! : entitledModels![runtime] ?? <String>[];
 
   @override
   void dispose() {
@@ -81,7 +126,7 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   Future<void> createThread() async {
-    if (busy || runtime == 'groq' || modelInput.text.trim().isEmpty) return;
+    if (busy || runtime == 'groq' || !modelAllowed || modelInput.text.trim().isEmpty) return;
     setState(() => busy = true);
     try {
       final value = await widget.api.post('/v1/threads', {
@@ -199,7 +244,9 @@ class _ChatPageState extends State<ChatPage> {
           .post('/v1/threads/$id/messages', {'content': content});
       if (!mounted) return;
       input.clear();
-      setState(() => queuedTurn = '${value['turn']['turn_id']}');
+      setState(() => queuedTurn = (value['dispatch'] is Map &&
+              ['completed', 'cancelled', 'error'].contains(value['dispatch']['status']))
+          ? null : '${value['turn']['turn_id']}');
       await refresh();
     } catch (error) {
       if (mounted) _error(error is StateError ? error.message.toString() : '訊息送出失敗，請稍後重試');
@@ -557,7 +604,9 @@ class _ChatPageState extends State<ChatPage> {
                           if (value == null) return;
                           setState(() {
                             runtime = value;
-                            modelInput.text = modelCatalog[value]!.first;
+                            final models = entitledModels == null
+                                ? modelCatalog[value]! : entitledModels![value] ?? <String>[];
+                            modelInput.text = models.isEmpty ? '' : models.first;
                           });
                         },
                       ),
@@ -571,11 +620,16 @@ class _ChatPageState extends State<ChatPage> {
                         menuHeight: 240,
                         label: const Text('模型（可搜尋或手填）'),
                         dropdownMenuEntries: [
-                          for (final model in modelCatalog[runtime]!)
+                          for (final model in selectableModels)
                             DropdownMenuEntry(value: model, label: model),
                         ],
                       ),
-                      if (runtime == 'groq')
+                      if (entitledModels != null && !modelAllowed)
+                         const Padding(
+                           padding: EdgeInsets.only(top: 8),
+                           child: Text('此帳號尚未取得所選模型的執行權限；不會送出付費推論。'),
+                         ),
+                       if (runtime == 'groq')
                         const Padding(
                           padding: EdgeInsets.only(top: 8),
                           child: Text('Groq 尚未接通，目前僅提供型號預覽。'),
@@ -583,7 +637,7 @@ class _ChatPageState extends State<ChatPage> {
                       const SizedBox(height: 16),
                       FilledButton(
                         onPressed:
-                            busy || runtime == 'groq' ? null : createThread,
+                            busy || runtime == 'groq' || !modelAllowed ? null : createThread,
                         child: const Text('建立對話'),
                       ),
                     ],
