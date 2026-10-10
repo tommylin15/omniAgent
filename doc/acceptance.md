@@ -1,5 +1,18 @@
 # omniAgent acceptance matrix
 
+### 2026-10-10 model entitlement and OpenRouter SSE test scope
+
+Source adds a second explicit Owner/Runtime/Model platform credential
+entitlement, alongside previous Owner IDs and disabled-default dispatch.
+Chat rejects unentitled message submissions before any queue write;
+worker filters its database claim to entitled tuples. Tests exercise
+owner/model mismatch, BYOK rejection, free-only model constraints and
+worker/SQL filtering. OpenRouter requires [DONE] for terminal success;
+truncated/error/oversized frames are rejected, and split UTF-8 accepted.
+**CODE ONLY**, until exact-SHA CI and later separately approved live
+Owner/model/DB SSE acceptance. No billable inference or Secret access.
+
+
 ### Groq adapter source contract (2026-10-10)
 
 The isolated text-only Groq Chat Completions adapter and its mocked

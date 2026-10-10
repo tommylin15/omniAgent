@@ -99,6 +99,28 @@ describe.runIf(Boolean(dsn))("isolated PostgreSQL ChatStore acceptance", () => {
       // No automatic replay of in-flight provider effects after a crash.
       expect(await store.claimNextQueuedTurn([a,b])).toBeNull();
 
+      // A worker may only claim the exact allowlisted owner/runtime/model.
+      // A denied model stays QUEUED and must never be sent to a provider.
+      await store.createThread(a,{...input,threadId:"model-denied",model:"unlisted-model"},"denied-create");
+      const blockedTurn=await store.message(a,"model-denied","do not invoke","denied-message");
+      const rules=[{ownerId:a,runtime:"gemini" as const,model:"test-model",
+        credentialMode:"platform" as const}];
+      expect(await store.claimNextQueuedTurn([a],undefined,rules)).toBeNull();
+      expect((await pool.query(
+        "SELECT status FROM omni_chat.turns WHERE owner_id=$1 AND thread_id='model-denied'",
+        [a])).rows[0].status).toBe("QUEUED");
+      await store.createThread(a,{...input,threadId:"model-allowed"},"allowed-create");
+      const allowedTurn=await store.message(a,"model-allowed","model explicitly allowed","allowed-message");
+      expect(await store.claimNextQueuedTurn([a],undefined,rules)).toMatchObject({
+        ownerId:a,threadId:"model-allowed",turnId:allowedTurn.turn.turn_id,
+        model:"test-model",runtime:"gemini"
+      });
+      expect(await store.claimNextQueuedTurn([a],undefined,rules)).toBeNull();
+      expect((await pool.query(
+        "SELECT status FROM omni_chat.turns WHERE owner_id=$1 AND thread_id='model-denied'",
+        [a])).rows[0].status).toBe("QUEUED");
+      expect(blockedTurn.turn.status).toBe("QUEUED");
+
       // Real ephemeral Postgres persists Gateway replies under the claimed
       // owner only. The provider is stubbed: GCP live integration is separate.
       const pending=await store.message(b,"thread-b","gateway hello","gateway-1");

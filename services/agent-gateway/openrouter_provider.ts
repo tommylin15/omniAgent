@@ -89,26 +89,75 @@ export class OpenRouterProvider {
     if (!selected.some((item) => item.id === options.model)) throw new Error("OpenRouter model is not approved or is unavailable");
     const response = await this.chat(messages, options.model, options.tools, true);
     if (!(response instanceof Response) || !response.body) throw new Error("OpenRouter streaming response is unavailable");
+    // OpenRouter's SSE [DONE] is the only successful stream terminator.
+    // A cut connection must never be promoted to a completed turn.
     const reader = response.body.getReader();
-    const decoder = new TextDecoder();
+    const decoder = new TextDecoder("utf-8", { fatal: true });
     let buffer = "";
     let text = "";
     let usage: OpenRouterResult["usage"];
-    for (;;) {
-      const chunk = await reader.read();
-      buffer += decoder.decode(chunk.value, { stream: !chunk.done });
-      const lines = buffer.split("\n"); buffer = lines.pop() ?? "";
-      for (const line of lines) {
-        if (!line.startsWith("data: ")) continue;
-        if (line.slice(6).trim() === "[DONE]") continue;
-        const data = record(JSON.parse(line.slice(6)));
-        const choices = data.choices;
-        const delta = record(record(Array.isArray(choices) ? choices[0] : undefined).delta).content;
-        if (typeof delta === "string" && delta) { text += delta; yield { type: "text_delta", delta }; }
-        const u = record(data.usage);
-        if (typeof u.prompt_tokens === "number" && typeof u.completion_tokens === "number" && typeof u.total_tokens === "number") usage = { promptTokens: u.prompt_tokens, completionTokens: u.completion_tokens, totalTokens: u.total_tokens };
+    let receivedBytes = 0;
+    let eventCount = 0;
+    let finished = false;
+    const maxBytes = 524_288;
+    const maxTextBytes = 65_536;
+    const maxEvents = 180;
+    try {
+      while (!finished) {
+        const chunk = await reader.read();
+        if (chunk.done) {
+          buffer += decoder.decode();
+          if (buffer.trim()) throw new Error("OpenRouter SSE incomplete final frame");
+          break;
+        }
+        receivedBytes += chunk.value.byteLength;
+        if (receivedBytes > maxBytes) throw new Error("OpenRouter SSE exceeds byte limit");
+        buffer += decoder.decode(chunk.value, { stream: true });
+        if (buffer.length > maxBytes) throw new Error("OpenRouter SSE exceeds buffer limit");
+        let position: number;
+        while ((position = buffer.indexOf("\n")) !== -1) {
+          const line = buffer.slice(0,position).replace(/\r$/, "");
+          buffer = buffer.slice(position+1);
+          if (!line.startsWith("data:")) continue;
+          const payload = line.slice(5).trimStart();
+          if (payload === "[DONE]") {
+            finished = true;
+            break;
+          }
+          if (++eventCount > maxEvents) throw new Error("OpenRouter SSE event limit exceeded");
+          let parsed: unknown;
+          try {
+            parsed = JSON.parse(payload) as unknown;
+          } catch {
+            throw new Error("OpenRouter SSE frame is invalid");
+          }
+          const data = record(parsed);
+          if ("error" in data) throw new Error("OpenRouter SSE provider rejected stream");
+          const choices = data.choices;
+          const choice = record(Array.isArray(choices) ? choices[0] : undefined);
+          const delta = record(choice.delta).content;
+          if (delta !== undefined && delta !== null && typeof delta !== "string")
+            throw new Error("OpenRouter SSE delta is invalid");
+          if (typeof delta === "string" && delta) {
+            const next = text + delta;
+            if (Buffer.byteLength(next,"utf8") > maxTextBytes)
+              throw new Error("OpenRouter SSE text exceeds limit");
+            text = next;
+            yield { type: "text_delta", delta };
+          }
+          const u = record(data.usage);
+          if (typeof u.prompt_tokens === "number" && typeof u.completion_tokens === "number" &&
+              typeof u.total_tokens === "number" &&
+              [u.prompt_tokens,u.completion_tokens,u.total_tokens].every(n => Number.isSafeInteger(n) && n >= 0)) {
+            usage = { promptTokens: u.prompt_tokens, completionTokens: u.completion_tokens,
+              totalTokens: u.total_tokens };
+          }
+        }
       }
-      if (chunk.done) break;
+      if (!finished) throw new Error("OpenRouter SSE terminated without DONE");
+    } finally {
+      await reader.cancel().catch(() => undefined);
+      reader.releaseLock();
     }
     if (usage) yield { type: "usage", usage };
     yield { type: "turn_completed", result: { model: options.model, messages, text, ...(usage ? { usage } : {}) } };

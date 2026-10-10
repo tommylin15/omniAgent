@@ -1,5 +1,6 @@
 import { createHmac } from "node:crypto";
 import { safeRecord, type ChatStore, type DispatchClaim } from "./storage.js";
+import { allowsModel, type ModelEntitlement } from "./model_entitlements.js";
 
 export type DispatchOutcome = { status: "idle" | "completed" | "cancelled" | "error"; turnId?: string; reason?: string };
 type TurnEvent = { type: string; payload: unknown };
@@ -13,17 +14,26 @@ const terminal = new Set(["turn_completed", "turn_cancelled", "turn_error"]);
 
 export class ChatDispatcher {
   constructor(private readonly store: Store, private readonly invoke: Invoke,
-              private readonly approvedOwners: readonly string[]) {}
+              private readonly approvedOwners: readonly string[],
+              private readonly entitlements?: readonly ModelEntitlement[]) {}
 
-  canDispatch(ownerId: string): boolean {
-    return this.approvedOwners.includes(ownerId);
+  canDispatch(ownerId: string, runtime?: string, model?: string): boolean {
+    if (!this.approvedOwners.some(owner => owner.toLowerCase() === ownerId.toLowerCase())) return false;
+    if (!this.entitlements) return true; // Non-production fixture compatibility only.
+    return runtime !== undefined && model !== undefined &&
+      allowsModel(this.entitlements,ownerId,runtime,model);
   }
 
   async runOnce(target?: { ownerId: string; threadId: string; turnId: string }): Promise<DispatchOutcome> {
     if (!this.approvedOwners.length) throw new Error("dispatch approval not configured");
-    if (target && !this.canDispatch(target.ownerId)) throw new Error("dispatch owner not approved");
-    const claim = await this.store.claimNextQueuedTurn(this.approvedOwners, target);
+    if (target && !this.approvedOwners.some(owner => owner.toLowerCase() === target.ownerId.toLowerCase()))
+      throw new Error("dispatch owner not approved");
+    const claim = this.entitlements
+      ? await this.store.claimNextQueuedTurn(this.approvedOwners,target,this.entitlements)
+      : await this.store.claimNextQueuedTurn(this.approvedOwners,target);
     if (!claim) return { status: "idle" };
+    if (this.entitlements && !this.canDispatch(claim.ownerId,claim.runtime,claim.model))
+      throw new Error("model entitlement claim needs reconciliation");
     let events: TurnEvent[];
     try {
       events = validateEvents(await this.invoke(claim), claim);

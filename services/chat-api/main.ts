@@ -1,5 +1,6 @@
 import { GoogleAuth, OAuth2Client } from "google-auth-library";
 import { ChatDispatcher, makeSignedGatewayInvoker } from "./gateway_dispatch.js";
+import { parseModelEntitlements } from "./model_entitlements.js";
 import { Pool } from "pg";
 import { makeChatServer } from "./server.js";
 import { ChatStore } from "./storage.js";
@@ -46,6 +47,10 @@ if (process.env.CHAT_DISPATCH_ENABLED === "true") {
     !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value))) {
     throw new Error("Chat dispatch owner entitlements unavailable");
   }
+  // A Google identity and the legacy owner allowlist alone do not grant
+  // access to every platform model. BYOK is deliberately not inferred.
+  const entitlements = parseModelEntitlements(
+    process.env.CHAT_DISPATCH_ENTITLEMENTS_JSON ?? "", approvedOwners);
   const auth = new GoogleAuth();
   dispatcher = new ChatDispatcher(store, makeSignedGatewayInvoker({
     url, audience, signingKey,
@@ -53,7 +58,7 @@ if (process.env.CHAT_DISPATCH_ENABLED === "true") {
       const client = await auth.getIdTokenClient(audience);
       return client.idTokenProvider.fetchIdToken(audience);
     }
-  }),approvedOwners);
+  }),approvedOwners,entitlements);
 }
 const server = makeChatServer(store,
   async (token) => {

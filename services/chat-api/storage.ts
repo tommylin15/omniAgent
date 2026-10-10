@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { Pool } from "pg";
 import { authorizeApproval } from "../agent-gateway/agent_security.js";
+import type { ModelEntitlement } from "./model_entitlements.js";
 
 export class ChatConflict extends Error {}
 export class ChatNotFound extends Error {}
@@ -215,8 +216,11 @@ export class ChatStore {
    * Reconciliation and attempt recovery must be implemented before enabling
    * unattended dispatch in production.
    */
-  async claimNextQueuedTurn(approvedOwners: readonly string[], target?: { ownerId: string; threadId: string; turnId: string }): Promise<DispatchClaim | null> {
+  async claimNextQueuedTurn(approvedOwners: readonly string[], target?: { ownerId: string; threadId: string; turnId: string },
+    entitlements?: readonly ModelEntitlement[]): Promise<DispatchClaim | null> {
     if (!approvedOwners.length) throw new Error("dispatch requires an approved owner list");
+    if (entitlements && !entitlements.length) throw new Error("dispatch requires model entitlements");
+    const modelRules = entitlements?.map(({ownerId,runtime,model}) => ({owner_id:ownerId,runtime,model}));
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
@@ -237,9 +241,16 @@ export class ChatStore {
         WHERE t.status='QUEUED' AND th.status='ACTIVE'
           AND t.owner_id = ANY($1::uuid[])
           AND ($2::uuid IS NULL OR (t.owner_id=$2 AND t.thread_id=$3 AND t.turn_id=$4))
+          AND ($5::jsonb IS NULL OR EXISTS (
+            SELECT 1 FROM jsonb_to_recordset($5::jsonb)
+              AS entitlement(owner_id uuid,runtime varchar,model varchar)
+            WHERE entitlement.owner_id=t.owner_id AND entitlement.runtime=th.runtime
+              AND entitlement.model=th.model
+          ))
         ORDER BY t.created_at,t.owner_id,t.thread_id,t.turn_id
         LIMIT 1 FOR UPDATE OF th,t SKIP LOCKED`,
-        [approvedOwners,target?.ownerId ?? null,target?.threadId ?? null,target?.turnId ?? null]
+        [approvedOwners,target?.ownerId ?? null,target?.threadId ?? null,target?.turnId ?? null,
+          modelRules ? JSON.stringify(modelRules) : null]
       )).rows[0];
       if (!selected) {
         await client.query("COMMIT");

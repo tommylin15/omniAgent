@@ -1,5 +1,43 @@
 # Chat → Gateway one-shot dispatch: bounded integration
 
+## 2026-10-10 Model-entitlement and OpenRouter SSE integrity — CODE ONLY
+
+Chat dispatch remains OFF by default. Enabling `CHAT_DISPATCH_ENABLED=true`
+in a later, separately approved acceptance requires two independent inputs:
+`CHAT_DISPATCH_APPROVED_OWNER_IDS` (real approved Owner UUIDs) and
+`CHAT_DISPATCH_ENTITLEMENTS_JSON` (nonempty, bounded explicit records).
+Each record must contain exactly `ownerId`, `runtime` (`gemini`,
+`openrouter`, or `codex`), `model`, and `credentialMode:"platform"`.
+Example **format only, not a real owner**:
+
+```json
+[{"ownerId":"00000000-0000-4000-8000-000000000001",
+  "runtime":"gemini","model":"gemini-2.5-flash","credentialMode":"platform"}]
+```
+
+A UUID absent from the separate allowlist, unsupported runtime, wrong
+model, duplicate, unrecognized field, BYOK credential mode, or paid
+OpenRouter platform model is rejected before startup/claim. The Chat
+API checks the authenticated Owner's persisted thread Runtime/Model
+before writing a message. PostgreSQL's queue claim filters the same
+allowlisted Owner/Runtime/Model tuples before changing a turn to RUNNING,
+using row locks and SKIP LOCKED. An unentitled queued turn stays QUEUED;
+a mismatched claim stops before provider invocation. Independent
+Gateway Codex Owner Secret mapping is still a separate required gate.
+
+OpenRouter SSE requires a real [DONE] terminator before emitting a
+successful turn_completed. Truncation, provider error frames, invalid
+JSON or payload, oversized bytes/text, or excessive event counts
+fail closed without a false completed turn; a streaming UTF-8 decoder
+handles Chinese split across network chunks. Fixtures do not call
+external models or read credentials.
+
+**STATUS: SOURCE IMPLEMENTED; exact-SHA CI + candidate/runtime
+acceptance pending.** No model access, Secret setting, provider billing,
+BYOK lifecycle, formal traffic cutover or production rollback is
+authorized or performed by this change.
+
+
 ## 2026-10-10 Transactional Gateway event persistence — implementation staged
 
 The Chat dispatcher now hands each already-validated Gateway response to

@@ -163,7 +163,12 @@ export function makeChatServer(store: ChatStore, verifyUser: VerifyUser, verifyS
         if (typeof value.content !== "string" || !value.content.trim() || value.content.length > 50_000) {
           throw new InvalidRequest("message content is invalid");
         }
-        if (!dispatcher?.canDispatch?.(ownerId)) return send(response,503,{ error:"dispatch_unavailable" });
+        // An authenticated account is not automatically entitled to a
+        // provider/model; deny before persisting or claiming a queued turn.
+        if (!dispatcher?.canDispatch) return send(response,503,{ error:"dispatch_unavailable" });
+        const selected = await store.thread(ownerId,messages[1]);
+        if (!dispatcher.canDispatch(ownerId,String(selected.runtime),String(selected.model)))
+          return send(response,503,{ error:"dispatch_unavailable" });
         const result = await store.message(ownerId,messages[1],value.content,key(request));
         // Keep the request alive during inference; Cloud Run can suspend work after a response.
         const outcome = await dispatcher.runOnce({ ownerId,threadId:messages[1],turnId:String((result.turn as Record<string,unknown>).turn_id) });

@@ -28,3 +28,80 @@ describe("OpenRouter provider", () => {
     await expect(provider.listModels()).rejects.toMatchObject({ kind: "quota", status: 429, message: "quota" });
   });
 });
+
+function sse(...parts: string[]): Response {
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (const part of parts) controller.enqueue(encoder.encode(part));
+      controller.close();
+    }
+  });
+  return new Response(stream,{status:200,headers:{"content-type":"text/event-stream"}});
+}
+
+async function collectEvents(source: AsyncIterable<unknown>): Promise<unknown[]> {
+  const events: unknown[] = [];
+  for await (const event of source) events.push(event);
+  return events;
+}
+
+describe("OpenRouter SSE evidence and bounded replay", () => {
+  it("accepts split Unicode and CRLF only with an explicit DONE marker", async () => {
+    const fetcher = vi.fn().mockResolvedValueOnce(response(models)).mockResolvedValueOnce(
+      sse('data: {"choices":[{"delta":{"content":"你"}}]}\r\n',
+          'data: {"choices":[{"delta":{"content":"好"}}]}\r\n',
+          'data: {"usage":{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5}}\r\n',
+          "data: [DONE]\r\n")
+    );
+    const provider = new OpenRouterProvider("fake-token",fetcher as typeof fetch);
+    const rows = await collectEvents(provider.stream([{role:"user",content:"say hello"}],{model:"free/model:free"}));
+    expect(rows).toEqual([
+      {type:"text_delta",delta:"你"},
+      {type:"text_delta",delta:"好"},
+      {type:"usage",usage:{promptTokens:2,completionTokens:3,totalTokens:5}},
+      {type:"turn_completed",result:{model:"free/model:free",
+        messages:[{role:"user",content:"say hello"}],text:"你好",
+        usage:{promptTokens:2,completionTokens:3,totalTokens:5}}}
+    ]);
+  });
+
+  it("never treats a dropped SSE connection as turn_completed", async () => {
+    const fetcher = vi.fn().mockResolvedValueOnce(response(models))
+      .mockResolvedValueOnce(sse('data: {"choices":[{"delta":{"content":"partial"}}]}\n'));
+    const p = new OpenRouterProvider("fixture-key",fetcher as typeof fetch);
+    const seen: unknown[] = [];
+    await expect((async () => {
+      for await(const event of p.stream([{role:"user",content:"prompt"}],{model:"free/model:free"}))
+        seen.push(event);
+    })()).rejects.toThrow("without DONE");
+    expect(seen).toEqual([{type:"text_delta",delta:"partial"}]);
+    expect(seen).not.toEqual(expect.arrayContaining([expect.objectContaining({type:"turn_completed"})]));
+  });
+
+  it.each([
+    ['data: {"error":{"message":"provider-token"}}\n', "rejected stream"],
+    ["data: {invalid}\n", "frame is invalid"],
+    ['data: {"choices":[{"delta":{"content":5}}]}\n', "delta is invalid"],
+    ['data: {"choices":[{"delta":{"content":"hi"}}]}\nunfinished', "incomplete final frame"]
+  ])("rejects malformed or provider-error streams without leaking response data (%s)", async (frame, expected) => {
+    const fetcher = vi.fn().mockResolvedValueOnce(response(models)).mockResolvedValueOnce(sse(frame));
+    const provider = new OpenRouterProvider("fixture-key",fetcher as typeof fetch);
+    await expect(collectEvents(provider.stream([{role:"user",content:"prompt"}],{model:"free/model:free"})))
+      .rejects.toThrow(expected);
+  });
+
+  it("rejects oversized SSE text and invalid free-only model before provider completion", async () => {
+    const chunk = "a".repeat(65_537);
+    const fetcher = vi.fn().mockResolvedValueOnce(response(models)).mockResolvedValueOnce(
+      sse('data: '+JSON.stringify({choices:[{delta:{content:chunk}}]})+'\n','data: [DONE]\n'));
+    const provider = new OpenRouterProvider("fixture-key",fetcher as typeof fetch);
+    await expect(collectEvents(provider.stream([{role:"user",content:"prompt"}],{model:"free/model:free"})))
+      .rejects.toThrow("text exceeds limit");
+    const denied = vi.fn().mockResolvedValueOnce(response(models));
+    const free = new OpenRouterProvider("fixture-key",denied as typeof fetch);
+    await expect(collectEvents(free.stream([{role:"user",content:"prompt"}],{model:"paid/model"})))
+      .rejects.toThrow("not approved");
+    expect(denied).toHaveBeenCalledTimes(1);
+  });
+});

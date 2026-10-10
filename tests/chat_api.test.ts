@@ -47,6 +47,21 @@ describe("omniAgent Chat API ownership boundary", () => {
     expect(store.message).not.toHaveBeenCalled();
   });
 
+  it("denies an authenticated but model-unentitled owner before creating a turn", async () => {
+    const worker={ canDispatch:vi.fn((ownerId: string,runtime?: string,model?: string) =>
+        ownerId === "owner-alice" && runtime === "openrouter" && model === "openrouter/free"),
+      runOnce:vi.fn(async () => ({status:"completed" as const})) };
+    const {base,store}=await app(worker);
+    const response=await fetch(base+"/v1/threads/thread-1/messages",{
+      method:"POST",headers:{Authorization:"Bearer alice","Idempotency-Key":"deny-model",
+        "Content-Type":"application/json"},body:JSON.stringify({content:"not entitled"})});
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({error:"dispatch_unavailable"});
+    expect(worker.canDispatch).toHaveBeenCalledWith("owner-alice","gemini","gemini-2.5-flash");
+    expect(store.message).not.toHaveBeenCalled();
+    expect(worker.runOnce).not.toHaveBeenCalled();
+  });
+
   it("uses UTF-8 and permanently deletes only the authenticated owner's thread", async () => {
     const {base,store}=await app();
     const response=await fetch(base+"/v1/threads/thread-1",{method:"DELETE",headers:{Authorization:"Bearer alice"}});

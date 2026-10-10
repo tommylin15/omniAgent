@@ -1,5 +1,16 @@
 # omniAgent CI/CD: GitHub Actions → public GHCR → Cloud Run
 
+### 2026-10-10 additional model dispatch preflight (still OFF)
+
+Before *future* approved dispatch enablement, configure the independent
+Owner UUID allowlist and strict exact Owner/Runtime/Model platform policy
+in `CHAT_DISPATCH_ENTITLEMENTS_JSON`. Only explicit
+`CHAT_DISPATCH_ENABLED=true` after all entitlement, credential/billing,
+OAuth, Gateway and live safety gates may activate model calls.
+No policy env value or Secret is deployed by this code-only change.
+BYOK is not wired; Codex still requires approved Owner-specific Secret.
+
+
 ## 2026-10-09 正式流量已切換；產品驗收仍未完成
 
 依使用者明確授權，GHCR release `1a8e575bb9f6224e698765d268c6e823e94ba55a` 已固定為三服務 100% 正式流量：Chat `00039-rik`、Gateway `00030-coy`、Shared `00019-puf`，live readback 均 Ready=True。正式 Chat health/ready/UI 資產 200，匿名 API 401。Gateway 一個指向 DESTROYED Secret 的失效歷史標籤已移除以完成路由更新；未刪 revision、Secret 或資料。

@@ -1,5 +1,20 @@
 # omniAgent TODO
 
+### 2026-10-10 Owner-model authorization / SSE integrity development
+
+- [x] Exact Owner UUID + Provider runtime + Model platform entitlement
+  parser; rejects unknown owner, arbitrary BYOK locator or paid OpenRouter.
+- [x] Authenticate and check stored thread at message admission; restrict
+  PostgreSQL SKIP LOCKED worker claims with same model-policy tuples.
+- [x] Enforce real OpenRouter SSE [DONE] before completed, bounded event
+  count/bytes and UTF-8-safe, redacted failure behavior.
+- [ ] Exact-source CI, disposable PostgreSQL acceptance and 0% candidate
+  signed smoke must pass before marking CODE/CI PASS.
+- [ ] Owner BYOK lifecycle, real model inference, approval/cancel/reconnect,
+  unified live acceptance, rollback and production release still OPEN.
+- Dispatch enablement/entitlements not changed in Cloud Run.
+
+
 ### 2026-10-10 Groq bounded adapter — SOURCE ONLY (NOT WIRED)
 
 - Source: `services/agent-gateway/groq_provider.ts`; contract fixtures:
