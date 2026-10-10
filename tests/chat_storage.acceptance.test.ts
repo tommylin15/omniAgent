@@ -3,6 +3,7 @@ import { Pool } from "pg";
 import { describe, expect, it } from "vitest";
 import { ChatConflict, ChatNotFound, ChatStore } from "../services/chat-api/storage.js";
 import { ChatDispatcher } from "../services/chat-api/gateway_dispatch.js";
+import { CredentialRegistry } from "../services/chat-api/credential_management.js";
 
 const dsn = process.env.PG_TEST_URL;
 describe.runIf(Boolean(dsn))("isolated PostgreSQL ChatStore acceptance", () => {
@@ -15,7 +16,7 @@ describe.runIf(Boolean(dsn))("isolated PostgreSQL ChatStore acceptance", () => {
     try {
       expect((await pool.query("SELECT current_database() AS name")).rows[0].name).toBe("omniagent_acceptance");
       expect((await pool.query("SELECT to_regclass('omni_chat.owners') AS present")).rows[0].present).toBeNull();
-      for (const filename of ["001_chat_ownership.sql", "002_skill_storage.sql"]) {
+      for (const filename of ["001_chat_ownership.sql", "002_skill_storage.sql", "003_credential_metadata.sql"]) {
         const sql = readFileSync("infra/postgres/migrations/" + filename,"utf8");
         await pool.query(sql);
         await pool.query(sql);
@@ -30,6 +31,26 @@ describe.runIf(Boolean(dsn))("isolated PostgreSQL ChatStore acceptance", () => {
       const b = await store.owner("https://accounts.google.com","bob");
       expect(await store.owner("https://accounts.google.com","alice")).toBe(a);
       expect(b).not.toBe(a);
+      // FR-013: a credential reference is not a credential value. The
+      // registry is owner-bound and cannot resolve PENDING/REVOKING/REVOKED.
+      const credentials=new CredentialRegistry(pool);
+      const profile="00000000-0000-4000-8000-000000000091";
+      const ref="projects/test-project/secrets/omniagent-byok-"+profile.replace(/-/g,"")+"/versions/1";
+      await credentials.reserve(a,profile,"gemini",ref);
+      expect((await credentials.list(a)).map(row=>row.status)).toEqual(["PENDING"]);
+      expect(await credentials.list(b)).toEqual([]);
+      expect(JSON.stringify(await credentials.list(a))).not.toContain("secret_version");
+      await expect(credentials.resolveRef(a,"gemini",profile)).rejects.toBeInstanceOf(ChatNotFound);
+      await expect(credentials.activate(b,profile)).rejects.toBeInstanceOf(ChatConflict);
+      expect((await credentials.activate(a,profile)).status).toBe("ACTIVE");
+      expect(await credentials.resolveRef(a,"gemini",profile)).toBe(ref);
+      await expect(credentials.resolveRef(b,"gemini",profile)).rejects.toBeInstanceOf(ChatNotFound);
+      await expect(credentials.resolveRef(a,"openrouter",profile)).rejects.toBeInstanceOf(ChatNotFound);
+      await expect(credentials.beginRevoke(b,profile)).rejects.toBeInstanceOf(ChatNotFound);
+      expect((await credentials.beginRevoke(a,profile)).status).toBe("REVOKING");
+      await expect(credentials.resolveRef(a,"gemini",profile)).rejects.toBeInstanceOf(ChatNotFound);
+      expect((await credentials.finalizeRevoke(a,profile)).status).toBe("REVOKED");
+
       const input = { threadId:"thread-a", runtime:"gemini" as const, model:"test-model", assistantProfile:"default" };
       const thread = await store.createThread(a,input,"create-1");
       expect(thread.thread_id).toBe("thread-a");

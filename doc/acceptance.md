@@ -1,5 +1,17 @@
 # omniAgent acceptance matrix
 
+### FR-013 BYOK credential metadata staging — 2026-10-10
+
+New additive schema 003, owner-scoped metadata registry, isolated Secret
+Manager vault adapter, authenticated API and negative tests are CODE STAGED.
+The flag CHAT_BYOK_MANAGEMENT_ENABLED remains unset in runtime.
+No real Secret Manager operations, BYOK provider inference, Gateway resolver,
+credential rotation/recovery or cross-owner live acceptance has passed.
+PENDING/REVOKING records fail closed and cannot be used by resolver.
+Exact-SHA CI, 0% candidate, approved IAM/migration and live acceptance
+are separately required. See docs/credential-resolver.md.
+
+
 ### 2026-10-10 Read-only reconciliation diagnostic
 
 An internal-service-only endpoint and owner-scoped SQL report RUNNING candidates based on queue creation age, with a maximum of 50 entries. No mutations or provider calls. Explicitly NOT an authoritative runtime-duration measurement and not a license to retry. Source changes need exact-SHA CI and runtime verification.

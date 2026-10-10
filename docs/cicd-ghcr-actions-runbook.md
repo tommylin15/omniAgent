@@ -1,5 +1,17 @@
 # omniAgent CI/CD: GitHub Actions → public GHCR → Cloud Run
 
+### 2026-10-10 BYOK additive staging
+
+The opt-in BYOK management endpoints require migration
+infra/postgres/migrations/003_credential_metadata.sql and separately
+approved, restricted Secret Manager IAM in CHAT_BYOK_SECRET_PROJECT.
+CHAT_BYOK_MANAGEMENT_ENABLED is OFF by default; this release does not
+enable it, alter the existing bundle, permit billable model inference or
+grant BYOK usage to Chat/Gateway. Source-only contract in
+docs/credential-resolver.md. Real runtime, migration and owner-scoped
+integration require a separate release/acceptance gate.
+
+
 ### 2026-10-10 additional model dispatch preflight (still OFF)
 
 Before *future* approved dispatch enablement, configure the independent

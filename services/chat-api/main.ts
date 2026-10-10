@@ -4,6 +4,8 @@ import { parseModelEntitlements } from "./model_entitlements.js";
 import { Pool } from "pg";
 import { makeChatServer } from "./server.js";
 import { ChatStore } from "./storage.js";
+import { CredentialManager, CredentialRegistry } from "./credential_management.js";
+import { GoogleSecretManagerVault } from "./credential_vault.js";
 import { chatDatabasePoolConfig, chatDatabaseUrl } from "./database.js";
 
 const dsn = chatDatabaseUrl(process.env);
@@ -60,6 +62,15 @@ if (process.env.CHAT_DISPATCH_ENABLED === "true") {
     }
   }),approvedOwners,entitlements);
 }
+// BYOK is not enabled on deployed Cloud Run candidates by default.
+// GCP IAM/Secret Manager/project and migration 003 require independent approval.
+let credentials: CredentialManager | undefined;
+if (process.env.CHAT_BYOK_MANAGEMENT_ENABLED === "true") {
+  const project = process.env.CHAT_BYOK_SECRET_PROJECT;
+  if (!project) throw new Error("BYOK Secret Manager project missing");
+  credentials = new CredentialManager(new CredentialRegistry(pool),
+    new GoogleSecretManagerVault(project));
+}
 const server = makeChatServer(store,
   async (token) => {
     try {
@@ -74,7 +85,7 @@ const server = makeChatServer(store,
         throw new Error("unauthorized");
       }
     } catch { throw new Error("unauthorized"); }
-  }, dispatcher);
+  }, dispatcher, credentials);
 
 server.listen(Number(process.env.PORT ?? "8080"),"0.0.0.0");
 process.once("SIGTERM",() => server.close(() => void pool.end()));

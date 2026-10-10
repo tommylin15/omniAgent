@@ -4,6 +4,7 @@ import { stat } from "node:fs/promises";
 import { extname, isAbsolute, relative, resolve } from "node:path";
 import { ChatConflict, ChatNotFound, type ChatStore, type ThreadInput } from "./storage.js";
 import type { ChatDispatcher } from "./gateway_dispatch.js";
+import type { CredentialManager } from "./credential_management.js";
 
 export type Principal = { issuer: string; subject: string };
 export type VerifyUser = (token: string) => Promise<Principal>;
@@ -90,7 +91,8 @@ function threadInput(value: Record<string, unknown>): ThreadInput {
 }
 
 export function makeChatServer(store: ChatStore, verifyUser: VerifyUser, verifyService: VerifyService,
-                               dispatcher?: Pick<ChatDispatcher,"runOnce"> & Partial<Pick<ChatDispatcher,"canDispatch" | "inspectRunningCandidates">>) {
+                               dispatcher?: Pick<ChatDispatcher,"runOnce"> & Partial<Pick<ChatDispatcher,"canDispatch" | "inspectRunningCandidates">>,
+                               credentials?: Pick<CredentialManager,"create" | "list" | "revoke">) {
   return createServer(async (request, response) => {
     const url = new URL(request.url ?? "/", "http://localhost");
     if (request.method === "GET" && url.pathname === "/health") return send(response,200,{ status: "ok" });
@@ -138,6 +140,30 @@ export function makeChatServer(store: ChatStore, verifyUser: VerifyUser, verifyS
       }
       const principal = await verifyUser(token);
       const ownerId = await store.owner(principal.issuer,principal.subject);
+      // Explicitly disabled by default. Never echo API keys, vault locators
+      // or vendor errors to browsers. Ownership is derived from verified OAuth.
+      if (url.pathname === "/v1/credentials") {
+        if (!credentials) return send(response,404,{ error:"not_found" });
+        if (request.method === "GET") return send(response,200,{ items:await credentials.list(ownerId) });
+        if (request.method === "POST") {
+          const value = await body(request);
+          if (!["gemini","openrouter"].includes(String(value.provider)) ||
+              typeof value.apiKey !== "string" || value.apiKey.length < 16 ||
+              value.apiKey.length > 4096 || value.apiKey.trim() !== value.apiKey ||
+              /[\r\n\0]/.test(value.apiKey) ||
+              Object.keys(value).sort().join(",") !== "apiKey,provider") {
+            throw new InvalidRequest("credential input invalid");
+          }
+          return send(response,201,await credentials.create(ownerId,
+            value.provider as "gemini" | "openrouter",value.apiKey));
+        }
+        return send(response,404,{ error:"not_found" });
+      }
+      const credential = /^\/v1\/credentials\/([a-f0-9-]{36})$/.exec(url.pathname);
+      if (request.method === "DELETE" && credential) {
+        if (!credentials) return send(response,404,{ error:"not_found" });
+        return send(response,200,await credentials.revoke(ownerId,credential[1]));
+      }
       if (request.method === "POST" && url.pathname === "/v1/threads") {
         return send(response,201,await store.createThread(ownerId,threadInput(await body(request)),key(request)));
       }

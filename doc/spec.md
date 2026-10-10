@@ -1,5 +1,11 @@
 # omniAgent SPEC
 
+> Source update 2026-10-10: FR-013 now has staged BYOK metadata/vault API
+> code and migration 003 (see docs/credential-resolver.md), but Gateway
+> resolver, rotation, approved IAM/Secret Manager deployment and real Owner
+> inference are still OPEN; do not mark FR-013 accepted.
+
+
 > Executable baseline validated through `main@d1769491ba41670e86222536ee129b94bbfba04f`; Node Core run `37628904846` PASS. UI source baseline `12a94018debd11f5b389aa2fdf325339782bb9d8`; Flutter run `37625912746` PASS.
 > Architecture revision: 2026-10-07.
 > Status language distinguishes source, target design, real-dev evidence, and live acceptance.

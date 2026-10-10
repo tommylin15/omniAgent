@@ -1,5 +1,22 @@
 # omniAgent TODO
 
+### 2026-10-10 FR-013 BYOK metadata / lifecycle — code staged
+
+- [x] Add owner-bound credential metadata schema migration 003.
+- [x] Implement strictly scoped CredentialRegistry, provider/profile lifecycle
+  PENDING/ACTIVE/REVOKING/REVOKED, fail-closed internal ref resolution.
+- [x] Add Google Secret Manager v1 create, addVersion and disable adapter;
+  provider secrets never persist in PostgreSQL, SSE events or public API.
+- [x] Authenticated list/upload/revoke Chat endpoints behind an OFF-by-default
+  CHAT_BYOK_MANAGEMENT_ENABLED flag.
+- [x] Mocked lifecycle, HTTP and disposable PostgreSQL cross-owner regression.
+- [ ] Exact-SHA CI, migration of approved runtime database, IAM scoping,
+  reconciliation, BYOK rotation, Gateway inference wiring and real-owner
+  authorized integration all remain OPEN.
+- [ ] Do not change Cloud Run flags or invoke billable providers.
+  See docs/credential-resolver.md for invariants.
+
+
 ### 2026-10-10 Read-only running-turn diagnostic
 
 Implemented a service-authenticated, read-only GET at /internal/v1/chat/reconciliation:candidates. Returns up to 50 RUNNING identifiers from explicitly authorized owners if the queue creation timestamp is at least 10 minutes old. No model calls, requeueing, approval changes, prompts or secrets. Queue creation age does not prove claim duration. Source/CI/runtime acceptance are tracked separately.

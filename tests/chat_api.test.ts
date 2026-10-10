@@ -5,12 +5,14 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { makeChatServer } from "../services/chat-api/server.js";
 import type { ChatDispatcher } from "../services/chat-api/gateway_dispatch.js";
+import type { CredentialManager } from "../services/chat-api/credential_management.js";
 import { safeRecord, type ChatStore } from "../services/chat-api/storage.js";
 
 const servers: ReturnType<typeof makeChatServer>[] = [];
 afterEach(async () => Promise.all(servers.splice(0).map((server) => new Promise<void>((resolve) => server.close(() => resolve())))));
 
-async function app(dispatcher?: Pick<ChatDispatcher,"runOnce">) {
+async function app(dispatcher?: Pick<ChatDispatcher,"runOnce">,
+                   credentials?: Pick<CredentialManager,"create" | "list" | "revoke">) {
   const store = {
     ready: vi.fn(async () => undefined),
     owner: vi.fn(async (_issuer: string, subject: string) => "owner-" + subject),
@@ -32,7 +34,7 @@ async function app(dispatcher?: Pick<ChatDispatcher,"runOnce">) {
     async (token) => {
       if (token !== "alice" && token !== "bob") throw new Error("unauthorized");
       return { issuer: "https://accounts.google.com", subject: token };
-    }, async (token) => { if (token !== "service") throw new Error("unauthorized"); }, dispatcher);
+    }, async (token) => { if (token !== "service") throw new Error("unauthorized"); }, dispatcher, credentials);
   servers.push(server);
   await new Promise<void>((resolve) => server.listen(0,"127.0.0.1",resolve));
   return { base: "http://127.0.0.1:" + (server.address() as AddressInfo).port, store };
@@ -60,6 +62,47 @@ describe("omniAgent Chat API ownership boundary", () => {
     expect(worker.canDispatch).toHaveBeenCalledWith("owner-alice","gemini","gemini-2.5-flash");
     expect(store.message).not.toHaveBeenCalled();
     expect(worker.runOnce).not.toHaveBeenCalled();
+  });
+
+  it("keeps BYOK disabled by default and never exposes an uploaded provider key", async () => {
+    const disabled=await app();
+    expect((await fetch(disabled.base+"/v1/credentials",{
+      headers:{Authorization:"Bearer alice"}})).status).toBe(404);
+    const raw="fake-secret-provider-credential-123";
+    const credentials={
+      list:vi.fn(async (_ownerId:string)=>[{
+        profile_id:"00000000-0000-4000-8000-000000000003",
+        provider:"gemini" as const,status:"ACTIVE" as const,created_at:"fixture"
+      }]),
+      create:vi.fn(async (_ownerId:string,_provider:"gemini" | "openrouter",_value:string)=>({
+        profile_id:"00000000-0000-4000-8000-000000000003",
+        provider:"gemini" as const,status:"ACTIVE" as const,created_at:"fixture"
+      })),
+      revoke:vi.fn(async (_ownerId:string,_profileId:string)=>({
+        profile_id:"00000000-0000-4000-8000-000000000003",
+        provider:"gemini" as const,status:"REVOKED" as const,created_at:"fixture"
+      }))
+    };
+    const {base}=await app(undefined,credentials);
+    expect((await fetch(base+"/v1/credentials")).status).toBe(401);
+    const headers={Authorization:"Bearer alice","Content-Type":"application/json"};
+    const created=await fetch(base+"/v1/credentials",{
+      method:"POST",headers,body:JSON.stringify({provider:"gemini",apiKey:raw})});
+    expect(created.status).toBe(201);
+    expect(JSON.stringify(await created.json())).not.toContain(raw);
+    expect(credentials.create).toHaveBeenCalledWith("owner-alice","gemini",raw);
+    const listing=await fetch(base+"/v1/credentials",{headers});
+    expect(listing.status).toBe(200);
+    expect(JSON.stringify(await listing.json())).not.toContain(raw);
+    expect(credentials.list).toHaveBeenCalledWith("owner-alice");
+    const revoke=await fetch(base+"/v1/credentials/00000000-0000-4000-8000-000000000003",{
+      method:"DELETE",headers});
+    expect(revoke.status).toBe(200);
+    expect(credentials.revoke).toHaveBeenCalledWith("owner-alice",
+      "00000000-0000-4000-8000-000000000003");
+    expect((await fetch(base+"/v1/credentials",{
+      method:"POST",headers,body:JSON.stringify({provider:"gemini",apiKey:raw,ownerId:"owner-bob"})})).status).toBe(400);
+    expect(credentials.create).toHaveBeenCalledTimes(1);
   });
 
   it("uses UTF-8 and permanently deletes only the authenticated owner's thread", async () => {
