@@ -291,7 +291,7 @@ describe.runIf(Boolean(dsn))("isolated PostgreSQL ChatStore acceptance", () => {
             fetch(gatewayLocal+new URL(String(target)).pathname,init)) as typeof fetch
         });
         const entitlements = parseModelEntitlements(JSON.stringify([
-          {ownerId:a,runtime:"gemini",model:"gemini-2.5-flash",credentialMode:"platform"}
+          {ownerId:a,runtime:"gemini",model:"gemini-3.5-flash-lite",credentialMode:"platform"}
         ]),[a]);
         const worker = new ChatDispatcher(store,invoker,[a],entitlements);
         chat = makeChatServer(store,async token => {
@@ -304,12 +304,12 @@ describe.runIf(Boolean(dsn))("isolated PostgreSQL ChatStore acceptance", () => {
           "Content-Type":"application/json"});
         expect((await fetch(url+"/v1/models")).status).toBe(401);
         expect(await (await fetch(url+"/v1/models",{headers:auth("alice")})).json())
-          .toEqual({dispatchEnabled:true,items:[{runtime:"gemini",model:"gemini-2.5-flash"}]});
+          .toEqual({dispatchEnabled:true,items:[{runtime:"gemini",model:"gemini-3.5-flash-lite"}]});
         expect(await (await fetch(url+"/v1/models",{headers:auth("bob")})).json())
           .toEqual({dispatchEnabled:false,items:[]});
         const threadResponse=await fetch(url+"/v1/threads",{
           method:"POST",headers:{...auth("alice"),"Idempotency-Key":"joined-create-1"},
-          body:JSON.stringify({runtime:"gemini",model:"gemini-2.5-flash",
+          body:JSON.stringify({runtime:"gemini",model:"gemini-3.5-flash-lite",
             threadId:"joined-flow",assistantProfile:"default"})});
         expect(threadResponse.status).toBe(201);
         expect((await threadResponse.json()).owner_id).toBe(a);
