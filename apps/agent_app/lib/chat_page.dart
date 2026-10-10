@@ -50,7 +50,8 @@ class _ChatPageState extends State<ChatPage> {
           final mode = entry['runtime'];
           final name = entry['model'];
           if (mode is String && name is String && modelCatalog.containsKey(mode) &&
-              mode != 'groq' && name.isNotEmpty) {
+              mode != 'groq' && name.isNotEmpty &&
+              (mode != 'gemini' || modelCatalog['gemini']!.contains(name))) {
             allowed.putIfAbsent(mode, () => <String>[]).add(name);
           }
         }
@@ -72,8 +73,13 @@ class _ChatPageState extends State<ChatPage> {
     }
   }
 
-  bool get modelAllowed => entitledModels == null ||
-      (entitledModels![runtime]?.contains(modelInput.text.trim()) ?? false);
+  bool get modelAllowed {
+    final selected = modelInput.text.trim();
+    if (runtime == 'gemini' && !modelCatalog['gemini']!.contains(selected))
+      return false;
+    return entitledModels == null ||
+        (entitledModels![runtime]?.contains(selected) ?? false);
+  }
   List<String> get selectableModels => entitledModels == null
       ? modelCatalog[runtime]! : entitledModels![runtime] ?? <String>[];
 
