@@ -160,6 +160,46 @@ CODEX trial source approved by user; actual Owner mapping, IAM grant,
 provider session and 3 real turn readback are **NOT VERIFIED**. Trial usage
 remains **0/3** because no real turn was started.
 
+## 2026-10-11 A1 approved limited live trial staging
+
+The actual Owner UUID supplied from authenticated `GET /v1/me` is
+verified against one OAuth-backed row in the production `omniagent_chat`
+database without committing that UUID to Git. Source hash and metadata-only
+readback are checked in CI. Evidence:
+[Owner match / Secret IAM readback #38128959854](https://github.com/tommylin15/omniAgent/actions/runs/38128959854).
+The user personally granted the narrowly scoped
+`roles/secretmanager.secretAccessor` binding on
+`omniagent-shared-codex-auth` for the
+`omniagent-gateway@` runtime account; this now reads back as
+`VERIFIED_DIRECT_ACCESSOR`. This **does not** assert the provider token
+is still usable or that any inference has occurred.
+
+User authorization: one authenticated Owner; **no more than three
+attempted native Codex turns**. CI preflights OAuth DB identity and exact
+Secret IAM, then creates a 12-hour trial budget row **without ever
+resetting consumed turns**. A one-time, current-SHA
+`[p0-trial-once]` gated workflow
+(`.github/workflows/omniagent-p0-owner-trial-staging.yml`) creates
+zero-traffic tagged Gateway and Chat revisions for that one Owner and
+Codex model `gpt-5.6-luna`; no public site promotion, no
+BYOK, no Secret version changes. Existing production serving allocation
+is snapshotted and read back unchanged. Immediately after setting up
+the two tagged revisions, the normal service templates are restored
+to **disabled dispatch**, preventing future GitHub candidates from
+inheriting the live-trial setting.
+
+The staged tag is intentionally reachable to the authenticated Owner
+only through normal Google sign-in. The gateway remains Cloud Run IAM
+private and HMAC-signed. An anonymous request cannot consume a turn.
+Staging is **NOT the same as provider live acceptance**. Do not count
+a staging/workflow PASS as a billed Codex turn, nor count a model
+response unless PostgreSQL event/readback evidence proves it.
+
+When complete, remove the trial tags and any temporary configuration
+and read back Owner budget, active traffic, Secret version state,
+and the Shared Codex service's health. Never run provider requests
+to exhaustion just to reach three; three is a maximum.
+
 ## One consolidated acceptance
 
 - Same-SHA Node/PG integration, Flutter analyze/test/build and signed
