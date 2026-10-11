@@ -65,6 +65,26 @@ provider readback, production application P0 is **NOT VERIFIED**.
   release marker and readiness checks; it does not authorize live billable
   inference or BYOK automatically.
 
+## Evidence as of 2026-10-11
+
+- `infra/postgres/migrations/004_codex_live_turns.sql`: **live DB PASS**,
+  exact execution SHA `fa39b5894d506510fdbf4210538f22f8b0db589e`,
+  [GitHub Actions #38110699581](https://github.com/tommylin15/omniAgent/actions/runs/38110699581).
+  Real readback confirms owner `omniagent_chat_app`, table
+  `omni_chat.codex_turn_sessions`, FK, and RESOLVING constraint.
+  No other logical databases were modified by the migration script.
+- Runtime Owner authorization, Codex credentials, Gateway single-instance
+  config and real signed provider turn are **NOT VERIFIED**.
+- The metadata-only Owner inventory runs after *current-SHA signed smoke*:
+  `.github/workflows/omniagent-p0-owner-runtime-readonly.yml`. It reports
+  only model entitlement counts and presence flags; it never reads secret
+  payloads or prints Owner UUIDs. Missing configuration is **BLOCKED**, never
+  promoted to DONE merely because the inventory job returns success.
+- Owner inference remains disabled until the credential source, exact
+  entitlement, permitted model, provider cost boundary, and positive
+  human authorization are verified. Do not create credentials in the repo,
+  Chat messages or Artifact receipts.
+
 ## One consolidated acceptance
 
 - Same-SHA Node/PG integration, Flutter analyze/test/build and signed

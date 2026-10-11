@@ -1,0 +1,51 @@
+# Exactly-current signed GHCR candidate, purely metadata-only P0 readback.
+# The source SHA must match main and the signed smoke's source SHA.
+name: omniAgent P0 Owner runtime read-only readiness
+on:
+  workflow_run:
+    workflows: ["omniAgent GHCR current candidate auto smoke"]
+    types: [completed]
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  read-only:
+    if: github.repository == 'tommylin15/omniAgent' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_repository.full_name == 'tommylin15/omniAgent'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+      PROJECT: gen-lang-client-0593591102
+      REGION: us-central1
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - name: Enforce current source, never run on a stale signed smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          test "$(git ls-remote https://github.com/tommylin15/omniAgent.git refs/heads/main | cut -f1)" = "$SOURCE_SHA"
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+          service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Inventory zero-traffic candidates without exposing configuration values
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          gcloud run services describe omniagent-chat --project="$PROJECT" --region="$REGION" --format=json > "$RUNNER_TEMP/omniagent-chat.json"
+          gcloud run services describe omniagent-agent-gateway --project="$PROJECT" --region="$REGION" --format=json > "$RUNNER_TEMP/omniagent-agent-gateway.json"
+          gcloud run services describe omniagent-shared-codex --project="$PROJECT" --region="$REGION" --format=json > "$RUNNER_TEMP/omniagent-shared-codex.json"
+          python3 scripts/p0_runtime_readonly.py "$SOURCE_SHA" "$RUNNER_TEMP/omniagent-chat.json" "$RUNNER_TEMP/omniagent-agent-gateway.json" "$RUNNER_TEMP/omniagent-shared-codex.json" "$RUNNER_TEMP/omniagent-p0-readiness.json"
+          cat "$RUNNER_TEMP/omniagent-p0-readiness.json" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: omniagent-p0-owner-readiness-${{ github.event.workflow_run.head_sha }}
+          path: ${{ runner.temp }}/omniagent-p0-readiness.json
+          if-no-files-found: warn
+          retention-days: 90
