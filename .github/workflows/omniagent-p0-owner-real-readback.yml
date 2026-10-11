@@ -38,12 +38,64 @@ jobs:
         run: |
           set -euo pipefail
           umask 077
-          bash infra/gcp/p0-owner-live-readback.sh > "$RUNNER_TEMP/readback.txt"
-          cat "$RUNNER_TEMP/readback.txt"
+          status=0
+          bash infra/gcp/p0-owner-live-readback.sh > "$RUNNER_TEMP/readback.txt" || status=$?
+          grep '^p0_' "$RUNNER_TEMP/readback.txt" || :
+          test "$status" -eq 0
           grep -qx 'p0_owner_db_readonly=PASS' "$RUNNER_TEMP/readback.txt"
           grep -qx 'p0_owner_text_and_terminal_persisted=PASS' "$RUNNER_TEMP/readback.txt"
           echo 'Owner A durable provider output: database audit PASS' >> "$GITHUB_STEP_SUMMARY"
           echo 'Owner B live authenticated negative: NOT VERIFIED by this audit' >> "$GITHUB_STEP_SUMMARY"
+      - name: Trial Chat API request metadata only (no prompts or identity)
+        if: always()
+        shell: bash
+        env:
+          PROJECT: gen-lang-client-0593591102
+          REGION: us-central1
+        run: |
+          set -euo pipefail
+          umask 077
+          trial="p0-trial-effb7b08c8d5"
+          gcloud run services describe omniagent-chat --project="$PROJECT" \
+            --region="$REGION" --format=json > "$RUNNER_TEMP/trial-service.json"
+          python3 - "$RUNNER_TEMP/trial-service.json" "$trial" "$RUNNER_TEMP/trial-revision.txt" <<'PY'
+          import json,sys
+          status=json.load(open(sys.argv[1])).get("status") or {}
+          routes=status.get("traffic") or []
+          matches=[r for r in routes if r.get("tag")==sys.argv[2] and r.get("percent",0)==0]
+          if len(matches)!=1:
+              print("p0_trial_route=NOT_VERIFIED")
+              raise SystemExit(0)
+          rev=str(matches[0].get("revisionName",""))
+          if not rev.startswith("omniagent-chat-"):
+              print("p0_trial_route=NOT_VERIFIED")
+              raise SystemExit(0)
+          open(sys.argv[3],"w").write(rev)
+          print("p0_trial_route=ZERO_TRAFFIC_PRESENT")
+          PY
+          if test -s "$RUNNER_TEMP/trial-revision.txt"; then
+            rev="$(cat "$RUNNER_TEMP/trial-revision.txt")"
+            query="resource.type=\"cloud_run_revision\" AND resource.labels.service_name=\"omniagent-chat\" AND resource.labels.revision_name=\"$rev\" AND timestamp>=\"2026-10-11T12:55:00Z\" AND httpRequest.requestMethod=\"POST\""
+            if gcloud logging read "$query" --project="$PROJECT" --format=json --limit=150 > "$RUNNER_TEMP/trial-requests.json" 2> /dev/null; then
+              python3 - "$RUNNER_TEMP/trial-requests.json" <<'PY'
+          import json,sys
+          from urllib.parse import urlsplit
+          try: logs=json.load(open(sys.argv[1]))
+          except Exception: logs=[]
+          threads=messages=0
+          for item in logs:
+              req=item.get("httpRequest") or {}
+              path=urlsplit(str(req.get("requestUrl",""))).path
+              if path=="/v1/threads": threads+=1
+              if path.startswith("/v1/threads/") and path.endswith("/messages"): messages+=1
+          print("p0_trial_post_create_thread="+("PRESENT" if threads else "ZERO"))
+          print("p0_trial_post_message="+("PRESENT" if messages else "ZERO"))
+          print("p0_trial_request_log=READ_ONLY")
+          PY
+            else
+              echo 'p0_trial_request_log=UNAVAILABLE_NO_ACCESS_OR_LOGS'
+            fi
+          fi
       - uses: actions/upload-artifact@v4
         if: always()
         with:
