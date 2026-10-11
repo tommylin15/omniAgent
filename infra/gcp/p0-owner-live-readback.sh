@@ -93,25 +93,41 @@ UNION ALL SELECT 'p0_owner_codex_completed=' ||
 UNION ALL SELECT 'p0_owner_text_and_terminal_persisted=' ||
   CASE WHEN (SELECT count(*) FROM accepted) BETWEEN 1 AND 3 THEN 'PASS' ELSE 'BLOCKED' END
 UNION ALL SELECT 'p0_owner_db_scope_integrity=' ||
-  CASE WHEN NOT EXISTS(SELECT 1 FROM invalid_scope) THEN 'PASS' ELSE 'BLOCKED' END;
+  CASE WHEN NOT EXISTS(SELECT 1 FROM invalid_scope) THEN 'PASS' ELSE 'BLOCKED' END
+UNION ALL SELECT 'p0_owner_budget_usage=' ||
+  CASE (SELECT min(consumed_turns) FROM budget)
+    WHEN 0 THEN 'ZERO' WHEN 1 THEN 'ONE' WHEN 2 THEN 'TWO'
+    WHEN 3 THEN 'THREE' ELSE 'MISSING_OR_INVALID' END
+UNION ALL SELECT 'p0_owner_recent_turns=' ||
+  CASE WHEN (SELECT count(*) FROM eligible)=0 THEN 'ZERO'
+       WHEN (SELECT count(*) FROM eligible) BETWEEN 1 AND 3 THEN 'ONE_TO_THREE'
+       ELSE 'MANY' END;
 ROLLBACK;
 SQL
 )"
+# Emit finite, fixed classifications only. Do not print SQL, IDs or payloads.
+for category in p0_owner_budget_usage p0_owner_recent_turns; do
+  value="$(printf '%s\n' "$result" | grep -E "^$category=(ZERO|ONE|TWO|THREE|MISSING_OR_INVALID|ONE_TO_THREE|MANY)$" || :)"
+  if [[ -n "$value" ]]; then printf '%s\n' "$value"; else printf '%s=UNAVAILABLE\n' "$category"; fi
+done
+blocked=0
 for field in p0_owner_db_identity p0_owner_trial_budget p0_owner_codex_completed p0_owner_text_and_terminal_persisted p0_owner_db_scope_integrity; do
   value="$(printf '%s\n' "$result" | grep -E "^$field=(PASS|BLOCKED)$" || :)"
   if [[ "$value" == "$field=PASS" ]]; then
     printf '%s=PASS\n' "$field"
   else
     printf '%s=BLOCKED\n' "$field"
-    exit 1
+    blocked=1
   fi
 done
-echo 'p0_owner_db_readonly=PASS'
+if [[ $blocked == 0 ]]; then echo 'p0_owner_db_readonly=PASS'
+else echo 'p0_owner_db_readonly=BLOCKED'; fi
 echo 'p0_authenticated_owner_b_negative=NOT_VERIFIED_BY_DB_AUDIT'
 echo 'p0_provider_calls=ZERO'
+exit "$blocked"
 REMOTE
 chmod 700 "$work/omniagent-p0-owner-live-readback.sh"
 gcloud compute scp "$work/omniagent-p0-owner-live-readback.sh" "$HOST:/tmp/" \
   --project="$PROJECT" --zone="$ZONE" --tunnel-through-iap --quiet
 gcloud compute ssh "$HOST" --project="$PROJECT" --zone="$ZONE" \
-  --tunnel-through-iap --quiet --command='sudo bash /tmp/omniagent-p0-owner-live-readback.sh'
+  --tunnel-through-iap --quiet --command='sudo bash /tmp/omniagent-p0-owner-live-readback.sh' | grep -E '^p0_'
