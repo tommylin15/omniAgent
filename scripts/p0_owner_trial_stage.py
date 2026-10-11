@@ -52,13 +52,34 @@ def serving(doc):
             for r in ((doc.get("status") or {}).get("traffic") or [])
             if r.get("percent",0)>0}
 
-def image_for(revision):
+def image_for(service, service_doc, revision):
+    """Return the approved GHCR source URI after verifying the deployed digest.
+
+    Cloud Run may render the imported Revision image as a *.pkg.dev mirror,
+    although the SERVICE template retains the original immutable GHCR URI.
+    Never deploy the mirror path or trust a matching digest without verifying
+    its exact approved service-specific GHCR source first.
+    """
+    if service not in SERVICES or not revision.startswith(service + "-"):
+        raise RuntimeError("candidate service or revision identity mismatch")
+    configured = ((template(service_doc).get("spec") or {}).get("containers") or [])
+    prefix = "ghcr.io/tommylin15/" + service + "@sha256:"
+    if len(configured) != 1:
+        raise RuntimeError("unexpected service template containers")
+    source_image = str(configured[0].get("image") or "")
+    if not source_image.startswith(prefix) or not re.fullmatch(
+            r"[a-f0-9]{64}", source_image[len(prefix):]):
+        raise RuntimeError("service template is not pinned public GHCR")
     spec = json.loads(cmd("gcloud", "run", "revisions", "describe", revision,
                           "--project="+PROJECT, "--region="+REGION, "--format=json"))
-    image=(((spec.get("spec") or {}).get("containers") or [{}])[0].get("image") or "")
-    if not re.fullmatch(r"ghcr.io/tommylin15/(?:omniagent-chat|omniagent-agent-gateway)@sha256:[a-f0-9]{64}",image):
-        raise RuntimeError("revision image is not pinned public GHCR")
-    return image
+    containers = ((spec.get("spec") or {}).get("containers") or [])
+    actual = str(containers[0].get("image") or "") if len(containers) == 1 else ""
+    if not actual.endswith("@sha256:" + source_image[len(prefix):]):
+        raise RuntimeError("revision digest differs from approved GHCR template")
+    ready = (spec.get("status") or {}).get("conditions") or []
+    if not any(c.get("type") == "Ready" and c.get("status") == "True" for c in ready):
+        raise RuntimeError("approved GHCR revision is not ready")
+    return source_image
 
 def annotation_max(doc):
     annotations=(template(doc).get("metadata") or {}).get("annotations") or {}
@@ -125,7 +146,7 @@ def main():
         raise RuntimeError("Chat signed bundle missing")
     if (chat.get("CHAT_BYOK_MANAGEMENT_ENABLED") or {}).get("value")=="true":
         raise RuntimeError("BYOK must be disabled")
-    images={svc:image_for(tagged(before[svc],tag)["revisionName"]) for svc in SERVICES}
+    images={svc:image_for(svc,before[svc],tagged(before[svc],tag)["revisionName"]) for svc in SERVICES}
     maxes={svc:annotation_max(before[svc]) for svc in SERVICES}
     gateway_audience=(before["omniagent-agent-gateway"].get("status") or {}).get("url","")
     if not gateway_audience.startswith("https://"):

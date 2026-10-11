@@ -28,4 +28,48 @@ class OwnerTrialStage(unittest.TestCase):
         self.assertIn("git ls-remote",wf)
         self.assertIn("shared_secret_iam_access=VERIFIED_DIRECT_ACCESSOR",wf)
         self.assertIn("workflow_run:",wf)
+
+    def test_revision_import_mirror_uses_verified_source_ghcr_digest(self):
+        import importlib.util
+        import json
+        from unittest.mock import patch
+        spec = importlib.util.spec_from_file_location("p0_owner_trial_stage", PY)
+        stage = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(stage)
+        service = "omniagent-chat"
+        digest = "a" * 64
+        origin = "ghcr.io/tommylin15/" + service + "@sha256:" + digest
+        doc = {"spec": {"template": {"spec": {"containers": [{"image": origin}]}}}}
+        revision = service + "-00099-test"
+        def runtime(image, ready=True):
+            return json.dumps({"spec": {"containers": [{"image": image}]},
+                               "status": {"conditions": [
+                                   {"type": "Ready", "status": "True" if ready else "False"}]}})
+        imported = "us-docker.pkg.dev/cloud-run/container/import@sha256:" + digest
+        with patch.object(stage, "cmd", return_value=runtime(imported)):
+            self.assertEqual(stage.image_for(service, doc, revision), origin)
+        with patch.object(stage, "cmd", return_value=runtime(origin)):
+            self.assertEqual(stage.image_for(service, doc, revision), origin)
+        for invalid in ("us-docker.pkg.dev/cloud-run/container/import@sha256:" + "b"*64,
+                        "ghcr.io/tommylin15/other-service@sha256:" + "b"*64,
+                        "ghcr.io/tommylin15/omniagent-chat:latest"):
+            with self.subTest(invalid=invalid), patch.object(stage, "cmd", return_value=runtime(invalid)):
+                with self.assertRaisesRegex(RuntimeError, "revision digest differs"):
+                    stage.image_for(service, doc, revision)
+        with patch.object(stage, "cmd", return_value=runtime(imported, False)):
+            with self.assertRaisesRegex(RuntimeError, "not ready"):
+                stage.image_for(service, doc, revision)
+        wrong_doc = {"spec": {"template": {"spec": {"containers": [
+            {"image": "ghcr.io/tommylin15/omniagent-agent-gateway@sha256:" + digest}]}}}}
+        with patch.object(stage, "cmd", return_value=runtime(imported)):
+            with self.assertRaisesRegex(RuntimeError, "not pinned public GHCR"):
+                stage.image_for(service, wrong_doc, revision)
+            with self.assertRaisesRegex(RuntimeError, "identity mismatch"):
+                stage.image_for(service, doc, "omniagent-agent-gateway-00099-test")
+        mutable_doc = {"spec": {"template": {"spec": {"containers": [
+            {"image": "ghcr.io/tommylin15/omniagent-chat:latest"}]}}}}
+        with patch.object(stage, "cmd", return_value=runtime(imported)):
+            with self.assertRaisesRegex(RuntimeError, "not pinned public GHCR"):
+                stage.image_for(service, mutable_doc, revision)
+
 if __name__=="__main__": unittest.main()
