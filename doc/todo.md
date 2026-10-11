@@ -1,5 +1,14 @@
 # 2026-10-10 Owner change: single integration / promotion / cleanup; rollback drill waived
 
+### 2026-10-12 最新有效 OAuth 驗收政策
+
+- **不再進行人工 OAuth 真人登入／A→B→A／Preview 驗收：NOT_REQUIRED，不是假造 PASS。**
+- **保留全部可自動化 OAuth 身分及安全測試**：token issuer/audience、錯誤與匿名拒絕、Client 設定、Owner 綁定、IAM/HMAC、跨 Owner 負向測試。
+- 缺少合法自動化真人使用者 token 時，僅該單項標為 NOT_VERIFIED_AUTOMATION_UNAVAILABLE；不可使用服務帳號 ID token 冒充真人登入，也不要求人工補測。
+- 模型授權、Chat→Gateway→PostgreSQL/SSE 持久化、隔離、CI、部署及正式流量讀回仍各自驗收。之前 P0 資料庫衝突不因取消人工驗收而 PASS。
+- 完整政策：[OAuth 自動驗收政策](../docs/oauth-automated-acceptance-policy.md)。下方歷史真人 OAuth 必經 gate 自本日起不再適用。
+
+
 ### 2026-10-10 Gemini Chat Owner policy — Flash-Lite only
 
 - Owner decision: Gemini Chat/UI and the signed Gateway dispatch entrypoint allow
@@ -68,8 +77,8 @@ this file records source policy, not deployment evidence.
   disabled dispatch/BYOK, Ready state, immutable digest, enabled Secret
   reference state and unchanged formal traffic. Produces redacted evidence.
 - [ ] Real accepted Owner-scoped provider inference, persisted SSE replay,
-  approval/cancel/reconnect, fixed-origin human OAuth and accepted
-  GHCR-only formal rollback rehearsal are still NOT VERIFIED.
+  approval/cancel/reconnect and accepted GHCR-only formal rollback rehearsal
+  are still NOT VERIFIED. Human OAuth is NOT_REQUIRED; automated OAuth checks remain mandatory.
 - [ ] Authorize real paid Codex/other provider inference only after the
   separate user permission and owner-specific credential/entitlement checks.
 - [ ] Once all real gates PASS, implement/execute safe formal traffic release
