@@ -1,0 +1,53 @@
+# One bounded audit for the Owner's real A reply, no new provider requests.
+name: omniAgent P0 Owner real DB readback
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: omniagent-p0-owner-db-evidence
+  cancel-in-progress: false
+jobs:
+  readback:
+    if: >-
+      github.repository == 'tommylin15/omniAgent' &&
+      contains(github.event.head_commit.message, '[p0-evidence-once]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify immutable current main and read-only audit contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git ls-remote https://github.com/tommylin15/omniAgent.git refs/heads/main | cut -f1)" = "$GITHUB_SHA"
+          bash -n infra/gcp/p0-owner-live-readback.sh
+          python3 -m unittest discover -s tests -p test_p0_owner_live_readback.py -v
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+          service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Real PostgreSQL Owner events and trial budget readback
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          bash infra/gcp/p0-owner-live-readback.sh > "$RUNNER_TEMP/readback.txt"
+          cat "$RUNNER_TEMP/readback.txt"
+          grep -qx 'p0_owner_db_readonly=PASS' "$RUNNER_TEMP/readback.txt"
+          grep -qx 'p0_owner_text_and_terminal_persisted=PASS' "$RUNNER_TEMP/readback.txt"
+          echo 'Owner A durable provider output: database audit PASS' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Owner B live authenticated negative: NOT VERIFIED by this audit' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: p0-owner-db-evidence
+          path: /home/runner/work/_temp/readback.txt
+          if-no-files-found: warn
+          retention-days: 90

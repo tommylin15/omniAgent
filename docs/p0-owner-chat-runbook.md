@@ -214,3 +214,20 @@ to exhaustion just to reach three; three is a maximum.
 
 This document covers only omniAgent. Legacy WBS status rows represent
 historical checkpoints, not current runtime evidence.
+
+
+### 2026-10-11 Owner A browser report and independent evidence gate
+
+- The Owner reports Google login and an actual Codex reply on the scoped
+  zero-traffic staging tag. This is **operator-observed A positive**, not a
+  PostgreSQL readback, approval/cancel/reconnect, or authenticated B denial.
+- A one-time `[p0-evidence-once]` read-only audit verifies one OAuth-backed
+  Owner, consumed trial budget, completed Codex turns since the staging
+  checkpoint (2026-10-11 12:55 UTC), nonempty persisted text/terminal events,
+  and owner-keyed relational integrity in only the `omniagent_chat` database.
+- It outputs status keys only: no prompts, responses, Owner UUIDs, native IDs,
+  credentials, or database mutation. An authenticated Owner B negative test is
+  separate: physical relational links cannot prove browser authorization.
+- Production promotion is a separate authorization and runtime gate. The
+  existing code-only GHCR release **keeps dispatch and BYOK disabled**; even a
+  successful traffic change must not be called live production Codex acceptance.
