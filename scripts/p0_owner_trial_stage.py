@@ -202,4 +202,8 @@ if __name__=="__main__":
         # No secrets, Owner IDs or cloud errors in CI logs.
         print("p0_owner_trial_canary=BLOCKED")
         print("reason_type="+type(exc).__name__)
+        if type(exc) is RuntimeError:
+            # RuntimeError messages in this module are constant, redacted
+            # preflight codes only. Never emit subprocess stderr or env.
+            print("preflight_reason="+str(exc))
         sys.exit(1)
