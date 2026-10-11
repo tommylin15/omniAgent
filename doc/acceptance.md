@@ -1,5 +1,28 @@
 # omniAgent acceptance matrix
 
+### 2026-10-11 23:49 Asia/Taipei — Owner A positive report vs DB evidence (BLOCKED)
+
+- User reports authenticated trial-tag Google login and a real Codex reply on
+  `effb7b08c8d59fa137d1dba6169752887df972ed` (operator observation).
+- Live read-only PostgreSQL receipts [#38152437970](https://github.com/tommylin15/omniAgent/actions/runs/38152437970),
+  [#38152649164](https://github.com/tommylin15/omniAgent/actions/runs/38152649164), and
+  [#38152820347](https://github.com/tommylin15/omniAgent/actions/runs/38152820347)
+  confirm the exact OAuth-backed Owner exists and owner-scoped FK/event linkage
+  is intact, but the existing trial budget remains **0/3 consumed**, and the
+  canonical `omniagent_chat` database contains **zero new threads / turns for
+  that Owner since 2026-10-11 12:55 UTC** (any runtime/model).
+- Exact trial tag still exists with 0% formal traffic. Cloud Logging request
+  metadata lookup is **UNAVAILABLE** under current CI access. No raw message,
+  ID, OAuth token, or Secret is in the receipts; no additional provider calls
+  or DB changes were made by the audit.
+- **Persistence/SSE and authenticated Owner B denial: NOT VERIFIED**. A real
+  UI reply is not sufficient evidence of this PostgreSQL path. **Formal P0
+  application promotion: BLOCKED** until end-to-end request routing and
+  durable readback reconcile. Static ownership constraints alone are not a
+  second real Owner login. Earlier code-only releases are historical, not this
+  release. Do not reset the 3-turn budget or enable production dispatch/BYOK.
+
+
 ### 2026-10-10 Gemini Chat Owner policy — Flash-Lite only
 
 - Owner decision: Gemini Chat/UI and the signed Gateway dispatch entrypoint allow

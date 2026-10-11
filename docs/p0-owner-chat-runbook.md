@@ -231,3 +231,19 @@ historical checkpoints, not current runtime evidence.
 - Production promotion is a separate authorization and runtime gate. The
   existing code-only GHCR release **keeps dispatch and BYOK disabled**; even a
   successful traffic change must not be called live production Codex acceptance.
+
+
+### 2026-10-11 post-Owner-A audit checkpoint — not yet accepted
+
+- GitHub read-only evidence run #38152820347: canonical `omniagent_chat`
+  Owner identity and owner-keyed referential integrity PASS, trial budget
+  consumed 0/3, fresh Owner threads 0 and turns 0 after original trial staging.
+- User-observed live reply and database output **do not yet reconcile**.
+  Cloud Run trial route still exists as a 0% tagged candidate. Cloud Logging
+  request-metadata read was unavailable with current CI identity; never
+  interpret this as zero HTTP calls.
+- Do not promote this to production application DONE, claim an authenticated
+  second Owner denial, or reset/extend the trial. Next evidence: browser's
+  actual trial URL/API request target → new Owner thread/turn readback →
+  terminal and text events → separate Owner B negative → authorized release.
+- No production traffic or Secret version was changed by these audits.
