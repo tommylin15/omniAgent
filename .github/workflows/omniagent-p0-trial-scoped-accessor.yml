@@ -1,0 +1,29 @@
+name: omniAgent P0 scoped Codex trial Secret accessor
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'infra/gcp/p0-trial-scoped-secret-accessor.sh'
+      - '.github/workflows/omniagent-p0-trial-scoped-accessor.yml'
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  scoped-accessor:
+    if: github.repository == 'tommylin15/omniAgent' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+          service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Grant ONLY native Gateway runtime read-only Secret access
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash infra/gcp/p0-trial-scoped-secret-accessor.sh | tee "$RUNNER_TEMP/trial-secret-accessor.txt"
+          grep -qx 'trial_secret_accessor=PASS_SCOPED_READONLY' "$RUNNER_TEMP/trial-secret-accessor.txt"
+          cat "$RUNNER_TEMP/trial-secret-accessor.txt" >> "$GITHUB_STEP_SUMMARY"
