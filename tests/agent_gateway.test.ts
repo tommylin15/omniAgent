@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -155,6 +156,22 @@ describe("agent gateway cloud runtime POC", () => {
     }));
     expect(registry.auth("00000000-0000-4000-8000-000000000002")).toEqual({ resource: "projects/p/secrets/codex-auth-b" });
     expect(() => registry.auth("00000000-0000-4000-8000-000000000003")).toThrow("allowlisted");
+  });
+
+  it("isolates the native Chat trial from rotating shared Codex owner credentials", () => {
+    // Regression guard: native turn:start has a dedicated read-only Owner
+    // binding. Owner login/status/logout can neither use it nor rotate it.
+    const serverSource=readFileSync("services/agent-gateway/server.ts","utf8");
+    const registry=serverSource.split("export class CodexTurnRegistry")[1]
+      .split("async function dispatchCodexTurn")[0];
+    expect(registry).toContain("CODEX_CHAT_TRIAL_OWNER_SECRETS");
+    expect(registry).not.toContain('process.env.CODEX_OWNER_SECRETS');
+    expect(registry).toContain(".load(home)");
+    expect(registry).not.toContain(".persist(");
+    expect(registry).not.toContain(".destroy(");
+    const login=serverSource.split("export class OwnerSessionRegistry")[1]
+      .split("export class CodexTurnRegistry")[0];
+    expect(login).not.toContain("CODEX_CHAT_TRIAL_OWNER_SECRETS");
   });
 
   it("keeps owner auth entries separate inside a shared bundle", async () => {

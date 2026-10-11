@@ -120,6 +120,46 @@ the same exact deployed SHA before reporting acceptance. A provider
 cost cap cannot be asserted merely from turn count; actual billing
 remains under the provider's account/quota rules.
 
+## A1 shared Codex source — isolated and read-only (2026-10-11)
+
+The Owner confirms that the existing
+`projects/gen-lang-client-0593591102/secrets/omniagent-shared-codex-auth`
+belongs to their own Codex/ChatGPT account. This authorizes using it as a
+**read-only authentication source for no more than 3 native Codex turns**;
+it does not authorize changing this Secret, destroying versions, logging its
+payload, or expanding access to other Owners.
+
+The Gateway's native `turn:start` path must resolve
+`CODEX_CHAT_TRIAL_OWNER_SECRETS` (a distinct mapping, keyed by the Owner's
+verified UUID from `GET /v1/me`). It performs `ManagedAuthStore.load()`
+only, into a disposable sandbox with 0600 permissions, never
+`persist()/destroy()`. The regular `CODEX_OWNER_SECRETS` login/logout
+lifecycle is deliberately **not enabled** by this mapping. Grant the
+Gateway execution service account **only**
+`roles/secretmanager.secretAccessor` on this one existing Secret,
+after verifying the exact GCP service-account identity; never add
+Secret Manager version-editor permissions for this trial. The existing
+Shared Codex service remains unaffected in Secret Manager.
+
+Important: copying or reading OAuth refresh credentials in two running
+sessions can cause provider-side refresh conflicts even if GCP Secret
+versions are not changed. Verify existing Shared Codex behavior before
+and after the bounded trial, and stop if a refresh/re-auth error appears.
+The shared credential's integrity is not demonstrated by a successful
+read-only IAM check alone.
+
+Owner identity must come from a real logged-in Chat browser. Chat's
+authenticated `GET /v1/me` returns the DB-backed Owner UUID; the UI offers
+"複製 Owner ID" only after that endpoint succeeds. No guessed UUID, personal
+email or GitHub account can substitute. The user need only supply their
+Owner UUID once; do not request an ID token, API key, raw `auth.json`,
+Google password or session cookie.
+
+Current status of A1 **before authenticated Owner ID is supplied**:
+CODEX trial source approved by user; actual Owner mapping, IAM grant,
+provider session and 3 real turn readback are **NOT VERIFIED**. Trial usage
+remains **0/3** because no real turn was started.
+
 ## One consolidated acceptance
 
 - Same-SHA Node/PG integration, Flutter analyze/test/build and signed

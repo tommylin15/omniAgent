@@ -7,6 +7,17 @@ import 'package:omniagent_app/chat_api.dart';
 import 'package:omniagent_app/chat_page.dart';
 import 'package:omniagent_app/main.dart';
 
+class AuthenticatedOwnerChatApi extends FakeChatApi {
+  @override
+  Future<dynamic> get(String path) async {
+    if (path == '/v1/me') {
+      return {'ownerId':'00000000-0000-4000-8000-000000000001',
+        'modelDispatchEnabled':false,'byokManagementEnabled':false};
+    }
+    return super.get(path);
+  }
+}
+
 class RestrictedChatApi extends ChatApi {
   RestrictedChatApi() : super('test');
   final writes = <String>[];
@@ -355,6 +366,23 @@ void main() {
     await tester.pumpAndSettle();
     expect(api.writes.any((row)=>'${row['path']}'.endsWith('/cancel')),isTrue);
     expect(find.text('正在等待核准決策'),findsNothing);
+  });
+
+  testWidgets('copy Owner ID appears only after verified backend identity',
+      (tester) async {
+    final api=AuthenticatedOwnerChatApi();
+    await tester.pumpWidget(MaterialApp(home: ChatPage(api)));
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('複製 Owner ID'),findsOneWidget);
+    await tester.tap(find.byTooltip('複製 Owner ID'));
+    await tester.pump();
+    expect(find.text('已複製此登入帳號的 Owner ID'),findsOneWidget);
+
+    final other=FakeChatApi();
+    await tester.pumpWidget(MaterialApp(
+      home:ChatPage(other,key:ObjectKey(other))));
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('複製 Owner ID'),findsNothing);
   });
 
   testWidgets('unentitled Owner sees disabled model creation', (tester) async {

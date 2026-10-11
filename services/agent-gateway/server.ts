@@ -456,7 +456,11 @@ export class CodexTurnRegistry {
       throw new Error("codex turn messages are invalid");
     }
     if (continuation.runtime !== undefined && continuation.runtime !== "codex") throw new Error("codex continuation runtime is invalid");
-    const auth = OwnerAuthRegistry.parse(process.env.CODEX_OWNER_SECRETS || "").auth(ownerId);
+    // Native Codex Chat trial has a distinct, read-only auth scope. The
+    // separate Owner login/logout APIs must not be able to rotate or delete
+    // the source shared Codex Secret used for this bounded experiment.
+    const auth = OwnerAuthRegistry.parse(
+      process.env.CODEX_CHAT_TRIAL_OWNER_SECRETS || "").auth(ownerId);
     const root = await mkdtemp(join(process.env.SANDBOX_ROOT || tmpdir(), "chat-turn-"));
     const home = join(root, "codex-home");
     const workspace = join(root, "workspace");
