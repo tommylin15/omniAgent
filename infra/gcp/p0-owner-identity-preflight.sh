@@ -82,5 +82,22 @@ sa=spec.get("serviceAccountName","")
 if not sa.startswith("omniagent-") or not sa.endswith("@gen-lang-client-0593591102.iam.gserviceaccount.com"):
     raise SystemExit("gateway_runtime_identity=BLOCKED_UNRECOGNIZED_ACCOUNT")
 print("gateway_runtime_identity=VERIFIED_OMNIAGENT_SCOPED")
-print("shared_secret_iam_access=NOT_VERIFIED")  # IAM grant deliberately not attempted.
+# Standard service account email, not an Owner identity or credential.
+print("gateway_service_account="+sa)
 PY
+# A service-scoped explicit accessor binding is required for Chat trial.
+# This lookup reads only IAM metadata and never accesses Secret versions.
+if gcloud secrets get-iam-policy "$SHARED_SECRET" --project="$PROJECT"        --format=json > "$work/secret-iam.json" 2>/dev/null; then
+  python3 - "$work/gateway.json" "$work/secret-iam.json" <<'PY'
+import json,sys
+service,policy=(json.load(open(p)) for p in sys.argv[1:])
+sa=(((service.get("spec") or {}).get("template") or {}).get("spec") or {}).get("serviceAccountName")
+member="serviceAccount:"+str(sa)
+binding=[entry for entry in policy.get("bindings",[]) if
+         entry.get("role")=="roles/secretmanager.secretAccessor" and
+         member in entry.get("members",[]) and not entry.get("condition")]
+print("shared_secret_iam_access="+("VERIFIED_DIRECT_ACCESSOR" if binding else "MISSING_DIRECT_ACCESSOR"))
+PY
+else
+  echo 'shared_secret_iam_access=NOT_VERIFIED_GET_IAM_POLICY_DENIED'
+fi

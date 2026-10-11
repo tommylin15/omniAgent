@@ -11,6 +11,8 @@ class OwnerIdentityPreflight(unittest.TestCase):
         self.assertIn("omniagent_chat",sh)
         self.assertIn("omni_chat.owners",sh)
         self.assertIn("owner_identity=PASS_DB_BACKED_OAUTH_OWNER",sh)
+        self.assertIn("gcloud secrets get-iam-policy",sh)
+        self.assertNotIn("gcloud secrets add-iam-policy-binding",sh)
         for forbidden in ("INSERT INTO","UPDATE omni_chat","CREATE ROLE","secretAccessor","add-iam-policy-binding",
                           "gcloud run deploy", "gcloud secrets versions access", ":access","gcloud secrets versions destroy"):
             self.assertNotIn(forbidden,sh)
