@@ -1,5 +1,10 @@
 # omniAgent SPEC
 
+### 2026-10-12 OAuth acceptance override
+
+Human Google browser sign-in, A→B→A account switching and manual Preview login are no longer release prerequisites (NOT_REQUIRED, not PASS). All feasible automated JWT issuer/audience/subject, OAuth Client/origin, IAM/HMAC, negative auth and cross-owner isolation tests remain mandatory. If legitimate real-user OAuth token automation is unavailable, label that scope NOT_VERIFIED_AUTOMATION_UNAVAILABLE; do not ask for human sign-in. Durable Chat/DB, provider, security and deployment gates remain independent. See [OAuth policy](../docs/oauth-automated-acceptance-policy.md).
+
+
 > Source update 2026-10-10: FR-013 now has staged BYOK metadata/vault API
 > code and migration 003 (see docs/credential-resolver.md), but Gateway
 > resolver, rotation, approved IAM/Secret Manager deployment and real Owner
