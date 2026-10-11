@@ -375,7 +375,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byTooltip('複製 Owner ID'),findsOneWidget);
     await tester.tap(find.byTooltip('複製 Owner ID'));
-    await tester.pump();
+    // Clipboard platform-channel completion posts the SnackBar asynchronously.
+    await tester.pumpAndSettle();
     expect(find.text('已複製此登入帳號的 Owner ID'),findsOneWidget);
 
     final other=FakeChatApi();
