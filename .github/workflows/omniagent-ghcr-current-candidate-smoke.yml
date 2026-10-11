@@ -178,7 +178,9 @@ jobs:
           PY
           done
           echo "formal_traffic_preserved=PASS"
-          echo "human_oauth_and_live_chat_gateway_provider_acceptance=OPEN"
+          echo "manual_oauth_gate=NOT_REQUIRED"
+          echo "automated_oauth_owner_negative=NOT_VERIFIED_BY_THIS_SMOKE"
+          echo "live_chat_gateway_provider_acceptance=OPEN"
           echo "promotion_and_rollback=NOT_AUTHORIZED_BY_THIS_READ_ONLY_WORKFLOW"
 # No Preview mutation until the separate final acceptance enables it.
       - name: Preview publication staged and disabled
