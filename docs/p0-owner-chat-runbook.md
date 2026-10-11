@@ -1,5 +1,10 @@
 # P0 Owner Chat — implementation and single acceptance gate
 
+## 2026-10-12 OAuth 人工驗收不再要求
+
+Owner 不再需要真人登入 Google、A→B→A 帳號切換、開啟 trial 或 Preview 網址做 OAuth 驗收（NOT_REQUIRED，非 PASS）。保留所有可由 CI/GCP 完成的 OAuth 身分、JWT、IAM/HMAC、DB Owner 綁定與跨 Owner 安全負向測試。若無合法的自動化真人 Google user token，該項明記 NOT_VERIFIED_AUTOMATION_UNAVAILABLE，不再請 Owner 人工補驗。先前 Owner A 的畫面回覆與 PostgreSQL 0/3、無新資料的衝突仍未通過驗收；不得藉此政策豁免。詳見 [政策](oauth-automated-acceptance-policy.md)。
+
+
 **Scope:** Chat Owner model entitlements, Gemini Flash-Lite allowlist,
 Codex native turn start / approval / cancel / refresh, PostgreSQL replay,
 Flutter state / A-B isolation, and one-shot release authorization behavior.
