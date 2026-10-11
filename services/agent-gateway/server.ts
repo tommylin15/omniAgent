@@ -472,7 +472,9 @@ export class CodexTurnRegistry {
       client.start();
       const bridge = new CodexBridge(ownerId, workspace, client, mcp);
       client.onFailure(() => bridge.processError());
-      await bridge.initialize();
+      // The trial reuses an existing shared login Secret read-only.
+      // Do not proactively rotate its refresh token via account/read.
+      await bridge.initialize(undefined, { refreshToken: false });
       let nativeThread = typeof continuation.codexThreadId === "string" ? continuation.codexThreadId : "";
       if (!nativeThread) {
         const started = object(await bridge.startThread(model));
