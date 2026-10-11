@@ -167,6 +167,7 @@ describe("agent gateway cloud runtime POC", () => {
     expect(registry).toContain("CODEX_CHAT_TRIAL_OWNER_SECRETS");
     expect(registry).not.toContain('process.env.CODEX_OWNER_SECRETS');
     expect(registry).toContain(".load(home)");
+    expect(registry).toContain("bridge.initialize(undefined, { refreshToken: false })");
     expect(registry).not.toContain(".persist(");
     expect(registry).not.toContain(".destroy(");
     const login=serverSource.split("export class OwnerSessionRegistry")[1]
