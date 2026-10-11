@@ -85,6 +85,41 @@ provider readback, production application P0 is **NOT VERIFIED**.
   human authorization are verified. Do not create credentials in the repo,
   Chat messages or Artifact receipts.
 
+## Owner authorized 3-turn live Codex trial (2026-10-11)
+
+The Owner selected option A: **real Codex inference may use allowance or incur
+charges, for their own verified Owner only, at most three native turns**.
+This is an *authorization*, not a claim that credentials or billing are ready.
+
+The hard cap is enforced transactionally by
+`omni_chat.codex_trial_budgets` (migration 005). Every successful
+QUEUED→RUNNING Codex claim atomically consumes one allowance **before**
+Gateway/provider invocation. Failures and cancellations still consume the
+allowance; no automatic refunds, resets or retries. Concurrent claims
+cannot exceed three; missing/expired budget rows deny execution.
+The migration itself grants zero users any turns. A valid budget row must
+be enrolled once for the Owner UUID read from the *authenticated*
+`GET /v1/me`, with `max_turns=3` and expiry within 24 hours of approval.
+Never infer identity from GitHub usernames, emails, screenshots or a client
+request body. Explicit Owner enrolment must be audited in the
+`omniagent_chat` database. Do not change another Owner's grant.
+
+Codex credential provisioning is a separate mandatory prerequisite:
+verify an existing Owner-specific Secret Manager `auth.json` source
+or have the Owner complete official Codex sign-in. Do not export credentials
+to this chat, Drive documents, GitHub Secrets, logs or PRs. The current
+candidate runtime inventory detected zero approved Owners,
+`CODEX_OWNER_SECRETS` absent, dispatch disabled and signed route
+unconfigured. No actual provider call has been made in this trial.
+
+The Owner can use the model at most three times **in total**, across
+browser reloads, threads and deployment revisions, not three times per
+session or instance. Run a second Owner denial, PostgreSQL count readback,
+streamed answer, approval/decline/cancel, and reconnect checks against
+the same exact deployed SHA before reporting acceptance. A provider
+cost cap cannot be asserted merely from turn count; actual billing
+remains under the provider's account/quota rules.
+
 ## One consolidated acceptance
 
 - Same-SHA Node/PG integration, Flutter analyze/test/build and signed

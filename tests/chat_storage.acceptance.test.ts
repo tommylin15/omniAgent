@@ -21,7 +21,7 @@ describe.runIf(Boolean(dsn))("isolated PostgreSQL ChatStore acceptance", () => {
     try {
       expect((await pool.query("SELECT current_database() AS name")).rows[0].name).toBe("omniagent_acceptance");
       expect((await pool.query("SELECT to_regclass('omni_chat.owners') AS present")).rows[0].present).toBeNull();
-      for (const filename of ["001_chat_ownership.sql", "002_skill_storage.sql", "003_credential_metadata.sql", "004_codex_live_turns.sql"]) {
+      for (const filename of ["001_chat_ownership.sql", "002_skill_storage.sql", "003_credential_metadata.sql", "004_codex_live_turns.sql", "005_codex_trial_3_turn_budget.sql"]) {
         const sql = readFileSync("infra/postgres/migrations/" + filename,"utf8");
         await pool.query(sql);
         await pool.query(sql);
@@ -349,6 +349,11 @@ describe.runIf(Boolean(dsn))("isolated PostgreSQL ChatStore acceptance", () => {
       // No provider process or credentials are launched by this fixture.
       const native=new CodexSessionStore(pool);
       await native.ready();
+      // A Codex native turn is impossible without an explicitly enrolled
+      // Owner trial row. This fixture authorizes only b for three starts.
+      await pool.query(
+        `INSERT INTO omni_chat.codex_trial_budgets(owner_id,max_turns,expires_at)
+         VALUES($1,3,now()+interval '60 minutes')`,[b]);
       await store.createThread(b,{threadId:"native-approval",runtime:"codex",
         model:"gpt-6-luna",assistantProfile:"default"},"native-create");
       const pendingNative=await store.message(b,"native-approval","Codex mocked approval","native-message");
@@ -428,6 +433,48 @@ describe.runIf(Boolean(dsn))("isolated PostgreSQL ChatStore acceptance", () => {
       expect((await pool.query(
         "SELECT status FROM omni_chat.turns WHERE owner_id=$1 AND thread_id=$2 AND turn_id=$3",
         [b,"native-cancel",cancelTurn])).rows[0].status).toBe("CANCELLED");
+      // A declined/failed/cancelled Codex run is still one spent allowance.
+      expect((await pool.query(
+        "SELECT consumed_turns FROM omni_chat.codex_trial_budgets WHERE owner_id=$1",
+        [b])).rows[0].consumed_turns).toBe(2);
+      await store.createThread(b,{threadId:"trial-three",runtime:"codex",
+        model:"test-codex",assistantProfile:"default"},"trial-three-create");
+      const third=await store.message(b,"trial-three","third bounded attempt","trial-three-msg");
+      await store.createThread(b,{threadId:"trial-four",runtime:"codex",
+        model:"test-codex",assistantProfile:"default"},"trial-four-create");
+      const fourth=await store.message(b,"trial-four","fourth forbidden attempt","trial-four-msg");
+      const thirdTarget={ownerId:b,threadId:"trial-three",turnId:String(third.turn.turn_id)};
+      const fourthTarget={ownerId:b,threadId:"trial-four",turnId:String(fourth.turn.turn_id)};
+      const racing=await Promise.allSettled([
+        store.claimNextQueuedTurn([b],thirdTarget),
+        store.claimNextQueuedTurn([b],fourthTarget)
+      ]);
+      expect(racing.filter(result=>result.status==="fulfilled")).toHaveLength(1);
+      expect(racing.filter(result=>result.status==="rejected")).toHaveLength(1);
+      const winner = racing.find(result=>result.status==="fulfilled");
+      expect(winner?.status==="fulfilled" && winner.value?.ownerId).toBe(b);
+      expect((await pool.query(
+        "SELECT consumed_turns,max_turns FROM omni_chat.codex_trial_budgets WHERE owner_id=$1",
+        [b])).rows[0]).toMatchObject({consumed_turns:3,max_turns:3});
+      // The rejected turn remains QUEUED and continues to be denied.
+      const deniedTarget = racing[0].status==="rejected"?thirdTarget:fourthTarget;
+      await expect(store.claimNextQueuedTurn([b],deniedTarget))
+        .rejects.toBeInstanceOf(ChatConflict);
+      expect((await pool.query(
+        "SELECT count(*)::int AS count FROM omni_chat.turns WHERE owner_id=$1 AND thread_id IN ('trial-three','trial-four') AND status='RUNNING'",
+        [b])).rows[0].count).toBe(1);
+      expect((await pool.query(
+        "SELECT count(*)::int AS count FROM omni_chat.turns WHERE owner_id=$1 AND thread_id IN ('trial-three','trial-four') AND status='QUEUED'",
+        [b])).rows[0].count).toBe(1);
+      await store.createThread(a,{threadId:"trial-foreign",runtime:"codex",
+        model:"test-codex",assistantProfile:"default"},"trial-foreign-create");
+      const foreign=await store.message(a,"trial-foreign","owner without trial","trial-foreign-msg");
+      await expect(store.claimNextQueuedTurn([a],{ownerId:a,
+        threadId:"trial-foreign",turnId:String(foreign.turn.turn_id)}))
+        .rejects.toBeInstanceOf(ChatConflict);
+      expect((await pool.query(
+        "SELECT count(*)::int AS count FROM omni_chat.codex_trial_budgets",
+        [])).rows[0].count).toBe(1);
     } finally { await pool.end(); }
   },60_000);
 });

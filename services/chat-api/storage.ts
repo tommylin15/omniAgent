@@ -262,6 +262,21 @@ export class ChatStore {
       if (typeof content !== "string" || !content.trim() || content.length > 50_000) {
         throw new Error("queued message is invalid");
       }
+      if (selected.runtime === "codex") {
+        // Owner-scoped hard cap: exactly three attempted native starts, not
+        // three successful replies. No row == no Codex permission.
+        // UPDATE takes the budget row lock and serializes concurrent claims.
+        // An uncertain provider attempt never refunds a consumed allowance.
+        const budget = await client.query(
+          `UPDATE omni_chat.codex_trial_budgets
+           SET consumed_turns=consumed_turns+1
+           WHERE owner_id=$1 AND expires_at>now()
+             AND consumed_turns<max_turns AND max_turns=3
+           RETURNING consumed_turns`,
+          [selected.owner_id]);
+        if (budget.rowCount !== 1)
+          throw new ChatConflict("Codex Owner trial is missing, expired or exhausted");
+      }
       const updated = (await client.query(
         `UPDATE omni_chat.turns SET status='RUNNING'
          WHERE owner_id=$1 AND thread_id=$2 AND turn_id=$3 AND status='QUEUED'
