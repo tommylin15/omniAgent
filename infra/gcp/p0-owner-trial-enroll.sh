@@ -19,6 +19,7 @@ role=omniagent_chat_app
 container="$(printf '%s' 'amFudXMtcG9zdGdyZXM=' | base64 -d)"
 expected='bd46f8f29ba78faaa606f03d6a760c1726ce27a7cd75381d5c04b9525861f70f'
 trap 'sudo rm -f /tmp/omniagent-p0-trial-enroll.sh' EXIT
+trap 'echo trial_enrollment=BLOCKED_REMOTE_EXECUTION' ERR
 pg() { sudo docker exec -u postgres "$container" psql -X -A -t -v ON_ERROR_STOP=1 "$@"; }
 test "$(pg -d postgres -c "SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname='$db'")" = "$role" || {
   echo 'trial_enrollment=BLOCKED_WRONG_DATABASE'
@@ -48,7 +49,7 @@ fi
   printf ' ON CONFLICT(owner_id) DO NOTHING;\n'
 } | sudo docker exec -i -u postgres "$container" psql -X -q -v ON_ERROR_STOP=1 --single-transaction -d "$db" >/dev/null
 state="$(pg -d "$db" -c "SELECT consumed_turns::text || ':' || max_turns::text || ':' || (expires_at>now())::text FROM omni_chat.codex_trial_budgets WHERE owner_id='$owner'")"
-[[ "$state" =~ ^[0-3]:3:t$ ]] || { echo 'trial_enrollment=BLOCKED_BUDGET'; exit 1; }
+[[ "$state" =~ ^[0-3]:3:(t|true)$ ]] || { echo 'trial_enrollment=BLOCKED_BUDGET'; exit 1; }
 echo 'trial_enrollment=PASS_NO_RESET'
 echo "trial_budget_used=$(printf '%s' "$state" | cut -d: -f1)"
 echo 'trial_budget_max=3'
