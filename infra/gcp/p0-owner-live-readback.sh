@@ -47,6 +47,13 @@ identified AS (
 budget AS (
   SELECT b.* FROM omni_chat.codex_trial_budgets b JOIN identified o USING(owner_id)
 ),
+recent_all AS (
+  SELECT t.owner_id,t.thread_id,t.turn_id,t.status,th.runtime,th.model
+  FROM omni_chat.turns t
+  JOIN omni_chat.threads th ON th.owner_id=t.owner_id AND th.thread_id=t.thread_id
+  JOIN identified o ON o.owner_id=t.owner_id
+  WHERE t.created_at >= timestamptz '2026-10-11T12:55:00Z'
+),
 eligible AS (
   SELECT t.owner_id,t.thread_id,t.turn_id,t.status
   FROM omni_chat.turns t
@@ -101,13 +108,28 @@ UNION ALL SELECT 'p0_owner_budget_usage=' ||
 UNION ALL SELECT 'p0_owner_recent_turns=' ||
   CASE WHEN (SELECT count(*) FROM eligible)=0 THEN 'ZERO'
        WHEN (SELECT count(*) FROM eligible) BETWEEN 1 AND 3 THEN 'ONE_TO_THREE'
-       ELSE 'MANY' END;
+       ELSE 'MANY' END
+UNION ALL SELECT 'p0_owner_recent_any_runtime=' ||
+  CASE WHEN (SELECT count(*) FROM recent_all)=0 THEN 'ZERO'
+       WHEN (SELECT count(*) FROM recent_all) BETWEEN 1 AND 3 THEN 'ONE_TO_THREE'
+       ELSE 'MANY' END
+UNION ALL SELECT 'p0_owner_recent_codex_any_model=' ||
+  CASE WHEN (SELECT count(*) FROM recent_all WHERE runtime='codex')=0 THEN 'ZERO'
+       WHEN (SELECT count(*) FROM recent_all WHERE runtime='codex') BETWEEN 1 AND 3
+         THEN 'ONE_TO_THREE' ELSE 'MANY' END
+UNION ALL SELECT 'p0_owner_recent_non_codex=' ||
+  CASE WHEN (SELECT count(*) FROM recent_all WHERE runtime<>'codex')=0
+    THEN 'ZERO' ELSE 'PRESENT' END
+UNION ALL SELECT 'p0_owner_recent_thread_created=' ||
+  CASE WHEN EXISTS (SELECT 1 FROM omni_chat.threads th JOIN identified o USING(owner_id)
+                   WHERE th.created_at >= timestamptz '2026-10-11T12:55:00Z')
+    THEN 'PRESENT' ELSE 'ZERO' END;
 ROLLBACK;
 SQL
 )"
 # Emit finite, fixed classifications only. Do not print SQL, IDs or payloads.
-for category in p0_owner_budget_usage p0_owner_recent_turns; do
-  value="$(printf '%s\n' "$result" | grep -E "^$category=(ZERO|ONE|TWO|THREE|MISSING_OR_INVALID|ONE_TO_THREE|MANY)$" || :)"
+for category in p0_owner_budget_usage p0_owner_recent_turns p0_owner_recent_any_runtime p0_owner_recent_codex_any_model p0_owner_recent_non_codex p0_owner_recent_thread_created; do
+  value="$(printf '%s\n' "$result" | grep -E "^$category=(ZERO|ONE|TWO|THREE|MISSING_OR_INVALID|ONE_TO_THREE|MANY|PRESENT)$" || :)"
   if [[ -n "$value" ]]; then printf '%s\n' "$value"; else printf '%s=UNAVAILABLE\n' "$category"; fi
 done
 blocked=0
