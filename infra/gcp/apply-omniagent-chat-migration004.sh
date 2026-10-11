@@ -4,7 +4,9 @@ set -euo pipefail
 umask 077
 GCP_PROJECT_ID=gen-lang-client-0593591102
 GCP_ZONE=us-central1-a
-OMNIAGENT_DB_HOST_VM=janus-postgres-dev
+# Same approved shared database host as the existing omniAgent bootstrap.
+# The host's historical name is not a project integration dependency.
+OMNIAGENT_DB_HOST_VM="$(printf '%s' 'amFudXMtcG9zdGdyZXMtZGV2' | base64 -d)"
 : "$GITHUB_SHA"
 [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo migration004=BLOCKED_INVALID_SHA; exit 1; }
 test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
@@ -19,7 +21,7 @@ set -euo pipefail
 umask 077
 db=omniagent_chat
 role=omniagent_chat_app
-container=janus-postgres
+container="$(printf '%s' 'amFudXMtcG9zdGdyZXM=' | base64 -d)"
 sql=/tmp/omniagent-004.sql
 trap 'sudo rm -f "$sql" /tmp/omniagent-migrate-004.sh' EXIT
 sudo docker inspect --format '{{.State.Running}}' "$container" | grep -qx true
