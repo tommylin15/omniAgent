@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:omniagent_app/auth_session.dart';
 import 'package:omniagent_app/chat_api.dart';
@@ -374,10 +375,20 @@ void main() {
     await tester.pumpWidget(MaterialApp(home: ChatPage(api)));
     await tester.pumpAndSettle();
     expect(find.byTooltip('複製 Owner ID'),findsOneWidget);
+    final copied=<String>[];
+    final messenger=TestDefaultBinaryMessengerBinding
+        .instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'Clipboard.setData') {
+        copied.add((call.arguments as Map)['text'] as String);
+      }
+      return null;
+    });
+    addTearDown(() => messenger.setMockMethodCallHandler(
+        SystemChannels.platform, null));
     await tester.tap(find.byTooltip('複製 Owner ID'));
-    // Clipboard platform-channel completion posts the SnackBar asynchronously.
     await tester.pumpAndSettle();
-    expect(find.text('已複製此登入帳號的 Owner ID'),findsOneWidget);
+    expect(copied,['00000000-0000-4000-8000-000000000001']);
 
     final other=FakeChatApi();
     await tester.pumpWidget(MaterialApp(
