@@ -1,5 +1,10 @@
 # 2026-10-10 One-time, rollback-rehearsal-waived GHCR formal deployment
 
+## 2026-10-12 Owner policy: manual OAuth gate removed
+
+Human Google sign-in, A→B→A switch and manual Preview OAuth are NOT_REQUIRED for deployment; no need to prompt the Owner for these steps. Keep automatable JWT issuer/audience/subject, OAuth Client/origin configuration, anonymous rejection, IAM/HMAC and cross-owner negative security tests. A service-account ID token is not a human OAuth token; unautomatable real-user scope is NOT_VERIFIED_AUTOMATION_UNAVAILABLE, never synthetic PASS. Chat→Gateway/DB persistence, real Owner isolation, model authorization, CI/deployment and production readback are still independent gates. Older required-human steps below are superseded. See [policy](oauth-automated-acceptance-policy.md).
+
+
 ### 2026-10-10 12:04 Asia/Taipei — executed GHCR release and last-ten retention
 
 - Deployed application SHA: `d48865890038a8373d5abc27fb5da92dc511fc92`.
@@ -171,7 +176,7 @@ revision 可隨已驗證的候選發布更新；不必每次重新設定網址�
    發布的變更。恢復失敗或出現併發狀態不明，明確記錄 FAIL/BLOCKED，
    回報實際指向，停止後續发布，不得宣稱已回復。
 5. 正式發布仍須完成本 runbook 與 [acceptance](../doc/acceptance.md) 的
-   真人 OAuth／owner 隔離、持久化 Chat→Gateway provider 流程、Shared
+   自動 OAuth／Owner 隔離檢查、持久化 Chat→Gateway provider 流程、Shared
    真實呼叫、授權及正式 GHCR recovery drill 等既有門檻。preview 通過
    不是正式發布核准，也不是正式 rollback 驗收。
 
@@ -184,7 +189,7 @@ ID token；本次程式檢查未找到服務端 OAuth redirect callback 路由�
 依實際登入模式設定 authorized JavaScript origin；若採 redirect flow，必須
 確認並登錄實際完整 callback URI，不可臆造 `/oauth/callback`。
 既有 client、固定來源與 callback 路徑不變時，候選 revision 更換不需因此
-重設 OAuth；origin/client/callback 改變時才重新檢查設定與真人登入。
+重設 OAuth；origin/client/callback 改變時以自動設定與拒絕案例驗證，不要求真人登入。
 OAuth console 設定及本固定來源的真人登入尚未在本次文件工作中驗證。
 
 ### 實作與證據狀態（本次僅讀取本機工作樹）
@@ -197,7 +202,7 @@ OAuth console 設定及本固定來源的真人登入尚未在本次文件工作
 | 更新後失敗自動恢復 | **STAGED-CODE**：前版保存、受保護還原、讀回及明確失敗已實作；真實復原驗收 OPEN。 |
 | 發布間併發防護 | **STAGED-CODE**：candidate/smoke 共用 Actions concurrency group；外部 console 操作以重新讀回與 fail-closed 處理。 |
 | 完整每次發布紀錄 | **STAGED-CODE**：成功/失敗/恢復 JSON、Actions summary 與 90 日 artifact；真實產生結果待驗證。 |
-| 固定來源 OAuth／真人登入 | NOT VERIFIED：既有其他入口的登入證據不能直接視為本固定 preview 來源的驗收。 |
+| 固定來源 OAuth／自動驗收 | 人工登入 NOT_REQUIRED；Client/origin、JWT／匿名拒絕依實際自動證據判定，缺證據 NOT_VERIFIED。 |
 
 ### 每次發布紀錄
 
@@ -485,8 +490,8 @@ its Gateway Revision still referenced a destroyed Secret version. A
 GHCR tag or historical Ready flag without current viable runtime Secret
 dependencies is insufficient.
 
-**Promotion requirement remains unchanged:** verified live human two-owner
-browser OAuth, persisted provider/dispatcher paths, real Shared calls,
+**Current promotion requirement (2026-10-12):** automated OAuth/auth and
+Owner-bound negative isolation, persisted provider/dispatcher paths, real Shared calls,
 application authorization and cross-owner isolation must pass before
 traffic mutation. Once accepted, snapshot formal traffic for audit,
 require a full three-service new-GHCR fallback set, promote with bounded
@@ -499,7 +504,7 @@ hidden fallback, and never infer permission to bypass application gates.
 ## Acceptance → traffic promotion → rollback
 
 Mandatory real checks: Chat `/health=200`, DB-backed `/ready=200`,
-Flutter UI, protected API, human two-owner OAuth/isolation, durable
+Flutter UI, protected API, automated OAuth/auth and cross-owner isolation, durable
 Chat→Gateway dispatch and provider/approval/cancel/reconnect/replay, plus
 Shared Codex three authorized identities, real outputs, fresh-thread
 isolation and cross-project denials. Missing gates are BLOCKED, never
