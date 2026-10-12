@@ -1,5 +1,40 @@
 # P0 Owner Chat — implementation and single acceptance gate
 
+### 2026-10-12 11:06 Asia/Taipei — P0 durability receipt code-only release: VERIFIED
+
+- Actual deployed source SHA: `8c269be520e773d289c7cd1f76fde186f6505c09`.
+- Node/Python/PostgreSQL/Flutter exact-source quality & three GHCR images:
+  [#38197726030](https://github.com/tommylin15/omniAgent/actions/runs/38197726030) PASS.
+- Three Cloud Run immutable 0%-traffic candidates:
+  [#38197918045](https://github.com/tommylin15/omniAgent/actions/runs/38197918045) PASS.
+- Signed current-candidate smoke [#38198004938](https://github.com/tommylin15/omniAgent/actions/runs/38198004938) PASS.
+- Formal release and guarded protected-ten cleanup:
+  [#38198062058](https://github.com/tommylin15/omniAgent/actions/runs/38198062058)
+  **overall PASS**; promotion, cleanup, receipt and artifact all succeeded.
+- Independent GCP production readback:
+  [#38198404857](https://github.com/tommylin15/omniAgent/actions/runs/38198404857)
+  PASS: correct 100%-traffic Revision, immutable digest, Ready for all three;
+  public Chat health/ready/UI 200, /v1/me, /v1/models and new
+  /v1/threads/probe/turns/probe/receipt anonymous and invalid token 401.
+- Promoted revisions: Chat `omniagent-chat-00066-log`, Gateway
+  `omniagent-agent-gateway-00057-keb`, Shared `omniagent-shared-codex-00043-tiy`.
+- Durable receipt endpoint tests include actual disposable PostgreSQL data:
+  persisted text_delta + turn_completed + COMPLETED => durableCompleted true;
+  QUEUED/absent rows => false/404, and an authenticated foreign Owner => 404.
+  No message text, prompt, Secret, provider handle or native ID returned.
+- Flutter proof label appears only after terminal SSE and same-Owner
+  database receipt confirmation; failure remains UNVERIFIED. Flutter PASS:
+  [#38197423549](https://github.com/tommylin15/omniAgent/actions/runs/38197423549).
+- **Manual OAuth login NOT REQUIRED**; feasible automated IAM/HMAC/JWT
+  negatives retained. Genuine real Google user token E2E unavailable to
+  automation => NOT_VERIFIED_AUTOMATION_UNAVAILABLE, not fabricated PASS.
+- **P0 live Owner application persistence still BLOCKED**: historical user
+  Codex response cannot be matched with a DB turn (last evidence: 0/3
+  consumed, zero new threads/turns). Only new read-only evidence plumbing
+  and code-only production deployment are complete; no provider calls
+  or budget resets. Production dispatch/BYOK remain OFF.
+
+
 ### 2026-10-12 P0 durable answer proof — code-only release target
 
 - Owner-scoped GET `/v1/threads/{threadId}/turns/{turnId}/receipt`

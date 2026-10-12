@@ -1,5 +1,28 @@
 # 2026-10-10 Owner change: single integration / promotion / cleanup; rollback drill waived
 
+### 2026-10-12 Current P0 handoff — durability receipt deployed
+
+- [x] Real GHCR code-only deployment SHA `8c269be5` and three Cloud Run
+  formal 100%-traffic revisions PASS.
+- [x] Independent exact-image/Ready/100% production readback, anonymous
+  and invalid-token denials for Owner receipt endpoint PASS (#38198404857).
+- [x] Cross-Owner receipt negative and durable positive on disposable
+  PostgreSQL with nonbillable Gateway fixture in exact-SHA CI.
+- [x] Flutter only labels PostgreSQL persisted answer after read-only
+  receipt; missing DB proof never becomes PASS.
+- [ ] Owner A real Codex report vs canonical DB 0/3 and zero new turns still
+  needs root-cause correlation; do not demand manual Google OAuth validation.
+- [ ] True signed Google user token end-to-end if legitimate non-human
+  automation credentials become available; otherwise record
+  NOT_VERIFIED_AUTOMATION_UNAVAILABLE without blocking code-only release.
+- [ ] Owner B authenticated runtime isolation, provider SSE/reconnect/
+  approval/cancel and real persisted text acceptance; no extra Codex
+  calls or extensions without explicit bound.
+- [ ] Real provider enablement requires separate Owner permission and
+  entitlement/billing guards, and must not be inferred from successful
+  code-only release.
+
+
 ### 2026-10-12 P0 Owner durability next gate
 
 - [x] Owner-specific DB receipt API and cross-Owner HTTP/PG fixture tests
