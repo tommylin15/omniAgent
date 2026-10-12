@@ -1,5 +1,17 @@
 # 2026-10-10 Owner change: single integration / promotion / cleanup; rollback drill waived
 
+### 2026-10-12 — P0 Owner Chat 1→3 accepted scope and remaining gates
+
+- [x] **1 / Read-only historical evidence:** canonical Owner A DB 0/3 consumed, no new threads/turns, original trial tag still present (#38204839509). Logging/browser-origin evidence unavailable; **root cause remains UNDETERMINED**, do not fabricate closure.
+- [x] **1 / Forward instrumentation:** random response request ID, served Revision header, sanitized DB-commit/dispatch/reconciliation/SSE stage logging. The current session UI shows the request ID and clears it on account/thread switch. Real runtime header PASS (#38206616628).
+- [x] **2 / Automated, nonbillable A/B tests:** real disposable PostgreSQL + signed Gateway fixture tests, cross-Owner 404, idempotency, SSE resume, approval and cancellation. Exact-SHA quality PASS (#38205681718).
+- [x] **3 / Nonbillable simulated model persistence:** native Codex text and terminal persisted in disposable PostgreSQL, Owner-only durable receipt true; only confirmed DB evidence can mark UI persisted.
+- [x] **Technical production release:** Shared/Gateway/Chat new GHCR images, candidate, signed smoke, formal traffic and protected-ten cleanup PASS (#38206216152); independent GCP 100%/digest/Ready/trace header PASS (#38206616628). Dispatch/BYOK OFF.
+- [ ] **Real provider-to-DB P0:** requires newly observed, authorized real Owner reply with canonical PostgreSQL text and terminal, subject/Owner isolation and budget guard. The previous 0/3 historic trial is not retrospectively repaired; do not reset it or send unauthorized Codex turns.
+- [ ] **Real two-Google-Owner runtime denial:** no legitimate automated Owner B user-ID-token source is available; mark `NOT_VERIFIED_AUTOMATION_UNAVAILABLE` rather than restoring a human OAuth gate.
+- [ ] **Root-cause correlation of a future failure:** if it recurs, join the displayed random request ID with authorized server audit phases and an Owner-scoped DB receipt, without logging identity, prompts or tokens. Historical unique cause remains unknowable without missing evidence.
+
+
 ### 2026-10-12 Current P0 handoff — durability receipt deployed
 
 - [x] Real GHCR code-only deployment SHA `8c269be5` and three Cloud Run
