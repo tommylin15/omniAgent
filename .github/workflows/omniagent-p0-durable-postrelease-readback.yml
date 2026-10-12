@@ -1,0 +1,131 @@
+# One-shot read-only evidence for the already-promoted Owner durability-receipt release.
+# No Google login automation, provider invocation, Secret access, DB mutation or traffic changes.
+name: omniAgent P0 durable receipt postrelease readback
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/omniagent-p0-durable-postrelease-readback.yml'
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: omniagent-p0-durable-postrelease-readonly
+  cancel-in-progress: false
+jobs:
+  evidence:
+    if: github.repository == 'tommylin15/omniAgent' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    env:
+      PROJECT: gen-lang-client-0593591102
+      REGION: us-central1
+    steps:
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+          service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Read deployed exact-SHA revisions and protect all feature flags
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          for svc in omniagent-chat omniagent-agent-gateway omniagent-shared-codex; do
+            gcloud run services describe "$svc" --project="$PROJECT" --region="$REGION" --format=json \
+              > "$RUNNER_TEMP/$svc.service.json"
+          done
+          for revision in omniagent-chat-00066-log omniagent-agent-gateway-00057-keb omniagent-shared-codex-00043-tiy; do
+            gcloud run revisions describe "$revision" --project="$PROJECT" --region="$REGION" --format=json \
+              > "$RUNNER_TEMP/$revision.json"
+          done
+          python3 - "$RUNNER_TEMP" <<'PY'
+          import json,sys
+          from pathlib import Path
+          root=Path(sys.argv[1])
+          expected={
+            "omniagent-chat":("omniagent-chat-00066-log","sha256:9469da8aed3e33cc8e155b7a9ae5d19e536d32c41f68868581d2c2442d8a7d95"),
+            "omniagent-agent-gateway":("omniagent-agent-gateway-00057-keb","sha256:df82be48050cb631f8c6cfa7d7422e4a85eb58d6e39cc287e879e38186bb246d"),
+            "omniagent-shared-codex":("omniagent-shared-codex-00043-tiy","sha256:8161d852928e8fe20905dde0a46b36592ffa46469f5a8d8cfa1b6fe2a9f570f4"),
+          }
+          for svc,(name,digest) in expected.items():
+              service=json.loads((root/(svc+".service.json")).read_text())
+              revision=json.loads((root/(name+".json")).read_text())
+              status=service.get("status") or {}
+              serving=[r for r in status.get("traffic") or [] if r.get("percent",0)>0]
+              if len(serving)!=1 or serving[0].get("revisionName")!=name or serving[0].get("percent")!=100:
+                  raise SystemExit("BLOCKED: formal_traffic_"+svc)
+              if status.get("latestReadyRevisionName")!=name:
+                  raise SystemExit("BLOCKED: deployed_latest_ready_"+svc)
+              containers=(revision.get("spec") or {}).get("containers") or []
+              if len(containers)!=1 or not str(containers[0].get("image","")).endswith("@"+digest):
+                  raise SystemExit("BLOCKED: exact_image_"+svc)
+              conditions=(revision.get("status") or {}).get("conditions") or []
+              if not any(x.get("type")=="Ready" and x.get("status")=="True" for x in conditions):
+                  raise SystemExit("BLOCKED: ready_"+svc)
+              names={x.get("name"):x for x in containers[0].get("env") or []}
+              if svc=="omniagent-chat":
+                  for key in ("CHAT_DISPATCH_ENABLED","CHAT_BYOK_MANAGEMENT_ENABLED"):
+                      if (names.get(key) or {}).get("value")=="true" or (names.get(key) or {}).get("valueFrom"):
+                          raise SystemExit("BLOCKED: paid_feature_unapproved")
+                  if any(x in names for x in ("CHAT_DISPATCH_APPROVED_OWNER_IDS",
+                      "CHAT_DISPATCH_ENTITLEMENTS_JSON","CHAT_GATEWAY_URL","CHAT_GATEWAY_AUDIENCE")):
+                      raise SystemExit("BLOCKED: trial_mapping_in_production")
+              if svc=="omniagent-agent-gateway" and "CODEX_CHAT_TRIAL_OWNER_SECRETS" in names:
+                  raise SystemExit("BLOCKED: private_trial_map_in_production")
+              print("formal_traffic_100_"+svc+"=PASS")
+              print("immutable_revision_ready_"+svc+"=PASS")
+          print("production_dispatch_byok=OFF")
+          print("manual_oauth_gate=NOT_REQUIRED")
+          print("p0_durable_release_configuration=PASS")
+          PY
+      - name: Verify actual Chat health and automated anonymous/invalid Google token denial
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,urllib.request,urllib.error,subprocess
+          doc=json.loads(subprocess.run([
+              "gcloud","run","services","describe","omniagent-chat",
+              "--project=gen-lang-client-0593591102","--region=us-central1",
+              "--format=json"],capture_output=True,text=True,check=True,timeout=60).stdout)
+          origin=str((doc.get("status") or {}).get("url","")).rstrip("/")
+          if not origin.startswith("https://"):
+              raise SystemExit("BLOCKED: chat_origin_unavailable")
+          def status(path,header=None):
+              headers={"User-Agent":"omniagent-readonly-evidence/1"}
+              if header: headers["Authorization"]=header
+              req=urllib.request.Request(origin+path,headers=headers)
+              try:
+                  with urllib.request.urlopen(req,timeout=30) as response:
+                      return response.status
+              except urllib.error.HTTPError as exc:
+                  return exc.code
+          for path in ("/health","/ready","/"):
+              if status(path)!=200:
+                  raise SystemExit("BLOCKED: public_chat_health")
+          # Service/IAM ID tokens are NOT real user Google OAuth tokens.
+          # No human OAuth requirement, and no user content is accessed.
+          for path in ("/v1/models","/v1/me",
+            "/v1/threads/probe/turns/probe/receipt"):
+              if status(path)!=401 or status(path,"Bearer invalid-fixture")!=401:
+                  raise SystemExit("BLOCKED: authenticated_owner_boundary")
+          print("chat_health_ready_ui=PASS")
+          print("anonymous_and_invalid_user_oauth_denials=PASS")
+          print("p0_owner_receipt_auth_boundary=PASS")
+          print("real_google_user_token_e2e=NOT_VERIFIED_AUTOMATION_UNAVAILABLE")
+          print("model_inference_calls=ZERO")
+          PY
+      - name: Preserve independent readback summary
+        shell: bash
+        run: |
+          {
+            echo '### P0 Owner durability code-only formal release'
+            echo 'Promoted source SHA: 8c269be520e773d289c7cd1f76fde186f6505c09'
+            echo 'Three Cloud Run formal revisions: 100%, correct immutable GHCR digests, Ready'
+            echo 'Public Chat health/ready/UI and automated anonymous/invalid-token denials: PASS'
+            echo 'PostgreSQL receipt API: gated by verified user; payload-free by design'
+            echo 'Manual Google OAuth: NOT REQUIRED'
+            echo 'Actual authenticated Owner Codex persistence: STILL NOT VERIFIED'
+            echo 'Provider calls, traffic changes, DB mutations or budget reset in this job: NONE'
+          } >> "$GITHUB_STEP_SUMMARY"
