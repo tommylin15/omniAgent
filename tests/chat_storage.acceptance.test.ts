@@ -437,16 +437,28 @@ describe.runIf(Boolean(dsn))("isolated PostgreSQL ChatStore acceptance", () => {
         requestId:"17",paramsDigest:approvalDigest,approved:true})).rejects.toBeInstanceOf(ChatConflict);
       await native.record(parseCodexPhase({...nativeBinding,status:"COMPLETED",
         turnHandle:"native-hidden-handle",nativeThreadId:"native-thread",
-        nativeTurnId:"native-turn",cursor:2,events:[
+        nativeTurnId:"native-turn",cursor:3,events:[
           {seq:1,threadId:"native-thread",turnId:"native-turn",type:"approval_resolved",
             payload:{requestId:"17",decision:"accept"}},
-          {seq:2,threadId:"native-thread",turnId:"native-turn",type:"turn_completed",
+          {seq:2,threadId:"native-thread",turnId:"native-turn",type:"text_delta",
+            payload:{delta:"nonbillable native fixture"}},
+          {seq:3,threadId:"native-thread",turnId:"native-turn",type:"turn_completed",
             payload:{status:"completed"}}
         ]},nativeBinding),{requestId:"17",approved:true});
       expect((await pool.query(
         "SELECT status FROM omni_chat.turns WHERE owner_id=$1 AND thread_id=$2 AND turn_id=$3",
         [b,"native-approval",nativeTurn])).rows[0].status).toBe("COMPLETED");
       expect(await store.activeTurn(b,"native-approval")).toBeNull();
+       const nativeReceipt=await store.turnReceipt(b,"native-approval",nativeTurn);
+       expect(nativeReceipt).toEqual({status:"COMPLETED",textPersisted:true,
+         terminalPersisted:true,durableCompleted:true});
+       await expect(store.turnReceipt(a,"native-approval",nativeTurn))
+         .rejects.toBeInstanceOf(ChatNotFound);
+       const replayedNative=await store.events(b,"native-approval",0,200);
+       expect(replayedNative.map(row=>row.event_type))
+         .toEqual(["approval_request","approval_resolved","text_delta","turn_completed"]);
+       expect(JSON.stringify(nativeReceipt)).not.toContain("native-thread");
+       expect(JSON.stringify(nativeReceipt)).not.toContain("nonbillable native");
       expect((await pool.query(
         "SELECT status FROM omni_chat.approvals WHERE owner_id=$1 AND thread_id=$2 AND turn_id=$3",
         [b,"native-approval",nativeTurn])).rows[0].status).toBe("APPROVED");
