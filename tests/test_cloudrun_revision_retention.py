@@ -127,10 +127,34 @@ class RetainTenTest(unittest.TestCase):
         with self.assertRaisesRegex(MODULE.Blocked, "rollback_revision_not_available"):
             MODULE.select_plan(SERVICE, service, revisions[-1:], PROMOTED, ROLLBACK)
 
-    def test_rollback_outside_top_ten_blocks_cleanup(self):
+    def test_rollback_older_than_top_ten_remains_protected(self):
         service, revisions = snapshots()
-        with self.assertRaisesRegex(MODULE.Blocked, "rollback_revision_outside_latest_ten"):
-            MODULE.select_plan(SERVICE, service, revisions, PROMOTED, NAMES[0])
+        plan = MODULE.select_plan(SERVICE, service, revisions, PROMOTED, NAMES[0])
+        self.assertIn(NAMES[0], plan.keep)
+        self.assertIn(PROMOTED, plan.keep)
+        self.assertEqual(len(plan.keep), 10)
+        self.assertNotIn(NAMES[0], plan.delete)
+
+    def test_preview_and_trial_tags_remain_protected(self):
+        service, revisions = snapshots()
+        service["status"]["traffic"] += [
+            {"revisionName": NAMES[0], "percent": 0, "tag": "preview"},
+            {"revisionName": NAMES[1], "percent": 0, "tag": "p0-trial-0123456789ab"},
+        ]
+        plan = MODULE.select_plan(SERVICE, service, revisions, PROMOTED, ROLLBACK)
+        self.assertIn(NAMES[0], plan.keep)
+        self.assertIn(NAMES[1], plan.keep)
+        self.assertEqual(len(plan.keep), 10)
+
+    def test_too_many_protected_tags_fails_closed(self):
+        service, revisions = snapshots()
+        service["status"]["traffic"] += [
+            {"revisionName":name, "percent":0,
+             "tag":f"p0-trial-{i:012x}"}
+            for i,name in enumerate(NAMES[:10])
+        ]
+        with self.assertRaisesRegex(MODULE.Blocked, "more_than_ten_protected_revisions"):
+            MODULE.select_plan(SERVICE, service, revisions, PROMOTED, ROLLBACK)
 
     def test_duplicate_revision_blocks_cleanup(self):
         service, revisions = snapshots()

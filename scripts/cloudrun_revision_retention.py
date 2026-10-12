@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
-"""Fail-closed Cloud Run revision retention: keep the latest ten revisions.
+"""Fail-closed Cloud Run retention: keep ten incl protected GHCR and fixed tags.
 
-Only call --apply AFTER real candidate acceptance, promotion, rollback rehearsal
-and readback; normally through the release pipeline's last gated job.
+Only call --apply AFTER verified promotion and independent live readback.
+Preserve the approved GHCR fallback even when an older trial revision pushes it
+outside the chronologically newest ten; count stays at most ten. A rollback
+rehearsal is separately waived by this Owner. Never delete tagged Preview or
+Owner trial revisions in an automatic revision-retention run.
 Never touches GHCR images, Cloud Build, GCS, or Artifact Registry.
 """
 from __future__ import annotations
@@ -61,8 +64,9 @@ def select_plan(
     revisions_json: list,
     promoted: str,
     rollback: str,
+    *, allow_obsolete_tag_routes: bool = False,
 ) -> RetentionPlan:
-    """Return delete targets only if the newest ten preserve the live and rollback revisions."""
+    """Retain up to ten: protected live/fallback/Preview/trial first, then newest."""
     if service not in SERVICES:
         raise Blocked("unknown_service")
     promoted = _name(promoted, service)
@@ -88,14 +92,10 @@ def select_plan(
     if len(records) < 2:
         raise Blocked("rollback_revision_not_available")
     records.sort(reverse=True)
-    retained = tuple(name for _, name in records[:RETAIN_COUNT])
-    if retained[0] != promoted:
+    if records[0][1] != promoted:
         raise Blocked("newest_revision_not_approved_promotion")
-    # Failed or unaccepted candidate revisions may be newer than the last
-    # healthy serving revision; protect the actual prior rollback target.
-    if rollback not in retained:
-        raise Blocked("rollback_revision_outside_latest_ten")
-
+    if rollback not in seen:
+        raise Blocked("rollback_revision_not_available")
     status = service_json.get("status") or {}
     if not isinstance(status, dict):
         raise Blocked("invalid_service_status")
@@ -106,6 +106,29 @@ def select_plan(
     traffic = status.get("traffic")
     if not isinstance(traffic, list) or not traffic:
         raise Blocked("missing_traffic_readback")
+
+    # Fixed Preview and the still-scoped Owner trial retain reachable URLs.
+    # The approved fallback may now be older than ten due to many 0%-traffic
+    # trial/restore revisions; never delete it for a purely chronological cap.
+    protected = {promoted, rollback}
+    for entry in traffic:
+        if not isinstance(entry, dict):
+            raise Blocked("invalid_traffic_entry")
+        tag = entry.get("tag")
+        if tag == "preview" or (isinstance(tag, str) and
+                                re.fullmatch(r"p0-trial-[a-f0-9]{12}", tag)):
+            protected.add(_name(entry.get("revisionName"), service))
+    if not protected.issubset(seen):
+        raise Blocked("protected_revision_missing")
+    if len(protected) > RETAIN_COUNT:
+        raise Blocked("more_than_ten_protected_revisions")
+    keep_names = set(protected)
+    for _, name in records:
+        if len(keep_names) >= RETAIN_COUNT:
+            break
+        keep_names.add(name)
+    retained = tuple(name for _, name in records if name in keep_names)
+    deletable = tuple(name for _, name in records if name not in keep_names)
 
     total = 0
     for entry in traffic:
@@ -122,11 +145,11 @@ def select_plan(
             raise Blocked("traffic_on_non_promoted_revision")
         # Tags can still route explicit requests at 0% formal traffic.
         # Never remove a revision with a live tag outside the retained ten.
-        if entry.get("tag") and rev not in retained:
+        if entry.get("tag") and rev not in retained and not allow_obsolete_tag_routes:
             raise Blocked("older_revision_has_live_tag")
     if total != 100:
         raise Blocked("traffic_readback_not_100_percent")
-    return RetentionPlan(retained, tuple(name for _, name in records[RETAIN_COUNT:]))
+    return RetentionPlan(retained, deletable)
 
 
 def gcloud_json(args: list[str]):

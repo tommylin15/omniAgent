@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Retire only obsolete OUTSIDE-LATEST-TEN Cloud Run revision tags.
+"""Retire obsolete tags outside the protected ten Cloud Run revisions.
 
 A destructive tag URL operation, deliberately separate from Revision deletion.
 Designed for the gated GHCR-only post-promotion retention workflow.
@@ -68,23 +68,16 @@ def plan_tags(service: str, snapshot: dict, revisions: list,
     """Make a safe plan *only* if new-GHCR is already serving 100%."""
     if service not in SERVICES:
         raise Blocked("unknown_service")
-    # Reuse exact retention sorting. A missing timestamp blocks the plan.
-    ranked = []
-    for row in revisions:
-        if not isinstance(row, dict):
-            raise Blocked("invalid_revision_record")
-        meta = row.get("metadata") or {}
-        ranked.append((_date(meta.get("creationTimestamp") or row.get("createTime")),
-                       meta.get("name") or row.get("name")))
-    if len({name for _, name in ranked}) != len(ranked):
-        raise Blocked("duplicate_revision_record")
-    newest = {name for _, name in sorted(ranked, reverse=True)[:RETAIN_COUNT]}
-    if promoted not in newest or rollback not in newest:
-        raise Blocked("approved_new_ghcr_pair_outside_latest_ten")
+    # Inspect the exact protected retention plan *without* mutating tagged
+    # URLs; only this planner may temporarily tolerate removable obsolete
+    # tags before a simulated plan proves that the result is deletion-safe.
     tags = _tag_routes(snapshot)
-    obsolete = tuple(sorted(tag for tag,rev in tags.items() if rev not in newest))
-    if "preview" in obsolete:
-        raise Blocked("fixed_preview_outside_latest_ten_requires_explicit_repoint")
+    protected = select_plan(service, snapshot, revisions, promoted, rollback,
+                            allow_obsolete_tag_routes=True)
+    retained = set(protected.keep)
+    obsolete = tuple(sorted(tag for tag,rev in tags.items() if rev not in retained))
+    if "preview" in obsolete or any(tag.startswith("p0-trial-") for tag in obsolete):
+        raise Blocked("protected_preview_or_owner_trial_tag_cannot_be_retired")
     # Simulate only the requested tag removal; select_plan validates actual
     # serving allocation, newest Ready/created revision and full retention.
     simulated = deepcopy(snapshot)

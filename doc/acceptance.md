@@ -1,5 +1,21 @@
 # omniAgent acceptance matrix
 
+### 2026-10-12 post-promotion cleanup retention policy correction
+
+- Source evidence: GHCR 02ef7f68 production traffic promotion PASS (#38189211789);
+  independent Cloud Run production readback PASS (#38189456623), dispatch/BYOK OFF.
+- Original ten-latest retention BLOCKED on Shared because fallback `00024-naw`
+  is older than the most recent ten, after repeated 0%-trial/candidate revisions.
+- Updated retention policy retains up to 10 **including** the approved
+  promoted revision, verified immutable GHCR fallback, live fixed Preview,
+  and owner-scoped trial tags. Chronological newest revisions fill remaining
+  slots. It may not be strictly the newest ten; this is deliberate to avoid
+  deleting the approved fallback or an active tagged URL.
+- Runtime apply is a **separate gate**: tests, immutable current traffic
+  readback, protected tag dry-run, tag mutations/readback, and revision
+  deletion/readback must each PASS before saying cleanup is complete.
+
+
 ### 2026-10-12 Authorized technical release with automated OAuth security gate
 
 - Scope: **code-only GHCR production release**, keep Chat dispatch and BYOK disabled;
