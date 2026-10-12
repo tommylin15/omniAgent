@@ -1,5 +1,34 @@
 # 2026-10-10 Owner change: single integration / promotion / cleanup; rollback drill waived
 
+### 2026-10-12 Active engineering handoff (after code-only formal release)
+
+- [x] Exact-main full quality + GHCR 3-image publish, Cloud Run 0% candidate,
+  signed smoke, code-only GHCR formal traffic promotion and independent
+  100% traffic/digest/disabled-feature readback. Evidence: see
+  [Acceptance](acceptance.md) 2026-10-12 checkpoint.
+- [x] Protected **ten Revision** policy and actual cleanup: Shared / Gateway /
+  Chat each retain 10; 37 obsolete tags and 37 obsolete revisions removed;
+  fallback, fixed preview and Owner trial protections preserved.
+- [x] Owner waiver: human Google OAuth login / A→B→A manual acceptance
+  REMOVED / NOT REQUIRED. Keep automated JWT, IAM/HMAC and Owner negative tests.
+- [ ] **P0-A**: reconcile reported Owner A Codex reply against canonical
+  `omniagent_chat` readback (trial used 0/3, no new threads/turns as of
+  evidence run #38152820347). Identify real Chat origin, API request path,
+  Owner issuer/subject and server-side writes without manual login or
+  leaking OAuth tokens. Do not reset the 3-turn budget or call provider
+  just for diagnosis.
+- [ ] **P0-B**: actual Owner-bound PostgreSQL/SSE text+terminal persistence,
+  replay/reconnect, approval/decline/cancel and automated multi-Owner
+  isolation evidence; separate API user-OAuth E2E subgate can remain
+  NOT_VERIFIED_AUTOMATION_UNAVAILABLE when genuine automated user token absent.
+- [ ] **P0-C**: only after independent app gates pass and explicit entitlement/
+  billing authorization, enable real model dispatch for the appropriate
+  Owner. Code-only production is already live with dispatch/BYOK OFF.
+- [ ] Never reopen human OAuth gate or add actual rollback **rehearsal** to
+  required P0 gates; Owner previously waived it. Keep emergency failure
+  recovery and code/runtime evidence as required.
+
+
 ### 2026-10-12 最新有效 OAuth 驗收政策
 
 - **不再進行人工 OAuth 真人登入／A→B→A／Preview 驗收：NOT_REQUIRED，不是假造 PASS。**

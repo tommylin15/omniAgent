@@ -1,5 +1,42 @@
 # omniAgent acceptance matrix
 
+### 2026-10-12 08:57 Asia/Taipei — GHCR technical release / protected ten CLOSED
+
+- **Code-only release PASS**; service SHA
+  `02ef7f682ed16e6bb4f0f57507bad4b88b8f02c2`.
+- Exact-SHA quality + 3 public GHCR images: [#38188932105](https://github.com/tommylin15/omniAgent/actions/runs/38188932105) PASS.
+- Three 0% candidates: [#38189081096](https://github.com/tommylin15/omniAgent/actions/runs/38189081096) PASS.
+- Signed Chat/Web/private IAM smoke: [#38189158849](https://github.com/tommylin15/omniAgent/actions/runs/38189158849) PASS.
+- One-shot formal promotion [#38189211789](https://github.com/tommylin15/omniAgent/actions/runs/38189211789):
+  traffic switch Shared→Gateway→Chat **PASS**, but overall workflow
+  **FAIL** because the subsequent cleanup refused a fallback older than ten;
+  do not retroactively label this original run Success.
+- Independent GCP postrelease traffic/digest/Ready/disabled-flags readback
+  [#38189456623](https://github.com/tommylin15/omniAgent/actions/runs/38189456623) PASS.
+- Protected-ten policy corrective commit
+  [`f2148b64`](https://github.com/tommylin15/omniAgent/commit/f2148b64e663d361ae072db17a0c27237f4a491f)
+  keeps the promoted GHCR primary, approved fallback, fixed Preview and
+  still-tagged Owner trial; fills remaining slots chronologically (not
+  necessarily the strict ten newest).
+- Independent postrelease protected cleanup
+  [#38189729745](https://github.com/tommylin15/omniAgent/actions/runs/38189729745)
+  PASS: service-level dry-run, tag cleanup, safe revision deletion and
+  100% traffic re-readback. **37** obsolete tagged routes removed:
+  Shared 11 / Gateway 13 / Chat 13. **37** old Revisions deleted:
+  Shared 11 / Gateway 13 / Chat 13. All three retain **exactly ten**.
+- Verified production primary revisions: Chat `00063-zis`, Gateway
+  `00054-met`, Shared `00040-pon`. Approved fallback revisions:
+  Chat `00045-fer`, Gateway `00036-hid`, Shared `00024-naw`.
+- **Manual OAuth acceptance REMOVED** per Owner policy. Automated negative
+  auth/IAM/HMAC remains required. Production dispatch/BYOK **OFF**;
+  no new billable provider inference or trial-budget reset.
+- **Owner app P0 remains BLOCKED separately**: prior real Owner A observation
+  is not matched by canonical PostgreSQL trial budget or new events (0/3
+  readback), and production Owner-specific durable SSE, approval/cancel/
+  reconnect and automated two-Owner cross-account runtime denial remain
+  NOT VERIFIED. The technical release is not a model-function completion.
+
+
 ### 2026-10-12 post-promotion cleanup retention policy correction
 
 - Source evidence: GHCR 02ef7f68 production traffic promotion PASS (#38189211789);
