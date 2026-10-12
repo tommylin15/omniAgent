@@ -137,6 +137,17 @@ class DurabilityReceiptChatApi extends FakeChatApi {
   }
 }
 
+class TracedChatApi extends FakeChatApi {
+  @override
+  Future<dynamic> post(String path,Map<String,dynamic> body) async {
+    final value=await super.post(path,body);
+    if (path.endsWith('/messages')) {
+      lastRequestId='01234567-89ab-4cde-8fab-0123456789ab';
+    }
+    return value;
+  }
+}
+
 class ResumedNativeChatApi extends FakeChatApi {
   @override
   Future<dynamic> get(String path) async {
@@ -358,6 +369,24 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
     });
   }
+
+  testWidgets('request reference follows only current logged-in ChatPage', (tester) async {
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.binding.setSurfaceSize(const Size(1000,800));
+    final api=TracedChatApi();
+    await tester.pumpWidget(MaterialApp(home:ChatPage(api,key:ObjectKey(api))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('建立對話'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).last,'fixture trace');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+    expect(find.text('請求追蹤碼：01234567-89ab-4cde-8fab-0123456789ab'),findsOneWidget);
+    final next=FakeChatApi();
+    await tester.pumpWidget(MaterialApp(home:ChatPage(next,key:ObjectKey(next))));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('請求追蹤碼：'),findsNothing);
+  });
 
   testWidgets('threads and queued messages use only omniAgent routes',
       (tester) async {
