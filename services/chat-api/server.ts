@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { extname, isAbsolute, relative, resolve } from "node:path";
@@ -11,6 +12,19 @@ export type Principal = { issuer: string; subject: string };
 export type VerifyUser = (token: string) => Promise<Principal>;
 export type VerifyService = (token: string) => Promise<void>;
 class InvalidRequest extends Error {}
+
+// Allowlist only internal stage labels and random request IDs. Never log
+// OAuth subjects, owner IDs, thread IDs, prompts, URLs or provider payloads.
+type AuditPhase = "thread_committed" | "message_committed" | "message_idempotent" |
+  "dispatch_settled" | "dispatch_needs_reconciliation" | "receipt_readback" |
+  "sse_replay" | "request_failed";
+function auditRequest(requestId:string,phase:AuditPhase,outcome?:string):void {
+  const known = ["queued","running","completed","cancelled","error","approval_required",
+    "verified","unverified","has_events","no_events","unauthorized",
+    "not_found","conflict","invalid_request","unavailable"];
+  console.info(JSON.stringify({severity:"INFO",kind:"omniagent_chat_request_audit",
+    request_id:requestId,phase,outcome:outcome && known.includes(outcome)?outcome:"none"}));
+}
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const DIGEST = /^sha256:[0-9a-f]{64}$/;
@@ -97,6 +111,10 @@ export function makeChatServer(store: ChatStore, verifyUser: VerifyUser, verifyS
                                dispatcher?: Pick<ChatDispatcher,"runOnce"> & Partial<Pick<ChatDispatcher,"canDispatch" | "inspectRunningCandidates" | "availableModels" | "continueCodex">>,
                                credentials?: Pick<CredentialManager,"create" | "list" | "revoke">) {
   return createServer(async (request, response) => {
+    const requestId=randomUUID();
+    response.setHeader("X-OmniAgent-Request-Id",requestId);
+    if (process.env.K_REVISION)
+      response.setHeader("X-OmniAgent-Revision",process.env.K_REVISION);
     const url = new URL(request.url ?? "/", "http://localhost");
     if (request.method === "GET" && url.pathname === "/health") return send(response,200,{ status: "ok" });
     if (request.method === "GET" && url.pathname === "/ready") {
@@ -179,7 +197,9 @@ export function makeChatServer(store: ChatStore, verifyUser: VerifyUser, verifyS
         return send(response,200,await credentials.revoke(ownerId,credential[1]));
       }
       if (request.method === "POST" && url.pathname === "/v1/threads") {
-        return send(response,201,await store.createThread(ownerId,threadInput(await body(request)),key(request)));
+        const created=await store.createThread(ownerId,threadInput(await body(request)),key(request));
+        auditRequest(requestId,"thread_committed");
+        return send(response,201,created);
       }
       if (request.method === "GET" && url.pathname === "/v1/threads") {
         return send(response,200,{ items:await store.threads(ownerId) });
@@ -215,11 +235,21 @@ export function makeChatServer(store: ChatStore, verifyUser: VerifyUser, verifyS
         if (!dispatcher.canDispatch(ownerId,String(selected.runtime),String(selected.model)))
           return send(response,503,{ error:"dispatch_unavailable" });
         const result = await store.message(ownerId,messages[1],value.content,key(request));
+        auditRequest(requestId,"message_committed");
         // Keep the request alive during inference; Cloud Run can suspend work after a response.
         const turn=result.turn as Record<string,unknown>;
-        if (turn.status !== "QUEUED")
+        if (turn.status !== "QUEUED") {
+          auditRequest(requestId,"message_idempotent");
           return send(response,200,{...result,dispatch:{status:String(turn.status).toLowerCase()}});
-        const outcome = await dispatcher.runOnce({ ownerId,threadId:messages[1],turnId:String(turn.turn_id) });
+        }
+        let outcome;
+        try {
+          outcome = await dispatcher.runOnce({ ownerId,threadId:messages[1],turnId:String(turn.turn_id) });
+        } catch (error) {
+          auditRequest(requestId,"dispatch_needs_reconciliation");
+          throw error;
+        }
+        auditRequest(requestId,"dispatch_settled",outcome.status);
         return send(response,202,{ ...result, dispatch:outcome });
       }
       const activeTurn = new RegExp("^/v1/threads/([A-Za-z0-9][A-Za-z0-9._:-]{0,127})/turns/active$").exec(url.pathname);
@@ -227,8 +257,11 @@ export function makeChatServer(store: ChatStore, verifyUser: VerifyUser, verifyS
         return send(response,200,{active:await store.activeTurn(ownerId,activeTurn[1])});
       }
        const receipt = new RegExp("^/v1/threads/([A-Za-z0-9][A-Za-z0-9._:-]{0,127})/turns/([A-Za-z0-9][A-Za-z0-9._:-]{0,127})/receipt$").exec(url.pathname);
-       if (request.method === "GET" && receipt)
-         return send(response,200,await store.turnReceipt(ownerId,receipt[1],receipt[2]));
+       if (request.method === "GET" && receipt) {
+         const proof=await store.turnReceipt(ownerId,receipt[1],receipt[2]);
+         auditRequest(requestId,"receipt_readback",proof.durableCompleted?"verified":"unverified");
+         return send(response,200,proof);
+       }
       const events = /^\/v1\/threads\/([A-Za-z0-9][A-Za-z0-9._:-]{0,127})\/events$/.exec(url.pathname);
       if (request.method === "GET" && events) {
         const resume = url.searchParams.has("cursor") ? url.searchParams.get("cursor") :
@@ -240,6 +273,7 @@ export function makeChatServer(store: ChatStore, verifyUser: VerifyUser, verifyS
           throw new InvalidRequest("event cursor or limit is invalid");
         }
         const rows = await store.events(ownerId,events[1],cursor,limit);
+        auditRequest(requestId,"sse_replay",rows.length?"has_events":"no_events");
         response.writeHead(200,{ "Content-Type":"text/event-stream; charset=utf-8", "Cache-Control":"no-cache", "X-Accel-Buffering":"no" });
         for (const row of rows) response.write("id: " + row.seq + "\nevent: " + row.event_type + "\ndata: " + JSON.stringify(row) + "\n\n");
         response.end();
@@ -287,8 +321,10 @@ export function makeChatServer(store: ChatStore, verifyUser: VerifyUser, verifyS
       const status = error instanceof ChatNotFound ? 404 : error instanceof ChatConflict ? 409 :
         error instanceof SyntaxError || error instanceof InvalidRequest ? 400 :
         error instanceof Error && ["authentication required","unauthorized"].includes(error.message) ? 401 : 503;
-      send(response,status,{ error:status === 401 ? "unauthorized" : status === 404 ? "not_found" :
-        status === 409 ? "conflict" : status === 400 ? "invalid_request" : "unavailable" });
+      const outcome=status===401?"unauthorized":status===404?"not_found":
+        status===409?"conflict":status===400?"invalid_request":"unavailable";
+      if (url.pathname.startsWith("/v1/threads")) auditRequest(requestId,"request_failed",outcome);
+      send(response,status,{error:outcome});
     }
   });
 }
