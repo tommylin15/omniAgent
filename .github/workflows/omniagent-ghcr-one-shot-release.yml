@@ -12,7 +12,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: omniagent-ghcr-cloudrun-release
+  group: omniagent-ghcr-formal-production
   cancel-in-progress: false
 
 jobs:
@@ -40,6 +40,10 @@ jobs:
           [[ "$RELEASE_SHA" =~ ^[a-f0-9]{40}$ ]]
           test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
           test "$(git ls-remote https://github.com/tommylin15/omniAgent.git refs/heads/main | cut -f1)" = "$RELEASE_SHA"
+          if git log -1 --format=%B | grep -Fq '[p0-trial-once]'; then
+            echo 'formal_release=BLOCKED_CONFLICTING_OWNER_TRIAL_MARKER' >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
           if ! git log -1 --format=%B | grep -Fq '[release-once]'; then
             echo 'authorized=false' >> "$GITHUB_OUTPUT"
             echo 'formal_release=NOT_RUN_NO_OWNER_RELEASE_MARKER' >> "$GITHUB_STEP_SUMMARY"

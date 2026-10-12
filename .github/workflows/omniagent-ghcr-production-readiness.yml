@@ -13,7 +13,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: omniagent-ghcr-cloudrun-release
+  group: omniagent-ghcr-readonly-audit
   cancel-in-progress: false
 
 jobs:

@@ -9,7 +9,7 @@ permissions:
   contents: read
   id-token: write
 concurrency:
-  group: omniagent-ghcr-cloudrun-release
+  group: omniagent-p0-owner-staging
   cancel-in-progress: false
 jobs:
   stage-owner-canary:
@@ -36,6 +36,10 @@ jobs:
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
           test "$(git ls-remote https://github.com/tommylin15/omniAgent.git refs/heads/main | cut -f1)" = "$RELEASE_SHA"
+          if git log -1 --format=%B | grep -Fq '[release-once]'; then
+            echo 'p0_trial_stage=BLOCKED_CONFLICTING_FORMAL_RELEASE_MARKER' >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
           if git log -1 --format=%B | grep -Fq '[p0-trial-once]'; then
             echo 'authorized=true' >> "$GITHUB_OUTPUT"
           else
