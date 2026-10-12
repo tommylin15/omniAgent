@@ -164,8 +164,13 @@ def audit(source_sha: str, services: dict[str, dict], revisions: dict[str, dict]
             "ready":True,"secret_states":"ENABLED"
         }
     return {"sha":source_sha, "technical_preflight":"PASS",
+            # An explicitly authorized code-only release can promote with
+            # dispatch and BYOK off; this does NOT pass app/provider gates.
+            "code_only_release_scope":"DISPATCH_AND_BYOK_DISABLED",
+            "manual_oauth_gate":"NOT_REQUIRED",
+            "automated_oauth_negative":"REQUIRES_EXACT_SHA_CI_AND_SIGNED_SMOKE",
             "formal_release_gate":"BLOCKED_MISSING_LIVE_APP_ACCEPTANCE",
-            "owner_oauth":"NOT_REVERIFIED_FOR_THIS_RELEASE",
+            "owner_oauth":"MANUAL_NOT_REQUIRED__LIVE_USER_AUTOMATION_NOT_VERIFIED",
             "gateway_provider_dispatch":"NOT_VERIFIED",
             "owner_credentials":"NOT_VERIFIED",
             "approval_cancel_reconnect":"NOT_VERIFIED",

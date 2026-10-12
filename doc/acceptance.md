@@ -1,5 +1,19 @@
 # omniAgent acceptance matrix
 
+### 2026-10-12 Authorized technical release with automated OAuth security gate
+
+- Scope: **code-only GHCR production release**, keep Chat dispatch and BYOK disabled;
+  no further human OAuth sign-in checks. Current CI must run negative token/auth
+  contract checks and signed smoke with anonymous IAM denials, digest/Secret protection.
+- Preserve a separate application-level BLOCKED status for missing live
+  Chat→Gateway→PostgreSQL persistence, SSE, Owner-isolation runtime evidence.
+- New one-shot commit marker `[release-once]` authorizes only controlled
+  GHCR Shared→Gateway→Chat promotion, ready/readback and ten-revision retention
+  under the existing runbook (real rollback *rehearsal* remains waived).
+- No extra Codex trial turns, Secret changes, trial-budget reset or artificial
+  OAuth success. Workflows and Cloud Run evidence decide actual status.
+
+
 ### 2026-10-12 最新有效 OAuth 驗收政策
 
 - **不再進行人工 OAuth 真人登入／A→B→A／Preview 驗收：NOT_REQUIRED，不是假造 PASS。**

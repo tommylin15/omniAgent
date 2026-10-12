@@ -41,6 +41,10 @@ class ReleaseReadiness(unittest.TestCase):
         result=gate.audit(HEAD,services,revisions,lambda name,version:"ENABLED")
         self.assertEqual(result["technical_preflight"],"PASS")
         self.assertEqual(result["formal_release_gate"],"BLOCKED_MISSING_LIVE_APP_ACCEPTANCE")
+        self.assertEqual(result["manual_oauth_gate"],"NOT_REQUIRED")
+        self.assertEqual(result["automated_oauth_negative"],"REQUIRES_EXACT_SHA_CI_AND_SIGNED_SMOKE")
+        self.assertEqual(result["code_only_release_scope"],"DISPATCH_AND_BYOK_DISABLED")
+        self.assertNotEqual(result["gateway_provider_dispatch"],"PASS")
         self.assertFalse(result["production_traffic_mutated"])
         self.assertEqual(len(result["services"]),3)
 
