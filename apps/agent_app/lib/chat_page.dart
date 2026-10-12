@@ -304,7 +304,9 @@ class _ChatPageState extends State<ChatPage> {
       final proof = await widget.api
           .get('/v1/threads/$threadId/turns/$turnId/receipt');
       if (!mounted || selectionEpoch != epoch ||
-          thread?['thread_id'] != threadId || receiptTurnId != turnId) return;
+          thread?['thread_id'] != threadId || receiptTurnId != turnId) {
+        return;
+      }
       final confirmed = proof is Map && proof['status'] == 'COMPLETED' &&
           proof['textPersisted'] == true &&
           proof['terminalPersisted'] == true &&
