@@ -31,6 +31,7 @@ class _ChatPageState extends State<ChatPage> {
   String turnPhase = 'queued';
   String? receiptTurnId;
   String receiptEvidence = 'none'; // No data is proof until a DB readback.
+  String? submittedRequestId;
   int cursor = -1;
   bool busy = false;
   int selectionEpoch = 0;
@@ -136,6 +137,7 @@ class _ChatPageState extends State<ChatPage> {
       turnPhase = 'queued';
       receiptTurnId = null;
       receiptEvidence = 'none';
+      submittedRequestId = null;
       cursor = -1;
       connection = 'idle';
     });
@@ -153,6 +155,7 @@ class _ChatPageState extends State<ChatPage> {
       turnPhase = 'queued';
       receiptTurnId = null;
       receiptEvidence = 'none';
+      submittedRequestId = null;
       cursor = -1;
       connection = 'connecting';
     });
@@ -354,6 +357,7 @@ class _ChatPageState extends State<ChatPage> {
           .post('/v1/threads/$id/messages', {'content': content});
       if (!mounted) return;
       input.clear();
+      final reference = widget.api.lastRequestId;
       final phase = value['dispatch'] is Map
           ? '${value['dispatch']['status']}' : 'queued';
       final createdTurn = value is Map && value['turn'] is Map
@@ -364,6 +368,7 @@ class _ChatPageState extends State<ChatPage> {
             ? null : '${value['turn']['turn_id']}';
         receiptTurnId = createdTurn is String ? createdTurn : null;
         receiptEvidence = createdTurn is String ? 'pending' : 'none';
+        submittedRequestId = reference;
       });
       await refresh();
     } catch (error) {
@@ -814,6 +819,11 @@ class _ChatPageState extends State<ChatPage> {
                     ),
                     const SizedBox(height: 7),
                     _connectionStatus(),
+                    if (submittedRequestId != null) ...[
+                      const SizedBox(height: 5),
+                      SelectableText('請求追蹤碼：$submittedRequestId',
+                          style: Theme.of(context).textTheme.labelSmall),
+                    ],
                     if (receiptEvidence != 'none') ...[
                       const SizedBox(height: 5),
                       Text(
