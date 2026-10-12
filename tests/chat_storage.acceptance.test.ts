@@ -337,6 +337,16 @@ describe.runIf(Boolean(dsn))("isolated PostgreSQL ChatStore acceptance", () => {
         expect(JSON.stringify(receipt)).not.toContain("bounded fixture answer");
         expect(JSON.stringify(receipt)).not.toContain("owner-only fixture prompt");
         expect(requests).toBe(1);
+        // The same client idempotency key must not invoke the provider twice.
+        const sameMessage=await fetch(url+"/v1/threads/joined-flow/messages",{
+          method:"POST",headers:{...auth("alice"),"Idempotency-Key":"joined-message-1"},
+          body:JSON.stringify({content:"owner-only fixture prompt"})});
+        expect(sameMessage.status).toBe(200);
+        expect((await sameMessage.json()).dispatch.status).toBe("completed");
+        expect(requests).toBe(1);
+        expect((await pool.query(
+          "SELECT count(*)::int AS n FROM omni_chat.events WHERE owner_id=$1 AND thread_id=$2 AND turn_id=$3 AND event_type='turn_completed'",
+          [a,"joined-flow",turnIdForReceipt])).rows[0].n).toBe(1);
         const replay=await fetch(url+"/v1/threads/joined-flow/events?cursor=-1",{
           headers:auth("alice")});
         expect(replay.status).toBe(200);
@@ -355,6 +365,24 @@ describe.runIf(Boolean(dsn))("isolated PostgreSQL ChatStore acceptance", () => {
         const resumed=await replayFromCursor.text();
         expect(resumed).not.toContain("owner-only fixture prompt");
         expect(resumed).toContain("turn_completed");
+        const resumedHeader=await fetch(url+"/v1/threads/joined-flow/events",{
+          headers:{...auth("alice"),"Last-Event-ID":"1"}});
+        expect(resumedHeader.status).toBe(200);
+        const fromLastId=await resumedHeader.text();
+        expect(fromLastId).toContain("turn_completed");
+        expect(fromLastId).not.toContain("owner-only fixture prompt");
+        expect((await fetch(url+"/v1/threads/joined-flow/turns/"+turnIdForReceipt+"/cancel",{
+          method:"POST",headers:auth("bob")})).status).toBe(404);
+        await store.createThread(b,{threadId:"joined-bob-queued",runtime:"gemini",
+          model:"gemini-3.5-flash-lite",assistantProfile:"default"},"joined-bob-create");
+        const queuedForB=await store.message(b,"joined-bob-queued","fixture queued","joined-bob-msg");
+        const cancelled=await fetch(url+"/v1/threads/joined-bob-queued/turns/"+
+          queuedForB.turn.turn_id+"/cancel",{method:"POST",headers:auth("bob")});
+        expect(cancelled.status).toBe(200);
+        expect((await store.turnReceipt(b,"joined-bob-queued",String(queuedForB.turn.turn_id))))
+          .toMatchObject({status:"CANCELLED",terminalPersisted:true,
+            textPersisted:false,durableCompleted:false});
+        expect((await store.turnReceipt(a,"joined-flow",turnIdForReceipt)).durableCompleted).toBe(true);
       } finally {
         if (chat) await new Promise<void>(resolve=>chat!.close(()=>resolve()));
         await new Promise<void>(resolve=>gateway.close(()=>resolve()));
