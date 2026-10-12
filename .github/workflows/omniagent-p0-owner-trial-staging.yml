@@ -37,8 +37,11 @@ jobs:
           test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
           test "$(git ls-remote https://github.com/tommylin15/omniAgent.git refs/heads/main | cut -f1)" = "$RELEASE_SHA"
           if git log -1 --format=%B | grep -Fq '[release-once]'; then
-            echo 'p0_trial_stage=BLOCKED_CONFLICTING_FORMAL_RELEASE_MARKER' >> "$GITHUB_STEP_SUMMARY"
-            exit 1
+            # Production-only authorization must never start a billable
+            # Owner canary; this is an expected no-op, not a CI failure.
+            echo 'authorized=false' >> "$GITHUB_OUTPUT"
+            echo 'p0_trial_stage=BLOCKED_CONFLICTING_FORMAL_RELEASE_MARKER__EXPECTED_NOOP' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
           fi
           if git log -1 --format=%B | grep -Fq '[p0-trial-once]'; then
             echo 'authorized=true' >> "$GITHUB_OUTPUT"
