@@ -71,6 +71,44 @@ describe("omniAgent Chat API ownership boundary", () => {
     expect(worker.runOnce).not.toHaveBeenCalled();
   });
 
+  it("emits safe random request references for committed and rejected requests",async () => {
+    const secret="private-prompt-do-not-log-abc";
+    const observed:string[]=[];
+    const spy=vi.spyOn(console,"info").mockImplementation((value:unknown) => {
+      observed.push(String(value));
+    });
+    try {
+      const worker={canDispatch:vi.fn(()=>true),
+        runOnce:vi.fn(async()=>({status:"completed" as const}))};
+      const {base}=await app(worker);
+      const anonymous=await fetch(base+"/v1/threads");
+      expect(anonymous.status).toBe(401);
+      const firstId=anonymous.headers.get("x-omniagent-request-id");
+      expect(firstId).toMatch(/^[0-9a-f-]{36}$/);
+      const created=await fetch(base+"/v1/threads",{method:"POST",
+        headers:{Authorization:"Bearer alice","Idempotency-Key":"trace-create",
+          "Content-Type":"application/json"},
+        body:JSON.stringify({runtime:"gemini",model:"gemini-3.5-flash-lite",
+          assistantProfile:"default"})});
+      expect(created.status).toBe(201);
+      const secondId=created.headers.get("x-omniagent-request-id");
+      expect(secondId).toMatch(/^[0-9a-f-]{36}$/);
+      expect(secondId).not.toBe(firstId);
+      const posted=await fetch(base+"/v1/threads/thread-1/messages",{method:"POST",
+        headers:{Authorization:"Bearer alice","Idempotency-Key":"trace-message",
+          "Content-Type":"application/json"},
+        body:JSON.stringify({content:secret})});
+      expect(posted.status).toBe(202);
+      expect(posted.headers.get("x-omniagent-request-id")).toMatch(/^[0-9a-f-]{36}$/);
+      expect(observed.join("\n")).toContain('"phase":"thread_committed"');
+      expect(observed.join("\n")).toContain('"phase":"message_committed"');
+      expect(observed.join("\n")).toContain('"phase":"dispatch_settled"');
+      expect(observed.join("\n")).not.toContain(secret);
+      expect(observed.join("\n")).not.toContain("owner-alice");
+      expect(observed.join("\n")).not.toContain("Bearer alice");
+    } finally { spy.mockRestore(); }
+  });
+
   it("only the authenticated Owner receives a no-payload persistence receipt", async () => {
     const {base,store}=await app();
     const path="/v1/threads/thread-1/turns/turn-1/receipt";
