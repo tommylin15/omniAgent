@@ -102,6 +102,39 @@ class FakeChatApi extends ChatApi {
       ];
 }
 
+class DurabilityReceiptChatApi extends FakeChatApi {
+  DurabilityReceiptChatApi({this.confirmed = true});
+  final bool confirmed;
+  int receiptReads = 0;
+
+  @override
+  Future<dynamic> get(String path) async {
+    if (path.endsWith('/turns/turn-1/receipt')) {
+      receiptReads++;
+      return {'status':'COMPLETED','textPersisted':confirmed,
+        'terminalPersisted':true,'durableCompleted':confirmed};
+    }
+    return super.get(path);
+  }
+
+  @override
+  Future<List<Map<String,dynamic>>> events(String threadId,int cursor) async {
+    if (cursor >= 2 ||
+        !writes.any((row)=>'${row['path']}'.endsWith('/messages'))) return [];
+    return [
+      if (cursor < 0)
+        {'event_id':'user-1','seq':0,'turn_id':'turn-1','event_type':'item_upsert',
+          'payload':{'role':'user','content':'test prompt'}},
+      if (cursor < 1)
+        {'event_id':'text-1','seq':1,'turn_id':'turn-1','event_type':'text_delta',
+          'payload':{'text':'mock reply'}},
+      if (cursor < 2)
+        {'event_id':'terminal-1','seq':2,'turn_id':'turn-1',
+          'event_type':'turn_completed','payload':{'status':'completed'}},
+    ];
+  }
+}
+
 class ResumedNativeChatApi extends FakeChatApi {
   @override
   Future<dynamic> get(String path) async {
@@ -302,6 +335,27 @@ void main() {
     expect(find.byKey(const Key('twin-beast-mascot-slot')), findsOneWidget);
     expect(find.text('登入或 API 尚未設定'), findsOneWidget);
   });
+
+  for (final confirmed in [true,false]) {
+    testWidgets('receipt is DB-verified, never inferred from a UI reply ($confirmed)',
+        (tester) async {
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.binding.setSurfaceSize(const Size(1000,800));
+      final api=DurabilityReceiptChatApi(confirmed:confirmed);
+      await tester.pumpWidget(MaterialApp(home:ChatPage(api)));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('建立對話'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField).last,'receipt fixture');
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pumpAndSettle();
+      expect(api.receiptReads,1);
+      expect(find.text(confirmed
+        ? 'PostgreSQL 已確認回覆持久化'
+        : '資料庫持久化尚未驗證'),findsOneWidget);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  }
 
   testWidgets('threads and queued messages use only omniAgent routes',
       (tester) async {

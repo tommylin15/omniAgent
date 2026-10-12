@@ -29,6 +29,8 @@ class _ChatPageState extends State<ChatPage> {
   String connection = 'idle';
   String? queuedTurn;
   String turnPhase = 'queued';
+  String? receiptTurnId;
+  String receiptEvidence = 'none'; // No data is proof until a DB readback.
   int cursor = -1;
   bool busy = false;
   int selectionEpoch = 0;
@@ -132,6 +134,8 @@ class _ChatPageState extends State<ChatPage> {
       lockedApprovals.clear();
       queuedTurn = null;
       turnPhase = 'queued';
+      receiptTurnId = null;
+      receiptEvidence = 'none';
       cursor = -1;
       connection = 'idle';
     });
@@ -147,6 +151,8 @@ class _ChatPageState extends State<ChatPage> {
       lockedApprovals.clear();
       queuedTurn = null;
       turnPhase = 'queued';
+      receiptTurnId = null;
+      receiptEvidence = 'none';
       cursor = -1;
       connection = 'connecting';
     });
@@ -263,12 +269,20 @@ class _ChatPageState extends State<ChatPage> {
           thread?['thread_id'] != id) {
         return;
       }
+      final verifying = receiptTurnId;
+      final terminalReceived = verifying != null &&
+          rows.any((row) => row['turn_id'] == verifying &&
+              const ['turn_completed', 'turn_cancelled', 'turn_error']
+                  .contains(row['event_type']));
       setState(() {
         for (final row in rows) {
           _merge(row);
         }
         connection = 'connected';
       });
+      if (terminalReceived && receiptEvidence == 'pending') {
+        await verifyTurnReceipt('$id', verifying, epoch);
+      }
     } catch (_) {
       if (mounted && selectionEpoch == epoch &&
           thread?['thread_id'] == id) {
@@ -277,6 +291,29 @@ class _ChatPageState extends State<ChatPage> {
     } finally {
       if (pollingEpoch == epoch) {
         pollingEpoch = null;
+      }
+    }
+  }
+
+  /// One bounded read-only receipt request after the terminal SSE event.
+  /// Never claim a durable reply from UI text or a provider status alone.
+  Future<void> verifyTurnReceipt(String threadId,String turnId,int epoch) async {
+    if (receiptEvidence != 'pending') return;
+    setState(() => receiptEvidence = 'checking');
+    try {
+      final proof = await widget.api
+          .get('/v1/threads/$threadId/turns/$turnId/receipt');
+      if (!mounted || selectionEpoch != epoch ||
+          thread?['thread_id'] != threadId || receiptTurnId != turnId) return;
+      final confirmed = proof is Map && proof['status'] == 'COMPLETED' &&
+          proof['textPersisted'] == true &&
+          proof['terminalPersisted'] == true &&
+          proof['durableCompleted'] == true;
+      setState(() => receiptEvidence = confirmed ? 'verified' : 'not_verified');
+    } catch (_) {
+      if (mounted && selectionEpoch == epoch &&
+          thread?['thread_id'] == threadId && receiptTurnId == turnId) {
+        setState(() => receiptEvidence = 'not_verified');
       }
     }
   }
@@ -317,10 +354,14 @@ class _ChatPageState extends State<ChatPage> {
       input.clear();
       final phase = value['dispatch'] is Map
           ? '${value['dispatch']['status']}' : 'queued';
+      final createdTurn = value is Map && value['turn'] is Map
+          ? value['turn']['turn_id'] : null;
       setState(() {
         turnPhase = phase;
         queuedTurn = ['completed','cancelled','error'].contains(phase)
             ? null : '${value['turn']['turn_id']}';
+        receiptTurnId = createdTurn is String ? createdTurn : null;
+        receiptEvidence = createdTurn is String ? 'pending' : 'none';
       });
       await refresh();
     } catch (error) {
@@ -771,6 +812,19 @@ class _ChatPageState extends State<ChatPage> {
                     ),
                     const SizedBox(height: 7),
                     _connectionStatus(),
+                    if (receiptEvidence != 'none') ...[
+                      const SizedBox(height: 5),
+                      Text(
+                        receiptEvidence == 'verified'
+                            ? 'PostgreSQL 已確認回覆持久化'
+                            : receiptEvidence == 'not_verified'
+                                ? '資料庫持久化尚未驗證'
+                                : '等待資料庫持久化證據',
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                              color: OmniColors.mutedCocoa,
+                            ),
+                      ),
+                    ],
                   ],
                 ),
               ),
