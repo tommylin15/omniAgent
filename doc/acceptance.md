@@ -1,5 +1,15 @@
 # omniAgent acceptance matrix
 
+### 2026-10-12 — P0 Owner Chat trace and two-Owner fixture release evidence
+
+- **Historical diagnosis (read-only):** [#38204839509](https://github.com/tommylin15/omniAgent/actions/runs/38204839509) PASS as an audit run, with original Owner A 0/3 consumed, zero recent threads and turns, and an existing zero-traffic trial tag. Historical Cloud Logging request data and actual browser origin were unavailable. The **unique root cause remains UNDETERMINED**; this is not an Owner-provider acceptance PASS.
+- **Automated code and isolated integration:** [#38205474617](https://github.com/tommylin15/omniAgent/actions/runs/38205474617) PASS for Node/Python/disposable PostgreSQL/Flutter. Two different Owner fixtures reject cross-owner reads and cancel; SSE Last-Event-ID replay, idempotency, approval and cancel, and nonbillable Codex text_delta plus terminal database receipt tested. No real Codex call in these tests.
+- **Exact release:** [#38205681718](https://github.com/tommylin15/omniAgent/actions/runs/38205681718) GHCR quality and three images PASS; [#38206044698](https://github.com/tommylin15/omniAgent/actions/runs/38206044698) zero-traffic candidates PASS; [#38206163101](https://github.com/tommylin15/omniAgent/actions/runs/38206163101) signed smoke PASS; [#38206216152](https://github.com/tommylin15/omniAgent/actions/runs/38206216152) formal traffic and protected-ten retention overall PASS.
+- **Independent real GCP readback:** [#38206616628](https://github.com/tommylin15/omniAgent/actions/runs/38206616628) PASS. Chat `00069-tep`, Gateway `00060-vup`, Shared `00046-naj`: correct 100% traffic, immutable SHA256, Ready, exactly ten protected revisions each. Chat health/UI and random request-ID plus Revision response header PASS; anonymous/invalid Google token 401 PASS.
+- Production provider dispatch/BYOK OFF. Manual OAuth gate NOT_REQUIRED. No paid inference or trial-budget reset.
+- **Still OPEN:** Owner A historical reply has no matching canonical DB turn; authenticated second real Google Owner E2E is `NOT_VERIFIED_AUTOMATION_UNAVAILABLE`; real paid Codex-to-PostgreSQL text and terminal persistence `NOT_VERIFIED`. The fixture PASS is not a substitute.
+
+
 ### 2026-10-12 11:06 Asia/Taipei — P0 durability receipt code-only release: VERIFIED
 
 - Actual deployed source SHA: `8c269be520e773d289c7cd1f76fde186f6505c09`.
