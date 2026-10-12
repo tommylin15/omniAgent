@@ -1,5 +1,33 @@
 # P0 Owner Chat — implementation and single acceptance gate
 
+### 2026-10-12 P0 durable answer proof — code-only release target
+
+- Owner-scoped GET `/v1/threads/{threadId}/turns/{turnId}/receipt`
+  reads the canonical PostgreSQL turn + correlated events. It responds with
+  only status and `textPersisted`, `terminalPersisted`, `durableCompleted`
+  booleans; it never returns a prompt, model output, provider handle or token.
+- Completed provider/UI status is insufficient: `durableCompleted=true` only
+  after a COMPLETED turn, nonblank stored `text_delta`, and matching persisted
+  `turn_completed` event for the verified Owner's thread and turn.
+- Anonymous/service-identity-to-user-path requests return 401, cross-Owner
+  queries return 404. Disposable PostgreSQL + signed fixture Gateway tests
+  verify positive and A/B negative paths without any provider network call.
+- Flutter receives this bounded read-only receipt only after a terminal SSE
+  event for its *current* selected thread; a different Owner/session cannot
+  inherit verification UI state. Otherwise show UNVERIFIED, not fake success.
+- New source receipts: `d96de226` (DB-backed API, Owner isolation),
+  `b16d9a15` (Flutter proof indicator), `3d5689ae` (lint correction).
+- **Scope of this one-shot `[release-once]` deployment:** code-only,
+  dispatch/BYOK OFF, no model inference, no trial budget reset and no manual
+  OAuth verification. CI → GHCR → 0% candidate → signed smoke → formal
+  traffic readback and protected-ten retention must be checked separately.
+- Historical Owner A Codex reply versus canonical PostgreSQL 0 new
+  thread/turns, budget 0/3 remains **BLOCKED**. This change adds independently
+  verifiable evidence and does NOT reconstruct or fabricate historical rows.
+- Do not mark model-functional acceptance complete without real future
+  Owner-persisted events and automated cross-Owner runtime evidence.
+
+
 ## 2026-10-12 OAuth 人工驗收不再要求
 
 Owner 不再需要真人登入 Google、A→B→A 帳號切換、開啟 trial 或 Preview 網址做 OAuth 驗收（NOT_REQUIRED，非 PASS）。保留所有可由 CI/GCP 完成的 OAuth 身分、JWT、IAM/HMAC、DB Owner 綁定與跨 Owner 安全負向測試。若無合法的自動化真人 Google user token，該項明記 NOT_VERIFIED_AUTOMATION_UNAVAILABLE，不再請 Owner 人工補驗。先前 Owner A 的畫面回覆與 PostgreSQL 0/3、無新資料的衝突仍未通過驗收；不得藉此政策豁免。詳見 [政策](oauth-automated-acceptance-policy.md)。

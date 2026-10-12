@@ -1,5 +1,21 @@
 # 2026-10-10 Owner change: single integration / promotion / cleanup; rollback drill waived
 
+### 2026-10-12 P0 Owner durability next gate
+
+- [x] Owner-specific DB receipt API and cross-Owner HTTP/PG fixture tests
+  implemented, no OAuth manual test or provider request.
+- [x] Flutter only displays database-confirmed answer persistence and
+  clears proof on thread/Owner change; UI negative test included.
+- [ ] Current SHA full CI and production **code-only** release evidence
+  verified; do not infer from this document or pending Actions.
+- [ ] Runtime gap remains: reported Codex reply vs trial budget 0/3 and
+  canonical `omniagent_chat` zero new Owner threads/turns. No artificial
+  provider calls, token disclosure or trial-budget reset.
+- [ ] Authenticated live Owner B negative and provider end-to-end
+  durable SSE/reconnect/approval/cancel independently verified using
+  legitimate automated credentials/fixtures; no manual Google OAuth gate.
+
+
 ### 2026-10-12 Active engineering handoff (after code-only formal release)
 
 - [x] Exact-main full quality + GHCR 3-image publish, Cloud Run 0% candidate,
