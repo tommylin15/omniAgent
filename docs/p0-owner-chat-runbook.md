@@ -1,5 +1,16 @@
 # P0 Owner Chat — implementation and single acceptance gate
 
+### 2026-10-12 P0 incident correlation and reproducible nonbillable acceptance
+
+Historical audit [#38204839509](https://github.com/tommylin15/omniAgent/actions/runs/38204839509) showed valid Owner A DB mapping and trial tag, but zero new canonical turns and 0/3 consumed; historical Cloud Logging request results and human browser origin could not be retrieved. **Do not assign a unique cause** or recreate a missing turn. This script performed only read-only queries.
+
+For future Chat requests use the **random** `X-OmniAgent-Request-Id` returned by API (also displayed after sending in the current authenticated Chat UI), plus `X-OmniAgent-Revision`. With approved Cloud Logging access, search `kind=omniagent_chat_request_audit` and the reference. Fixed phases distinguish `thread_committed`, `message_committed`, `message_idempotent`, `dispatch_settled`, `dispatch_needs_reconciliation`, `receipt_readback`, `sse_replay` and `request_failed`. Logs contain no Owner ID, thread/turn ID, Google subject, credential, prompt, response or URL. A request ID is **not an authentication credential**; identity comes from verified Google user ID token, storage reads remain Owner-bound.
+
+Local repeatable gate: isolated PostgreSQL migrations + signed real HTTP Gateway handler with nonbillable provider fixture. Validate two Owner DB IDs and 404 on cross-owner thread/receipt/cancel; SSE Last-Event-ID reconnect; same idempotency key yields one Gateway invocation and terminal event; native Codex simulated approval, cancel, text_delta and turn_completed; independently read `turnReceipt.durableCompleted`. A text UI or provider status cannot replace this DB readback.
+
+Technical release [#38206216152](https://github.com/tommylin15/omniAgent/actions/runs/38206216152) and independent Cloud Run verification [#38206616628](https://github.com/tommylin15/omniAgent/actions/runs/38206616628) both PASS with SHA `02b91affc71cfa0654dafa853c1157483a09bfd6`, 100% production traffic, Ready, exact images, ten protected revisions, working HTTP correlation headers and anonymous/invalid OAuth denial. Dispatch and BYOK stay OFF. No paid model called; the real two-Owner Google OAuth negative and real provider-to-DB persistence remain separate NOT VERIFIED gates. Do not reinstate manual Google OAuth acceptance.
+
+
 ### 2026-10-12 11:06 Asia/Taipei — P0 durability receipt code-only release: VERIFIED
 
 - Actual deployed source SHA: `8c269be520e773d289c7cd1f76fde186f6505c09`.
