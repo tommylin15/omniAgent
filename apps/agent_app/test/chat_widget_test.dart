@@ -120,7 +120,9 @@ class DurabilityReceiptChatApi extends FakeChatApi {
   @override
   Future<List<Map<String,dynamic>>> events(String threadId,int cursor) async {
     if (cursor >= 2 ||
-        !writes.any((row)=>'${row['path']}'.endsWith('/messages'))) return [];
+        !writes.any((row)=>'${row['path']}'.endsWith('/messages'))) {
+      return [];
+    }
     return [
       if (cursor < 0)
         {'event_id':'user-1','seq':0,'turn_id':'turn-1','event_type':'item_upsert',
