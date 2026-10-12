@@ -70,6 +70,11 @@ describe.runIf(Boolean(dsn))("isolated PostgreSQL ChatStore acceptance", () => {
       const first = await store.message(a,"thread-a","hello","message-1");
       const turnId = first.turn.turn_id as string;
       expect(first.turn.status).toBe("QUEUED");
+      expect(await store.turnReceipt(a,"thread-a",turnId))
+        .toEqual({status:"QUEUED",textPersisted:false,
+          terminalPersisted:false,durableCompleted:false});
+      await expect(store.turnReceipt(b,"thread-a",turnId))
+        .rejects.toBeInstanceOf(ChatNotFound);
       expect(first.event.seq).toBe("0");
       expect((await store.message(a,"thread-a","hello","message-1")).turn.turn_id).toBe(turnId);
       await expect(store.message(a,"thread-a","different","message-1")).rejects.toBeInstanceOf(ChatConflict);
@@ -318,7 +323,19 @@ describe.runIf(Boolean(dsn))("isolated PostgreSQL ChatStore acceptance", () => {
           method:"POST",headers:{...auth("alice"),"Idempotency-Key":"joined-message-1"},
           body:JSON.stringify({content:"owner-only fixture prompt"})});
         expect(messageResponse.status).toBe(202);
-        expect((await messageResponse.json()).dispatch.status).toBe("completed");
+        const committed=await messageResponse.json();
+        expect(committed.dispatch.status).toBe("completed");
+        const turnIdForReceipt=String(committed.turn.turn_id);
+        const urlForReceipt=url+"/v1/threads/joined-flow/turns/"+turnIdForReceipt+"/receipt";
+        expect((await fetch(urlForReceipt)).status).toBe(401);
+        expect((await fetch(urlForReceipt,{headers:auth("bob")})).status).toBe(404);
+        const verified=await fetch(urlForReceipt,{headers:auth("alice")});
+        expect(verified.status).toBe(200);
+        const receipt=await verified.json();
+        expect(receipt).toEqual({status:"COMPLETED",textPersisted:true,
+          terminalPersisted:true,durableCompleted:true});
+        expect(JSON.stringify(receipt)).not.toContain("bounded fixture answer");
+        expect(JSON.stringify(receipt)).not.toContain("owner-only fixture prompt");
         expect(requests).toBe(1);
         const replay=await fetch(url+"/v1/threads/joined-flow/events?cursor=-1",{
           headers:auth("alice")});

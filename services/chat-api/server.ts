@@ -226,6 +226,9 @@ export function makeChatServer(store: ChatStore, verifyUser: VerifyUser, verifyS
       if (request.method === "GET" && activeTurn) {
         return send(response,200,{active:await store.activeTurn(ownerId,activeTurn[1])});
       }
+       const receipt = new RegExp("^/v1/threads/([A-Za-z0-9][A-Za-z0-9._:-]{0,127})/turns/([A-Za-z0-9][A-Za-z0-9._:-]{0,127})/receipt$").exec(url.pathname);
+       if (request.method === "GET" && receipt)
+         return send(response,200,await store.turnReceipt(ownerId,receipt[1],receipt[2]));
       const events = /^\/v1\/threads\/([A-Za-z0-9][A-Za-z0-9._:-]{0,127})\/events$/.exec(url.pathname);
       if (request.method === "GET" && events) {
         const resume = url.searchParams.has("cursor") ? url.searchParams.get("cursor") :

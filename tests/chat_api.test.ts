@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { makeChatServer } from "../services/chat-api/server.js";
 import type { ChatDispatcher } from "../services/chat-api/gateway_dispatch.js";
 import type { CredentialManager } from "../services/chat-api/credential_management.js";
-import { ChatConflict, safeRecord, type ChatStore } from "../services/chat-api/storage.js";
+import { ChatConflict, ChatNotFound, safeRecord, type ChatStore } from "../services/chat-api/storage.js";
 
 const servers: ReturnType<typeof makeChatServer>[] = [];
 afterEach(async () => Promise.all(servers.splice(0).map((server) => new Promise<void>((resolve) => server.close(() => resolve())))));
@@ -26,6 +26,11 @@ async function app(dispatcher?: Pick<ChatDispatcher,"runOnce">,
     message: vi.fn(async (ownerId: string, threadId: string, content: string) => ({ owner_id: ownerId,
       turn: { turn_id: "turn-1", status: "QUEUED" }, event: { payload: { content }, thread_id: threadId }, dispatch: { status: "QUEUED" } })),
     events: vi.fn(async (ownerId: string) => [{ owner_id: ownerId, seq: 0, event_type: "item_upsert", payload: { content: "hello" } }]),
+    turnReceipt:vi.fn(async (ownerId:string,threadId:string,turnId:string) => {
+      if (ownerId!=="owner-alice" || threadId!=="thread-1" || turnId!=="turn-1")
+        throw new ChatNotFound("Owner turn not found");
+      return {status:"COMPLETED",textPersisted:true,terminalPersisted:true,durableCompleted:true};
+    }),
     appendEvent: vi.fn(async (ownerId: string) => ({ owner_id: ownerId, event_id: "event-1" })),
     requestApproval: vi.fn(async (value: unknown) => ({ ...value as object, status: "PENDING" })),
     decideApproval: vi.fn(async (ownerId: string) => ({ owner_id: ownerId, status: "APPROVED" })),
@@ -64,6 +69,20 @@ describe("omniAgent Chat API ownership boundary", () => {
     expect(worker.canDispatch).toHaveBeenCalledWith("owner-alice","gemini","gemini-3.5-flash-lite");
     expect(store.message).not.toHaveBeenCalled();
     expect(worker.runOnce).not.toHaveBeenCalled();
+  });
+
+  it("only the authenticated Owner receives a no-payload persistence receipt", async () => {
+    const {base,store}=await app();
+    const path="/v1/threads/thread-1/turns/turn-1/receipt";
+    expect((await fetch(base+path)).status).toBe(401);
+    expect((await fetch(base+path,{headers:{Authorization:"Bearer service"}})).status).toBe(401);
+    const own=await fetch(base+path,{headers:{Authorization:"Bearer alice"}});
+    expect(own.status).toBe(200);
+    expect(await own.json()).toEqual({status:"COMPLETED",textPersisted:true,
+      terminalPersisted:true,durableCompleted:true});
+    expect((await fetch(base+path,{headers:{Authorization:"Bearer bob"}})).status).toBe(404);
+    expect(store.turnReceipt).toHaveBeenCalledWith("owner-alice","thread-1","turn-1");
+    expect(store.turnReceipt).toHaveBeenCalledWith("owner-bob","thread-1","turn-1");
   });
 
   it("exposes only the authenticated Owner identity and current disabled flags", async () => {

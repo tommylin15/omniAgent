@@ -330,6 +330,38 @@ export class ChatStore {
       row.status==="RUNNING"?"running":"queued"};
   }
 
+  /** Owner-scoped durable completion proof; never exposes message or provider data. */
+  async turnReceipt(ownerId:string,threadId:string,turnId:string):
+      Promise<{status:string;textPersisted:boolean;terminalPersisted:boolean;durableCompleted:boolean}> {
+    const result=await this.pool.query<{
+      status:string;text_persisted:boolean;terminal_persisted:boolean;
+    }>(`SELECT t.status,
+        EXISTS (SELECT 1 FROM omni_chat.events e
+          WHERE e.owner_id=t.owner_id AND e.thread_id=t.thread_id
+            AND e.turn_id=t.turn_id AND e.event_type='text_delta'
+            AND length(btrim(COALESCE(NULLIF(e.payload->>'text',''),
+              NULLIF(e.payload->>'delta',''),'')))>0
+        ) AS text_persisted,
+        EXISTS (SELECT 1 FROM omni_chat.events e
+          WHERE e.owner_id=t.owner_id AND e.thread_id=t.thread_id
+            AND e.turn_id=t.turn_id AND
+              ((t.status='COMPLETED' AND e.event_type='turn_completed') OR
+               (t.status='CANCELLED' AND e.event_type='turn_cancelled') OR
+               (t.status='ERROR' AND e.event_type='turn_error'))
+        ) AS terminal_persisted
+        FROM omni_chat.turns t
+        JOIN omni_chat.threads th
+          ON th.owner_id=t.owner_id AND th.thread_id=t.thread_id
+        WHERE t.owner_id=$1 AND t.thread_id=$2 AND t.turn_id=$3`,
+      [ownerId,threadId,turnId]);
+    const row=result.rows[0];
+    if (!row) throw new ChatNotFound("Owner turn not found");
+    return {status:row.status,textPersisted:row.text_persisted,
+      terminalPersisted:row.terminal_persisted,
+      durableCompleted:row.status==="COMPLETED" && row.text_persisted &&
+        row.terminal_persisted};
+  }
+
   async events(ownerId: string, threadId: string, cursor: number, limit: number): Promise<Record<string, unknown>[]> {
     await this.thread(ownerId,threadId);
     return (await this.pool.query(
