@@ -1,4 +1,7 @@
-# One-time, explicitly owner-requested technical-scope release (2026-10-10).
+# One-time, explicitly owner-requested technical-scope release (2026-10-12).
+# P0 Owner durability receipt: release code only; dispatch/BYOK remain OFF.
+# Human OAuth verification is NOT REQUIRED; automated auth negatives remain.
+# Release commit modifies this exact workflow to trigger GHCR paths-filtered CI.
 # Future pushes do NOT release unless their own commit is independently tagged.
 # No paid Provider inference is enabled. No actual rollback rehearsal.
 name: omniAgent one-shot GHCR formal release and retain ten
