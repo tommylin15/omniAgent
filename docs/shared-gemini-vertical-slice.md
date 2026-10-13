@@ -83,7 +83,7 @@ provides authorization. Do not put Gemini keys in market-mart, Life, Flutter or 
 **Billing guard:** one non-retried Gemini `generateContent` request per
 accepted invocation; at most two in-flight calls per Gateway instance;
 8 KiB UTF-8 prompt for `omniagent` and `life-assistant`, **32 KiB UTF-8
-prompt for `market-mart` CEO analysis only**, and a 48 KiB JSON HTTP envelope
+prompt for `market-mart` CEO analysis only**, and a 128 KiB JSON HTTP envelope (covers Python-default escaped CJK text)
 (all callers). One request still permits only 512 maximum generated tokens,
 32K returned characters, and a 60s HTTP timeout. No grounding,
 tools or background tasks. `GEMINI_PAID_ENABLED=true` fails closed. Actual

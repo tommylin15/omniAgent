@@ -58,7 +58,7 @@ describe("Shared Gateway Gemini vertical slice",()=>{
     expect(()=>parseSharedGeminiRequest({...base,project:"life-assistant",prompt:"a".repeat(8_193)},
       "gemini-3.5-flash-lite")).toThrow("invalid_request");
   });
-  it("passes a real 29,987-byte CEO request through HTTP, but denies oversized JSON envelopes",async()=>{
+  it("passes a real 29,987-byte CEO request through HTTP, including Python-escaped CJK JSON",async()=>{
     const ceoPrompt="五".repeat(9_995)+"OK";
     const verify=vi.fn(async()=>sa["market-mart"]);
     const generate=vi.fn(async()=>answer);
@@ -69,11 +69,24 @@ describe("Shared Gateway Gemini vertical slice",()=>{
       result:{text:"OK"}});
     expect(generate).toHaveBeenCalledTimes(1);
     expect(generate).toHaveBeenCalledWith(ceoPrompt,"gemini-3.5-flash-lite");
-    // JSON doubles newline bytes even when the decoded prompt is below 32 KiB.
-    const oversizedBody=await post(url,{...base,project:"market-mart",prompt:"\n".repeat(25_000)});
+    // Python's default ensure_ascii=True doubles the wire size of CJK text.
+    // The decoded prompt still consumes only 29,987 UTF-8 bytes.
+    const escapedBody=JSON.stringify({...base,project:"market-mart",prompt:ceoPrompt})
+      .replace(/五/g,"\\u4e94");
+    expect(Buffer.byteLength(escapedBody,"utf8")).toBeGreaterThan(48*1024);
+    expect(Buffer.byteLength(escapedBody,"utf8")).toBeLessThan(128*1024);
+    const encoded=await fetch(url,{method:"POST",headers:{
+      authorization:"Bearer test","content-type":"application/json"},body:escapedBody});
+    expect(encoded.status).toBe(200);
+    expect(generate).toHaveBeenCalledTimes(2);
+    expect(generate).toHaveBeenLastCalledWith(ceoPrompt,"gemini-3.5-flash-lite");
+    // Raw decoded prompt is still <32KiB, but escaped control characters
+    // inflate an envelope above 128KiB; reject before model invocation.
+    const oversizedBody=await post(url,{...base,project:"market-mart",
+      prompt:"\u0000".repeat(30_000)});
     expect(oversizedBody.status).toBe(400);
     expect(await oversizedBody.json()).toEqual({error:"invalid_request"});
-    expect(generate).toHaveBeenCalledTimes(1);
+    expect(generate).toHaveBeenCalledTimes(2);
   });
   it("stays OFF by default and rejects unsafe enablement",async()=>{
     const url=await serve(makeSharedGeminiHandler({env:{}}));

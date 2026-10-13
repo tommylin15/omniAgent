@@ -17,9 +17,9 @@ type Project = typeof PROJECTS[number];
 const PROJECT_SET = new Set<string>(PROJECTS);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SA = /^[a-z0-9][a-z0-9.-]+@[a-z0-9-]+\.iam\.gserviceaccount\.com$/;
-// Gateway JSON envelope covers multibyte UTF-8 and JSON-escaped prompt text.
+// Gateway JSON envelope also covers Python JSON's escaped non-ASCII text.
 // Only market-mart has the larger authorized CEO-analysis input budget.
-const MAX_BODY = 48 * 1024;
+const MAX_BODY = 128 * 1024;
 const MAX_PROMPT = 8 * 1024;
 const MAX_MARKET_MART_PROMPT = 32 * 1024;
 const MAX_OUTPUT = 32_000;
