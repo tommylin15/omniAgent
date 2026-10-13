@@ -23,9 +23,8 @@ jobs:
       REGION: us-central1
       CHAT: omniagent-chat
       GATEWAY: omniagent-agent-gateway
-      EXPECTED_SOURCE: 1cb6542b178db026f8bb1714d71ae43c5721af25
-      EXPECTED_OLD_PREVIEW: omniagent-chat-00039-rik
-      EXPECTED_CANARY: omniagent-chat-00077-xas
+      EXPECTED_SOURCE: 9aac67574f585af0d166e2dd823c442c15402c0d
+      EXPECTED_OLD_PREVIEW: omniagent-chat-00077-xas
       FIXED_PREVIEW_URL: https://preview---omniagent-chat-2oo7qbkd5q-uc.a.run.app
     steps:
       - uses: actions/checkout@v4
@@ -36,6 +35,24 @@ jobs:
           workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
           service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
       - uses: google-github-actions/setup-gcloud@v2
+      - name: Resolve approved zero-percent P0-V Chat tag, never infer from latest revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          gcloud run services describe "$CHAT" --project="$PROJECT" --region="$REGION" --format=json > "$RUNNER_TEMP/resolve.json"
+          python3 - "$RUNNER_TEMP/resolve.json" "$GITHUB_ENV" <<'PY'
+          import json,os,sys,re
+          obj=json.load(open(sys.argv[1]))
+          routes=(obj.get("status") or {}).get("traffic") or []
+          label="p0v-gemini-chat-"+os.environ["EXPECTED_SOURCE"][:8]
+          targets=[x for x in routes if x.get("tag")==label and x.get("percent",0)==0]
+          if len(targets)!=1 or not re.fullmatch(r"omniagent-chat-[a-z0-9-]{6,80}",str(targets[0].get("revisionName",""))):
+              raise SystemExit("BLOCKED: immutable expected Gemini-only Chat tag unavailable")
+          with open(sys.argv[2],"a") as f:
+              f.write("EXPECTED_CANARY="+targets[0]["revisionName"]+"\n")
+          print("chat_owner_gemini_trace_canary_revision="+targets[0]["revisionName"])
+          PY
       - name: Independently verify immutable owner-scoped target and existing formal routing
         shell: bash
         run: |
