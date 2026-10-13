@@ -1,3 +1,10 @@
+## 2026-10-13 — market-mart-only 2,048-token output cap, bounded upgrade
+
+- Owner approved raising the shared Gemini Gateway output budget from 512 to **2,048 maxOutputTokens only for authenticated `project=market-mart`**. This is a request cap, **not** guaranteed consumption; 2,048 is a conservative first step, not evidence that a full multi-role CEO JSON will fit.
+- `omniagent` and `life-assistant` remain at 512 output tokens. The budget is derived from the authenticated, caller-matched project; a forged project claim is denied before model execution. No change to the approved Flash-Lite model, Gemini API key, 32 KiB market-mart input, 8 KiB other input, 128 KiB JSON envelope, 60-second timeout, concurrency 2 or non-retry fail-closed behavior.
+- Truncation guard is retained: Gemini `finishReason=MAX_TOKENS` returns `502 gemini_execution_failed` with safe `reason=output_limit`; incomplete JSON must **not** be accepted or published by the market-mart consumer. No automatic retry, CEO schema relaxation or DB-write changes.
+- **Release gates:** exact-SHA unit tests, GHCR, 0%-traffic private Gateway candidate and signed readback, followed by one original CEO Prompt request from the market-mart backend and its pre-existing schema/DB verification. Do not claim DONE solely on the basis of changing this integer.
+
 ## 2026-10-13 — market-mart CEO 502 diagnostic candidate deployed, true original-prompt cause OPEN
 
 - **Known symptom:** owner reported market-mart original full CEO request reached private omniAgent Gateway but received HTTP `502 gemini_execution_failed`. Earlier synthetic 29,987 B UTF-8 prompt had passed a full live Gemini call; source now supports the necessary 32 KiB decoded market-mart input and 128 KiB escaped JSON.

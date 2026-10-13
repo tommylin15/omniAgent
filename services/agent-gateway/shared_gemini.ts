@@ -24,13 +24,15 @@ const MAX_PROMPT = 8 * 1024;
 const MAX_MARKET_MART_PROMPT = 32 * 1024;
 const MAX_OUTPUT = 32_000;
 const MAX_RUNNING = 2;
+const DEFAULT_OUTPUT_TOKENS = 512;
+const MARKET_MART_OUTPUT_TOKENS = 2_048;
 const DEFAULT_MODEL = "gemini-3.5-flash-lite";
 
 export type SharedGeminiRequest = {
   project: Project; ownerId: string; requestId: string; prompt: string; model: string;
 };
 type Verify = (token: string, audience: string) => Promise<string>;
-type Generate = (prompt: string, model: string) => Promise<GeminiResult>;
+type Generate = (prompt: string, model: string, maxOutputTokens: number) => Promise<GeminiResult>;
 type Configuration = {
   env?: NodeJS.ProcessEnv;
   verify?: Verify;
@@ -148,9 +150,9 @@ export function makeSharedGeminiHandler(options: Configuration = {}) {
     throw new Error("shared_gemini_configuration_unavailable");
   const callers = enabled ? parseGeminiCallers(env.GEMINI_SHARED_CALLERS_JSON || "") : new Map<Project,string>();
   const verify = options.verify ?? verifyGeminiCaller;
-  const generate: Generate = options.generate ?? ((prompt,model) =>
+  const generate: Generate = options.generate ?? ((prompt,model,maxOutputTokens) =>
     new GeminiProvider(env.GEMINI_API_KEY || "",model).generate(prompt,{
-      signal:AbortSignal.timeout(60_000),maxOutputTokens:512
+      signal:AbortSignal.timeout(60_000),maxOutputTokens
     }));
   let running = 0;
   return async (request: IncomingMessage, reply: ServerResponse): Promise<void> => {
@@ -169,7 +171,9 @@ export function makeSharedGeminiHandler(options: Configuration = {}) {
     running++;
     const started = Date.now();
     try {
-      const answer = await generate(body.prompt,body.model);
+      const maxOutputTokens = body.project === "market-mart"
+        ? MARKET_MART_OUTPUT_TOKENS : DEFAULT_OUTPUT_TOKENS;
+      const answer = await generate(body.prompt,body.model,maxOutputTokens);
       assertSafeGeminiAnswer(answer,body.model);
       console.info(JSON.stringify({kind:"shared_gemini_call",project:body.project,requestId:body.requestId,
         status:"completed",model:answer.model,durationMs:Date.now()-started}));

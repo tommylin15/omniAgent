@@ -68,7 +68,7 @@ describe("Shared Gateway Gemini vertical slice",()=>{
     expect((await accepted.json())).toMatchObject({status:"completed",project:"market-mart",
       result:{text:"OK"}});
     expect(generate).toHaveBeenCalledTimes(1);
-    expect(generate).toHaveBeenCalledWith(ceoPrompt,"gemini-3.5-flash-lite");
+    expect(generate).toHaveBeenCalledWith(ceoPrompt,"gemini-3.5-flash-lite",2048);
     // Python's default ensure_ascii=True doubles the wire size of CJK text.
     // The decoded prompt still consumes only 29,987 UTF-8 bytes.
     const escapedBody=JSON.stringify({...base,project:"market-mart",prompt:ceoPrompt})
@@ -79,7 +79,7 @@ describe("Shared Gateway Gemini vertical slice",()=>{
       authorization:"Bearer test","content-type":"application/json"},body:escapedBody});
     expect(encoded.status).toBe(200);
     expect(generate).toHaveBeenCalledTimes(2);
-    expect(generate).toHaveBeenLastCalledWith(ceoPrompt,"gemini-3.5-flash-lite");
+    expect(generate).toHaveBeenLastCalledWith(ceoPrompt,"gemini-3.5-flash-lite",2048);
     // Raw decoded prompt is still <32KiB, but escaped control characters
     // inflate an envelope above 128KiB; reject before model invocation.
     const oversizedBody=await post(url,{...base,project:"market-mart",
@@ -87,6 +87,18 @@ describe("Shared Gateway Gemini vertical slice",()=>{
     expect(oversizedBody.status).toBe(400);
     expect(await oversizedBody.json()).toEqual({error:"invalid_request"});
     expect(generate).toHaveBeenCalledTimes(2);
+  });
+  it("binds output token budget to authenticated project, not prompt or model choice",async()=>{
+    const generate=vi.fn(async()=>answer);
+    const verify=vi.fn(async(token:string)=>sa[token as keyof typeof sa]||"");
+    const url=await serve(makeSharedGeminiHandler({env,verify,generate}));
+    // A market-mart bearer cannot claim to be Life to circumvent either cap.
+    const forged=await post(url,{...base,project:"market-mart"},"Bearer life-assistant");
+    expect(forged.status).toBe(403);
+    expect(generate).not.toHaveBeenCalled();
+    const normal=await post(url,{...base,project:"market-mart"},"Bearer market-mart");
+    expect(normal.status).toBe(200);
+    expect(generate).toHaveBeenCalledExactlyOnceWith("Reply with OK","gemini-3.5-flash-lite",2048);
   });
   it("stays OFF by default and rejects unsafe enablement",async()=>{
     const url=await serve(makeSharedGeminiHandler({env:{}}));
@@ -114,6 +126,9 @@ describe("Shared Gateway Gemini vertical slice",()=>{
         result:{text:"OK"},usage:answer.usage});
     }
     expect(generate).toHaveBeenCalledTimes(3);
+    expect(generate).toHaveBeenNthCalledWith(1,"Reply with OK","gemini-3.5-flash-lite",512);
+    expect(generate).toHaveBeenNthCalledWith(2,"Reply with OK","gemini-3.5-flash-lite",2048);
+    expect(generate).toHaveBeenNthCalledWith(3,"Reply with OK","gemini-3.5-flash-lite",512);
     expect(verify).toHaveBeenCalledWith("life-assistant",env.GEMINI_SHARED_AUDIENCE);
     const cross=await post(url,{...base,project:"life-assistant"},"Bearer omniagent");
     expect(cross.status).toBe(403);
