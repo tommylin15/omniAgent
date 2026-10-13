@@ -44,6 +44,15 @@ jobs:
           print("chat_p0v_source_tag=p0v-gemini-chat-1cb6542b")
           print("chat_p0v_revision="+candidate[0]["revisionName"])
           print("production_traffic_untouched=PASS")
+          preview=[row for row in traffic if row.get("tag")=="preview"]
+          if len(preview)==1:
+              print("fixed_preview_revision="+str(preview[0].get("revisionName","UNKNOWN")))
+              print("fixed_preview_percent="+str(preview[0].get("percent",0)))
+              print("fixed_preview_url="+str(preview[0].get("url","UNKNOWN")))
+              print("fixed_preview_points_to_gemini_owner_canary="+str(
+                 preview[0].get("revisionName")==candidate[0].get("revisionName")))
+          else:
+              print("fixed_preview_tag="+("ABSENT" if not preview else "INVALID_DUPLICATE"))
           PY
           URL="$(cat "$RUNNER_TEMP/candidate-url")"
           for p in /health /ready / /main.dart.js; do
