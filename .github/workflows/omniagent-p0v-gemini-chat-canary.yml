@@ -1,0 +1,169 @@
+# Owner-scoped Gemini-only Chat stage. No real user token, provider call or formal traffic promotion.
+# The pinned approved source already passed immutable GHCR candidate and signed smoke.
+name: omniAgent P0-V Gemini Chat scoped canary
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/omniagent-p0v-gemini-chat-canary.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: omniagent-ghcr-cloudrun-release
+  cancel-in-progress: false
+jobs:
+  scoped-canary:
+    if: github.repository == 'tommylin15/omniAgent' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SOURCE_SHA: 1cb6542b178db026f8bb1714d71ae43c5721af25
+      PROJECT: gen-lang-client-0593591102
+      REGION: us-central1
+      CANARY_TAG: p0v-gemini-chat-1cb6542b
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+          service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Read exact candidate source, OAuth-backed Owner and private IAM
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          # The only new source change since approved SHA is THIS workflow.
+          changed="$(git diff --name-only "$SOURCE_SHA" HEAD)"
+          [[ "$changed" == ".github/workflows/omniagent-p0v-gemini-chat-canary.yml" ]] || {
+            echo "::error::Candidate must match exact approved service source"
+            exit 1
+          }
+          bash infra/gcp/p0-owner-identity-preflight.sh > "$RUNNER_TEMP/owner-preflight.txt"
+          grep -qx 'owner_identity=PASS_DB_BACKED_OAUTH_OWNER' "$RUNNER_TEMP/owner-preflight.txt"
+          echo 'oauth_backed_owner_hash_verified=PASS'
+          HOST="$(printf '%s' 'amFudXMtcG9zdGdyZXMtZGV2' | base64 -d)"
+          # Only omniagent_chat. Read Owner UUIDs privately and compare against
+          # the previously approved hash; never print other Owner rows.
+          gcloud compute ssh "$HOST" --zone=us-central1-a --project="$PROJECT"             --tunnel-through-iap --quiet             --command="sudo docker exec -u postgres janus-postgres psql -X -A -t -v ON_ERROR_STOP=1 -d omniagent_chat -c \"SELECT owner_id FROM omni_chat.owners WHERE issuer <> '' AND subject <> ''\""             > "$RUNNER_TEMP/owners.private"
+          python3 - "$RUNNER_TEMP/owners.private" "$GITHUB_ENV" <<'PY'
+          import hashlib,re,sys
+          expected="bd46f8f29ba78faaa606f03d6a760c1726ce27a7cd75381d5c04b9525861f70f"
+          uuid=re.compile(r"^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$",re.I)
+          matches=[line.strip().lower() for line in open(sys.argv[1]) if uuid.fullmatch(line.strip()) and
+            hashlib.sha256(line.strip().lower().encode()).hexdigest()==expected]
+          if len(matches)!=1: raise SystemExit("BLOCKED: approved OAuth Owner absent or ambiguous")
+          print("::add-mask::"+matches[0])
+          with open(sys.argv[2],"a") as out:out.write("P0V_APPROVED_OWNER="+matches[0]+"\n")
+          print("approved_oauth_owner_database_binding=PASS")
+          PY
+          rm -f "$RUNNER_TEMP/owners.private"
+      - name: Deploy only owner-scoped Gemini Chat tag, restore disabled service template
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          python3 - "$P0V_APPROVED_OWNER" "$RUNNER_TEMP/chat-p0v-url" <<'PY'
+          import hashlib,json,os,sys
+          sys.path.insert(0,"scripts")
+          from p0_owner_trial_stage import (OWNER_DIGEST,describe,env,template,tagged,
+              serving,image_for,annotation_max,launch,restore)
+          owner,target=sys.argv[1:]
+          if hashlib.sha256(owner.encode()).hexdigest()!=OWNER_DIGEST:
+              raise SystemExit("BLOCKED: unverifiable Owner")
+          before={svc:describe(svc) for svc in ("omniagent-chat","omniagent-agent-gateway")}
+          chat,gate=before["omniagent-chat"],before["omniagent-agent-gateway"]
+          sha=os.environ["SOURCE_SHA"]
+          ghcr="ghcr-"+sha[:12]
+          tag=os.environ["CANARY_TAG"]
+          serving_before={svc:serving(doc) for svc,doc in before.items()}
+          if any(len(x)!=1 or sum(x.values())!=100 for x in serving_before.values()):
+              raise SystemExit("BLOCKED: unknown formal serving allocation")
+          c=env(chat)
+          if (c.get("CHAT_DISPATCH_ENABLED") or {}).get("value") not in ("false",None):
+              raise SystemExit("BLOCKED: Chat dispatch unexpectedly enabled in service template")
+          if any(k in c for k in ["CHAT_DISPATCH_APPROVED_OWNER_IDS","CHAT_DISPATCH_ENTITLEMENTS_JSON",
+                                   "CHAT_GATEWAY_URL","CHAT_GATEWAY_AUDIENCE"]):
+              raise SystemExit("BLOCKED: inherited Owner trial settings")
+          if "OMNIAGENT_BUNDLE" not in c:
+              raise SystemExit("BLOCKED: signed Chat bundle unavailable")
+          if (c.get("CHAT_BYOK_MANAGEMENT_ENABLED") or {}).get("value")=="true":
+              raise SystemExit("BLOCKED: BYOK enabled")
+          if "OMNIAGENT_PROVIDER_BUNDLE" not in env(gate):
+              raise SystemExit("BLOCKED: Gateway provider bundle missing")
+          gw=tagged(gate,ghcr)
+          tagged(chat,ghcr)
+          image=image_for("omniagent-chat",chat,tagged(chat,ghcr)["revisionName"])
+          image_for("omniagent-agent-gateway",gate,gw["revisionName"])
+          audience=(gate.get("status") or {}).get("url","")
+          if not audience.startswith("https://"): raise SystemExit("BLOCKED: Gateway audience missing")
+          entitlement=json.dumps([{"ownerId":owner,"runtime":"gemini",
+              "model":"gemini-3.5-flash-lite","credentialMode":"platform"}],separators=(",",":"))
+          settings={"CHAT_DISPATCH_ENABLED":"true",
+             "CHAT_DISPATCH_APPROVED_OWNER_IDS":owner,
+             "CHAT_DISPATCH_ENTITLEMENTS_JSON":entitlement,
+             "CHAT_GATEWAY_URL":gw["url"].rstrip("/"),
+             "CHAT_GATEWAY_AUDIENCE":audience.rstrip("/")}
+          max_instances=annotation_max(chat)
+          changed=False
+          success=False
+          stage_url=""
+          try:
+              changed=True
+              stage_url=launch("omniagent-chat",image,tag,settings,1)
+              success=True
+          finally:
+              if changed:
+                  try:
+                      restore("omniagent-chat",image,
+                         ["CHAT_DISPATCH_APPROVED_OWNER_IDS","CHAT_DISPATCH_ENTITLEMENTS_JSON",
+                          "CHAT_GATEWAY_URL","CHAT_GATEWAY_AUDIENCE"],
+                         {"CHAT_DISPATCH_ENABLED":"false"},max_instances)
+                      print("chat_service_template_restore=PASS_DISPATCH_OFF")
+                  except Exception:
+                      success=False
+                      print("chat_service_template_restore=BLOCKED_OPERATOR_RECOVERY")
+              current=describe("omniagent-chat")
+              if serving(current)!=serving_before["omniagent-chat"]:
+                  success=False
+                  print("chat_formal_traffic=BLOCKED_ALLOCATION_CHANGED")
+              live_env=env(current)
+              if (live_env.get("CHAT_DISPATCH_ENABLED") or {}).get("value")!="false" or any(
+                  key in live_env for key in ["CHAT_DISPATCH_APPROVED_OWNER_IDS",
+                  "CHAT_DISPATCH_ENTITLEMENTS_JSON","CHAT_GATEWAY_URL","CHAT_GATEWAY_AUDIENCE"]):
+                  success=False
+                  print("chat_service_template=BLOCKED_NOT_RESTORED")
+              if success:
+                  try: tagged(current,tag)
+                  except Exception:
+                      success=False
+                      print("chat_canary_tag=BLOCKED_MISSING")
+          if not success:raise SystemExit("BLOCKED: Chat pilot deployment or safe restoration failed")
+          open(target,"w").write(stage_url.rstrip("/"))
+          print("chat_gemini_scoped_canary=PASS_ZERO_TRAFFIC")
+          print("chat_production_serving=UNCHANGED")
+          print("chat_owner_allowlist=ONE_OAUTH_BACKED_OWNER_GEMINI_ONLY")
+          print("real_user_google_oauth_e2e=NOT_VERIFIED_AUTOMATION_UNAVAILABLE")
+          print("live_provider_execution=NOT_TRIGGERED")
+          PY
+      - name: Canary health, readiness, anonymous model/turn denial
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="$(cat "$RUNNER_TEMP/chat-p0v-url")"
+          for ep in /health /ready / /main.dart.js; do
+            code="$(curl --max-time 40 -sS -o /dev/null -w '%{http_code}' "$url$ep")"
+            echo "tagged_chat_canary=$ep http=$code"
+            test "$code" = 200
+          done
+          for ep in /v1/models /v1/threads; do
+            code="$(curl --max-time 30 -sS -o /dev/null -w '%{http_code}' "$url$ep")"
+            echo "anonymous_chat_canary_denial=$ep http=$code"
+            test "$code" = 401
+          done
+          echo "chat_p0v_canary_health_and_anonymous_denial=PASS" >> "$GITHUB_STEP_SUMMARY"
+          echo "manual_oauth_gate=NOT_REQUIRED" >> "$GITHUB_STEP_SUMMARY"
+          echo "real_ui_oauth_owner_roundtrip=NOT_VERIFIED_AUTOMATION_UNAVAILABLE" >> "$GITHUB_STEP_SUMMARY"
