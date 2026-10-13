@@ -1,0 +1,187 @@
+# Stage one private zero-traffic model-enabled Gateway revision from pinned GHCR.
+# Restore the exact preflight Gateway SERVICE TEMPLATE afterwards.
+# Never promote formal traffic, alter IAM, use real provider tokens, or modify consumer data.
+name: omniAgent market-mart Gemini 2048 bounded pilot
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/omniagent-market2048-owner-scoped-canary.yml']
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: omniagent-ghcr-cloudrun-release
+  cancel-in-progress: false
+jobs:
+  stage:
+    if: github.repository == 'tommylin15/omniAgent' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      PROJECT: gen-lang-client-0593591102
+      REGION: us-central1
+      SERVICE: omniagent-agent-gateway
+      SOURCE_SHA: 227a0bdcbd7eea801470110ab8d55037bcecafee
+      PILOT_TAG: p0v-market2048-227a0bdc
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+          service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Stage pinned 2048-output private tag and restore service template
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          python3 - <<'PY'
+          import json,os,re,subprocess
+          project=os.environ["PROJECT"];region=os.environ["REGION"];service=os.environ["SERVICE"]
+          source=os.environ["SOURCE_SHA"];tag=os.environ["PILOT_TAG"]
+          feature=("GEMINI_SHARED_EXECUTION_ENABLED","GEMINI_SHARED_AUDIENCE",
+                   "GEMINI_SHARED_MODEL","GEMINI_SHARED_CALLERS_JSON")
+          if tag!="p0v-market2048-"+source[:8]:raise SystemExit("BLOCKED_SOURCE_TAG")
+          def cmd(*args):
+              r=subprocess.run(args,capture_output=True,text=True)
+              if r.returncode:
+                  raise RuntimeError("GCP_ACTION_FAILED_"+args[1].upper())
+              return r.stdout
+          def describe():
+              return json.loads(cmd("gcloud","run","services","describe",service,
+                  "--project="+project,"--region="+region,"--format=json"))
+          def revision(name):
+              return json.loads(cmd("gcloud","run","revisions","describe",name,
+                  "--project="+project,"--region="+region,"--format=json"))
+          def routes(s):
+              return (s.get("status") or {}).get("traffic") or []
+          def serving(s):
+              return {r.get("revisionName"):r.get("percent") for r in routes(s) if r.get("percent",0)>0}
+          def container(obj,revision=False):
+              c=((obj.get("spec") or {}).get("containers") or []) if revision else (
+                 (((obj.get("spec") or {}).get("template") or {}).get("spec") or {}).get("containers") or [])
+              if len(c)!=1:raise RuntimeError("UNEXPECTED_CONTAINER_COUNT")
+              return c[0]
+          def normalize(image):
+              src=image.removeprefix("cache.us-docker.pkg.dev/")
+              if not re.fullmatch(r"ghcr\.io/tommylin15/omniagent-agent-gateway@sha256:[a-f0-9]{64}",src):
+                  raise RuntimeError("UNTRUSTED_IMAGE")
+              return src
+          def env_map(c):
+              items=c.get("env") or []
+              result={}
+              for row in items:
+                  name=row.get("name")
+                  if not isinstance(name,str) or name in result:
+                      raise RuntimeError("INVALID_OR_DUPLICATE_ENV")
+                  result[name]=row
+              return result
+          def deployment(image,tag=None,update=None,remove=None):
+              args=["gcloud","run","deploy",service,
+                  "--project="+project,"--region="+region,"--image="+image,"--no-traffic"]
+              if tag:args+=["--tag="+tag]
+              if remove:args+=["--remove-env-vars="+",".join(remove)]
+              if update:
+                  if any("~" in v or "\n" in v for v in update.values()):
+                      raise RuntimeError("UNSAFE_OVERRIDE_DELIMITER")
+                  args+=["--update-env-vars=^~^"+"~".join(k+"="+v for k,v in update.items())]
+              args+=["--quiet"]
+              cmd(*args)
+          before=describe()
+          policy=json.loads(cmd("gcloud","run","services","get-iam-policy",service,
+              "--project="+project,"--region="+region,"--format=json"))
+          members={x for b in policy.get("bindings") or [] if b.get("role")=="roles/run.invoker"
+                   for x in b.get("members") or []}
+          if any(x in members for x in ("allUsers","allAuthenticatedUsers")):
+              raise SystemExit("BLOCKED_PUBLIC_GATEWAY_IAM")
+          callers={key:"omniagent-codex-"+suffix+"@"+project+".iam.gserviceaccount.com"
+                  for key,suffix in (("omniagent","chat-client"),("market-mart","market-client"),
+                                     ("life-assistant","life-client"))}
+          if any("serviceAccount:"+mail not in members for mail in callers.values()):
+              raise SystemExit("BLOCKED_MISSING_DEDICATED_INVOKERS")
+          old=container(before)
+          oldenv=env_map(old)
+          if not oldenv.get("OMNIAGENT_PROVIDER_BUNDLE",{}).get("valueFrom"):
+              raise SystemExit("BLOCKED_MISSING_PROVIDER_BUNDLE")
+          if oldenv.get("GEMINI_PAID_ENABLED",{}).get("value")=="true":
+              raise SystemExit("BLOCKED_PAID_PROVIDER_FLAG")
+          if any(name in oldenv and not isinstance(oldenv[name].get("value"),str) for name in feature):
+              raise SystemExit("BLOCKED_SECRET_FEATURE_OVERRIDE")
+          baseline=normalize(old.get("image",""))
+          audience=(before.get("status") or {}).get("url","").rstrip("/")
+          if not re.fullmatch(r"https://omniagent-agent-gateway-[a-z0-9-]+\.a\.run\.app",audience):
+              raise SystemExit("BLOCKED_AUDIENCE_DRIFT")
+          stable=serving(before)
+          if len(stable)!=1 or list(stable.values())!=[100]:
+              raise SystemExit("BLOCKED_TRAFFIC_DRIFT")
+          candidates=[r for r in routes(before)
+              if r.get("tag")=="ghcr-"+source[:12] and r.get("percent",0)==0]
+          if len(candidates)!=1:
+              raise SystemExit("BLOCKED_NO_EXACT_GHCR_CANDIDATE")
+          approved=revision(candidates[0]["revisionName"])
+          image=normalize(container(approved,True).get("image",""))
+          if not any(x.get("type")=="Ready" and x.get("status")=="True"
+                     for x in (approved.get("status") or {}).get("conditions") or []):
+              raise SystemExit("BLOCKED_CANDIDATE_NOT_READY")
+          if not tag.startswith("p0v-market2048-"):raise SystemExit("BAD_TAG")
+          if any(r.get("tag")==tag for r in routes(before)):
+              raise SystemExit("BLOCKED_REUSING_EXISTING_TAG")
+          overrides={
+              "GEMINI_SHARED_EXECUTION_ENABLED":"true",
+              "GEMINI_SHARED_AUDIENCE":audience,
+              "GEMINI_SHARED_MODEL":"gemini-3.5-flash-lite",
+              "GEMINI_SHARED_CALLERS_JSON":json.dumps(callers,separators=(",",":"))
+          }
+          rem=[k for k in feature if k not in oldenv]
+          restored={k:oldenv[k]["value"] for k in feature if k in oldenv}
+          changed=False;successful=False
+          try:
+              changed=True
+              deployment(image,tag=tag,update=overrides)
+              staged=describe()
+              rows=[r for r in routes(staged) if r.get("tag")==tag and r.get("percent",0)==0]
+              if len(rows)!=1 or not rows[0].get("url","").startswith("https://"):
+                  raise RuntimeError("NO_ZERO_TRAFFIC_TAG")
+              check=revision(rows[0]["revisionName"])
+              if normalize(container(check,True).get("image",""))!=image:
+                  raise RuntimeError("WRONG_STAGE_IMAGE")
+              if not any(x.get("type")=="Ready" and x.get("status")=="True"
+                         for x in (check.get("status") or {}).get("conditions") or []):
+                  raise RuntimeError("TAG_NOT_READY")
+              stageenv=env_map(container(check,True))
+              if any(stageenv.get(k,{}).get("value")!=v for k,v in overrides.items()):
+                  raise RuntimeError("STAGED_CONFIG_MISMATCH")
+              if not stageenv.get("OMNIAGENT_PROVIDER_BUNDLE",{}).get("valueFrom"):
+                  raise RuntimeError("STAGED_PROVIDER_BUNDLE_MISSING")
+              if serving(staged)!=stable:
+                  raise RuntimeError("FORMAL_TRAFFIC_CHANGED")
+              successful=True
+          finally:
+              if changed:
+                  try:
+                      deployment(baseline,remove=rem,update=restored)
+                      restored_service=describe()
+                      if normalize(container(restored_service).get("image",""))!=baseline or (
+                         env_map(container(restored_service))!=oldenv):
+                          raise RuntimeError("SERVICE_TEMPLATE_RESTORE_MISMATCH")
+                      if serving(restored_service)!=stable:
+                          raise RuntimeError("FORMAL_TRAFFIC_AFTER_RESTORE_MISMATCH")
+                      if successful:
+                          final=[r for r in routes(restored_service)
+                              if r.get("tag")==tag and r.get("percent",0)==0]
+                          if len(final)!=1:
+                              raise RuntimeError("PILOT_TAG_NOT_RETAINED")
+                          print("market_output2048_candidate_url="+final[0]["url"].rstrip("/")+"/v1/gemini/execute")
+                          print("market_output2048_token_audience="+audience)
+                          print("market_output2048_candidate_ready=PASS")
+                      print("gateway_service_template_restored=PASS")
+                      print("formal_gateway_traffic_unchanged=PASS")
+                  except Exception:
+                      print("gateway_service_template_restored=FAILED_OPERATOR_RECOVERY_REQUIRED")
+                      raise
+          if not successful:raise RuntimeError("STAGE_NOT_SUCCESSFUL")
+          print("market_output2048_pilot=PASS_ZERO_TRAFFIC")
+          print("model_calls_this_job=ZERO")
+          PY
