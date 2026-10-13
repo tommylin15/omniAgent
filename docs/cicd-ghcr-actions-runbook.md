@@ -1,3 +1,13 @@
+## 2026-10-13 Fixed Preview alias activated for P0-V Gemini Chat
+
+**Current active test URL:** <https://preview---omniagent-chat-2oo7qbkd5q-uc.a.run.app/>.
+
+An independent Cloud Run service readback found the pre-existing `preview` tag still targeting historical `omniagent-chat-00039-rik` (0%); [read-only check #38371066056](https://github.com/tommylin15/omniAgent/actions/runs/38371066056). This was *not* the approved Owner Gemini canary, so the earlier suggestion to click a SHA-specific URL was necessary at that checkpoint.
+
+The narrowly scoped [fixed Preview bind #38371491983](https://github.com/tommylin15/omniAgent/actions/runs/38371491983) changed only the existing `preview` traffic tag to `omniagent-chat-00077-xas` (the previously validated Owner-Gemini-only 0% canary). Preflight checked the approved single Owner by digest, exactly one `gemini-3.5-flash-lite` entitlement, private signed Gateway candidate, immutable GHCR image and prior preview health. The workflow independently verified the new tagged URL's health, DB-ready, Flutter UI, anonymous API denial, unchanged other tags and unchanged formal 100% allocation. Project Hygiene PASS.
+
+**Scope:** This is a fixed URL and *testing-route* acceptance; **real Google user OAuth on Preview, authorized-JavaScript-origin, Chat message → private Gateway Gemini → PostgreSQL terminal/SSE → user-visible reply are still NOT VERIFIED**, and production Chat dispatch remains OFF. Do not claim full release or reintroduce manual OAuth acceptance. `OMNIAGENT_AUTO_PREVIEW_ENABLED` stays opt-in; future updates must pass the accepted immutable candidate/signed smoke gates and preserve the serving and other tag snapshots.
+
 # 2026-10-10 One-time, rollback-rehearsal-waived GHCR formal deployment
 
 ### 2026-10-12 08:57 Asia/Taipei — GHCR technical release / protected ten CLOSED

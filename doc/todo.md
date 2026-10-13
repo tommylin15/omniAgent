@@ -1,3 +1,10 @@
+## 2026-10-13 P0-V fixed Chat Preview — RUNTIME PASS, user-model reply OPEN
+
+- [x] The permanent test URL `https://preview---omniagent-chat-2oo7qbkd5q-uc.a.run.app/` exists and was migrated **only by 0%-traffic tag update** from historical Chat revision `omniagent-chat-00039-rik` to approved one-Owner Gemini-only Chat canary `omniagent-chat-00077-xas`.
+- [x] [Guarded Actions #38371491983](https://github.com/tommylin15/omniAgent/actions/runs/38371491983): verified signed Gateway URL/audience, one hashed OAuth-backed Owner + sole `gemini-3.5-flash-lite` entitlement, immutable image, candidate Ready, old Preview healthy, new Preview /health /ready /main.dart.js HTTP 200 and unauthenticated /v1/models /v1/threads 401. **Other tags and formal 100% traffic were unchanged.**
+- [ ] This fixed Preview is **not** proof of a Google user sign-in, real Gemini response persisted to PostgreSQL or UI. The account must match the single approved Owner; OAuth authorized-JavaScript-origin remains NOT_VERIFIED_AUTOMATION_UNAVAILABLE. Do not interpret an unentitled user or disabled Create button as general Chat release readiness.
+- [ ] Future releases must continue using the guarded fixed preview route and cannot silently overwrite the fixed alias or formal deployment. `OMNIAGENT_AUTO_PREVIEW_ENABLED` remains opt-in; this one-time tag update does not change that flag.
+
 # 2026-10-13 Owner reprioritization — single vertical Gemini round trip
 
 **Priority P0-V: Chat / market-mart / Life backend → omniAgent Gateway → Gemini API → the originating application.** Deliver three bounded, real end-to-end text request/response paths first. This does **not** reopen old human OAuth verification or turn on paid provider execution without explicit configuration/quota approval.
