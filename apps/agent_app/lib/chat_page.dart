@@ -199,7 +199,18 @@ class _ChatPageState extends State<ChatPage> {
         'assistantProfile': 'default',
       });
       if (!mounted) return;
-      await select(Map<String, dynamic>.from(value));
+      if (value is! Map || value['thread_id'] is! String) {
+        throw StateError('對話建立回應格式異常，請勿立即重試；先重新整理對話列表');
+      }
+      try {
+        await select(Map<String, dynamic>.from(value));
+      } catch (_) {
+        // A successful POST may already have committed the thread. Never
+        // call that a failed creation or encourage an unsafe second POST.
+        reloadThreads();
+        if (mounted) _error('對話已建立，但開啟時發生錯誤；請從對話列表重新開啟');
+        return;
+      }
       reloadThreads();
     } catch (error) {
       // The API already returns only safe error categories and a random
