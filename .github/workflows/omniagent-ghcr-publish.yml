@@ -17,6 +17,7 @@ on:
       - 'setup-omniagent-db-dev.sh'
       - '.github/workflows/omniagent-ghcr-publish.yml'
       - '.github/workflows/omniagent-ghcr-one-shot-release.yml'
+      - '.github/workflows/omniagent-ghcr-cloudrun-candidate.yml'
   workflow_dispatch:
 permissions:
   contents: read
