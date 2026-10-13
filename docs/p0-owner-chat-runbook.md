@@ -326,3 +326,11 @@ historical checkpoints, not current runtime evidence.
   actual trial URL/API request target → new Owner thread/turn readback →
   terminal and text events → separate Owner B negative → authorized release.
 - No production traffic or Secret version was changed by these audits.
+
+## 2026-10-13 P0-V Gemini Chat canary stage
+
+Code cap: signed HMAC Gemini Chat route now limits `maxOutputTokens=512`, times out after 60s and refuses blank replies, without enabling Codex/BYOK. Node / GHCR quality PASS; [source commit b38a96b4](https://github.com/tommylin15/omniAgent/commit/b38a96b42de4fdb50f7ae624323860ab43b7ef99).
+
+[Zero-traffic Chat owner stage #38365294643](https://github.com/tommylin15/omniAgent/actions/runs/38365294643) PASS: a single OAuth-backed Owner was matched from `omniagent_chat` via approved digest, Gemini-only entitlement deployed to a tagged private 0%-traffic Chat candidate, readback of Chat /health,/ready,/main.dart.js = 200 and anonymous /v1/models,/v1/threads = 401. Gateway 0% candidate was verified, Chat service template restored to dispatch OFF, and serving 100% revision preserved. This staged Gemini authorization is **not** user-facing Chat inference proof: no authenticated user ID token, real Chat Gateway dispatch, PostgreSQL new terminal event, SSE/receipt or Flutter message acceptance was performed. Under current policy real user OAuth automation is unavailable; human OAuth validation is NOT_REQUIRED, not PASS.
+
+Do not promote Dispatch based on canary health. Missing live evidence remains OPEN/NOT_VERIFIED. All three service-identity Gemini probes from the earlier shared Gateway are independent of this Owner-scoped Chat path.
