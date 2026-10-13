@@ -88,6 +88,7 @@ jobs:
           if not (len(serving)==1 and serving[0].get("percent")==100 and len(candidate)==1):
             raise SystemExit("BLOCKED: serving/candidate allocation changed; no mutation attempted")
           PY
+          cat "$GITHUB_STEP_SUMMARY"
       - name: Check narrowly scoped token mint authorization (do not call provider)
         shell: bash
         run: |
