@@ -116,15 +116,33 @@ jobs:
           stable=serving(before)
           if len(stable)!=1 or list(stable.values())!=[100]:
               raise SystemExit("BLOCKED_TRAFFIC_DRIFT")
+          # Prefer the independently staged zero-traffic GHCR candidate.
+          # If a concurrent main update canceled its 3-service candidate
+          # workflow, pin exactly the already published public Gateway image
+          # and independently verify its OCI source revision first.
           candidates=[r for r in routes(before)
               if r.get("tag")=="ghcr-"+source[:12] and r.get("percent",0)==0]
-          if len(candidates)!=1:
-              raise SystemExit("BLOCKED_NO_EXACT_GHCR_CANDIDATE")
-          approved=revision(candidates[0]["revisionName"])
-          image=normalize(container(approved,True).get("image",""))
-          if not any(x.get("type")=="Ready" and x.get("status")=="True"
-                     for x in (approved.get("status") or {}).get("conditions") or []):
-              raise SystemExit("BLOCKED_CANDIDATE_NOT_READY")
+          if len(candidates)==1:
+              approved=revision(candidates[0]["revisionName"])
+              image=normalize(container(approved,True).get("image",""))
+              if not any(x.get("type")=="Ready" and x.get("status")=="True"
+                         for x in (approved.get("status") or {}).get("conditions") or []):
+                  raise SystemExit("BLOCKED_CANDIDATE_NOT_READY")
+              print("gateway_candidate_source=EXISTING_ZERO_TRAFFIC_GHCR")
+          elif len(candidates)==0:
+              tagged="ghcr.io/tommylin15/omniagent-agent-gateway:"+source
+              cmd("docker","pull",tagged)
+              inspected=json.loads(cmd("docker","image","inspect",tagged))
+              if len(inspected)!=1 or (inspected[0].get("Config") or {}).get("Labels",{}).get(
+                      "org.opencontainers.image.revision")!=source:
+                  raise SystemExit("BLOCKED_SOURCE_LABEL_NOT_PINNED")
+              refs=[digest for digest in inspected[0].get("RepoDigests") or []
+                    if re.fullmatch(r"ghcr\.io/tommylin15/omniagent-agent-gateway@sha256:[a-f0-9]{64}",digest)]
+              if len(refs)!=1:raise SystemExit("BLOCKED_UNKNOWN_GHCR_DIGEST")
+              image=normalize(refs[0])
+              print("gateway_candidate_source=VERIFIED_EXACT_PUBLIC_GHCR_DIGEST")
+          else:
+              raise SystemExit("BLOCKED_AMBIGUOUS_GHCR_CANDIDATE")
           if not tag.startswith("p0v-market2048-"):raise SystemExit("BAD_TAG")
           if any(r.get("tag")==tag for r in routes(before)):
               raise SystemExit("BLOCKED_REUSING_EXISTING_TAG")
