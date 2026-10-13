@@ -34,11 +34,46 @@ describe("Shared Gateway Gemini vertical slice",()=>{
     }
     expect(parseSharedGeminiRequest(base,"gemini-3.5-flash-lite").model).toBe("gemini-3.5-flash-lite");
     for(const x of [{...base,model:"gemini-3.5-flash"},{...base,model:"gemini-3.5-pro"},
-      {...base,prompt:""}, {...base,prompt:"多".repeat(3_000)},
+      {...base,prompt:""}, {...base,prompt:"多".repeat(11_000)},
       {...base,ownerId:"foreign"},{...base,requestId:"bad"},
       {...base,privateKey:"leak"},{...base,project:"forged"}]){
       expect(()=>parseSharedGeminiRequest(x,"gemini-3.5-flash-lite")).toThrow();
     }
+  });
+  it("allows a full ~30KB market-mart CEO prompt without enlarging the other projects",()=>{
+    const ceoPrompt="五".repeat(9_995)+"OK"; // 29,987 UTF-8 bytes
+    expect(Buffer.byteLength(ceoPrompt,"utf8")).toBe(29_987);
+    expect(parseSharedGeminiRequest({...base,project:"market-mart",prompt:ceoPrompt},
+      "gemini-3.5-flash-lite").prompt).toBe(ceoPrompt);
+    expect(()=>parseSharedGeminiRequest({...base,project:"life-assistant",prompt:ceoPrompt},
+      "gemini-3.5-flash-lite")).toThrow("invalid_request");
+    expect(()=>parseSharedGeminiRequest({...base,project:"omniagent",prompt:ceoPrompt},
+      "gemini-3.5-flash-lite")).toThrow("invalid_request");
+    expect(parseSharedGeminiRequest({...base,project:"market-mart",prompt:"x".repeat(32_768)},
+      "gemini-3.5-flash-lite").prompt).toHaveLength(32_768);
+    for(const invalid of ["x".repeat(32_769),"五".repeat(10_923)]){
+      expect(()=>parseSharedGeminiRequest({...base,project:"market-mart",prompt:invalid},
+        "gemini-3.5-flash-lite")).toThrow("invalid_request");
+    }
+    expect(()=>parseSharedGeminiRequest({...base,project:"life-assistant",prompt:"a".repeat(8_193)},
+      "gemini-3.5-flash-lite")).toThrow("invalid_request");
+  });
+  it("passes a real 29,987-byte CEO request through HTTP, but denies oversized JSON envelopes",async()=>{
+    const ceoPrompt="五".repeat(9_995)+"OK";
+    const verify=vi.fn(async()=>sa["market-mart"]);
+    const generate=vi.fn(async()=>answer);
+    const url=await serve(makeSharedGeminiHandler({env,verify,generate}));
+    const accepted=await post(url,{...base,project:"market-mart",prompt:ceoPrompt});
+    expect(accepted.status).toBe(200);
+    expect((await accepted.json())).toMatchObject({status:"completed",project:"market-mart",
+      result:{text:"OK"}});
+    expect(generate).toHaveBeenCalledTimes(1);
+    expect(generate).toHaveBeenCalledWith(ceoPrompt,"gemini-3.5-flash-lite");
+    // JSON doubles newline bytes even when the decoded prompt is below 32 KiB.
+    const oversizedBody=await post(url,{...base,project:"market-mart",prompt:"\n".repeat(25_000)});
+    expect(oversizedBody.status).toBe(400);
+    expect(await oversizedBody.json()).toEqual({error:"invalid_request"});
+    expect(generate).toHaveBeenCalledTimes(1);
   });
   it("stays OFF by default and rejects unsafe enablement",async()=>{
     const url=await serve(makeSharedGeminiHandler({env:{}}));

@@ -1,3 +1,10 @@
+## 2026-10-13 — market-mart full CEO prompt capacity fix (code-only, release evidence pending)
+
+- Problem: market-mart needs an approximately **29,987-byte** complete five-role CEO Prompt; Gateway previously rejected UTF-8 input above **8,192 bytes** and HTTP JSON body above **12,000 bytes**. The shared Gemini Provider also enforces 32,768 UTF-16 characters; simply raising the HTTP body cap alone would not unblock the CEO request.
+- Resolution in `services/agent-gateway/shared_gemini.ts`: **market-mart only** may submit up to **32,768 UTF-8 bytes (32 KiB)** of prompt; `omniagent` and `life-assistant` stay at **8,192 bytes (8 KiB)**. The overall JSON request body cap is **49,152 bytes (48 KiB)**, allowing UTF-8 metadata and normal JSON escaping. Requests beyond either limit fail closed with `invalid_request` 400 before provider execution.
+- Capacity test: genuine 29,987-byte UTF-8 text sent over the local HTTP handler fixture, with a stubbed Gemini invocation, must succeed once. Verify 32 KiB boundary; reject a 32 KiB+1-byte CEO prompt, oversized multibyte input, oversized escaped JSON envelope, and any 8 KiB+1-byte Life/omniagent prompt.
+- No change to Gateway IAM/caller identity, rate/concurrency 2, single provider invocation, 60-second timeout, 512 output tokens, approved Flash-Lite model, no retries, no additional platform feature, DB writes or public exposure. Input **bytes are not tokens**; an actual provider response, consumer JSON validation and GCP staging acceptance are independent gates. This does **not** certify full five-specialist CEO analysis model quality.
+
 ## 2026-10-13 — Life P0-V technical integration handoff (consumer-reported DONE)
 
 - **Life Assistant project report:** P0-V technical connection is **DONE on the Life side**. The agreed scope is the existing Life backend/service identity → private omniAgent Gateway → Gemini Flash-Lite → validated response returned to the existing Life application workflow. This is **not** a requirement to add a user-facing chat page, conversation UI, or any new unplanned Life product feature.
@@ -75,8 +82,10 @@ provides authorization. Do not put Gemini keys in market-mart, Life, Flutter or 
 
 **Billing guard:** one non-retried Gemini `generateContent` request per
 accepted invocation; at most two in-flight calls per Gateway instance;
-8 KiB UTF-8 prompt, 512 maximum generated tokens, 32K returned characters,
-60s HTTP timeout. No grounding,
+8 KiB UTF-8 prompt for `omniagent` and `life-assistant`, **32 KiB UTF-8
+prompt for `market-mart` CEO analysis only**, and a 48 KiB JSON HTTP envelope
+(all callers). One request still permits only 512 maximum generated tokens,
+32K returned characters, and a 60s HTTP timeout. No grounding,
 tools or background tasks. `GEMINI_PAID_ENABLED=true` fails closed. Actual
 free quota and zero billing are **not** guaranteed by that environment flag:
 confirm API project tier, quota and permission before setting enabled=true.

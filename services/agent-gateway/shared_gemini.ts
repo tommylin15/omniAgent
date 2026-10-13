@@ -17,8 +17,11 @@ type Project = typeof PROJECTS[number];
 const PROJECT_SET = new Set<string>(PROJECTS);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SA = /^[a-z0-9][a-z0-9.-]+@[a-z0-9-]+\.iam\.gserviceaccount\.com$/;
-const MAX_BODY = 12_000;
-const MAX_PROMPT = 8_192;
+// Gateway JSON envelope covers multibyte UTF-8 and JSON-escaped prompt text.
+// Only market-mart has the larger authorized CEO-analysis input budget.
+const MAX_BODY = 48 * 1024;
+const MAX_PROMPT = 8 * 1024;
+const MAX_MARKET_MART_PROMPT = 32 * 1024;
 const MAX_OUTPUT = 32_000;
 const MAX_RUNNING = 2;
 const DEFAULT_MODEL = "gemini-3.5-flash-lite";
@@ -63,7 +66,8 @@ export function parseSharedGeminiRequest(value: unknown, defaultModel: string): 
   if (typeof project !== "string" || !PROJECT_SET.has(project) ||
       typeof ownerId !== "string" || !UUID.test(ownerId) ||
       typeof requestId !== "string" || !UUID.test(requestId) ||
-      typeof prompt !== "string" || !prompt.trim() || Buffer.byteLength(prompt,"utf8") > MAX_PROMPT ||
+      typeof prompt !== "string" || !prompt.trim() ||
+      Buffer.byteLength(prompt,"utf8") > (project === "market-mart" ? MAX_MARKET_MART_PROMPT : MAX_PROMPT) ||
       typeof selected !== "string" || !isAllowedGeminiModel(selected))
     throw new Error("invalid_request");
   return {project: project as Project,ownerId,requestId,prompt,model:selected};
