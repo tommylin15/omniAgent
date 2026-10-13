@@ -37,6 +37,8 @@ jobs:
           set -euo pipefail
           umask 077
           # The only new source change since approved SHA is THIS workflow.
+          # checkout@v4 is shallow; fetch only the approved immutable parent.
+          git fetch --no-tags --depth=2 origin "$SOURCE_SHA" >/dev/null
           changed="$(git diff --name-only "$SOURCE_SHA" HEAD)"
           [[ "$changed" == ".github/workflows/omniagent-p0v-gemini-chat-canary.yml" ]] || {
             echo "::error::Candidate must match exact approved service source"
