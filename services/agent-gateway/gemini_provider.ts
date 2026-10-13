@@ -69,12 +69,14 @@ export class GeminiProvider {
     return new GeminiProvider(process.env.GEMINI_API_KEY ?? "", model ?? (process.env.GEMINI_MODEL || "gemini-3.5-flash-lite"), fetcher);
   }
 
-  async generate(prompt: string, options: { grounding?: boolean; systemInstruction?: string; signal?: AbortSignal } = {}): Promise<GeminiResult> {
+  async generate(prompt: string, options: { grounding?: boolean; systemInstruction?: string; signal?: AbortSignal; maxOutputTokens?: number } = {}): Promise<GeminiResult> {
     if (!prompt.trim() || prompt.length > 32_768) throw new Error("Gemini prompt is invalid");
+    if (options.maxOutputTokens !== undefined && (!Number.isInteger(options.maxOutputTokens) || options.maxOutputTokens < 1 || options.maxOutputTokens > 2048)) throw new Error("Gemini output token limit is invalid");
     const queriedAt = new Date().toISOString();
     const body = {
       ...(options.systemInstruction ? { system_instruction: { parts: [{ text: options.systemInstruction }] } } : {}),
       contents: [{ role: "user", parts: [{ text: prompt }] }],
+      ...(options.maxOutputTokens ? { generationConfig: { maxOutputTokens: options.maxOutputTokens } } : {}),
       ...(options.grounding ? { tools: [{ google_search: {} }] } : {}),
     };
     const response = await this.fetcher(`${this.baseUrl}/models/${encodeURIComponent(this.model)}:generateContent`, {

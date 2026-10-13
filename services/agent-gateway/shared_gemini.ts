@@ -109,7 +109,7 @@ export function makeSharedGeminiHandler(options: Configuration = {}) {
   const verify = options.verify ?? verifyGeminiCaller;
   const generate: Generate = options.generate ?? ((prompt,model) =>
     new GeminiProvider(env.GEMINI_API_KEY || "",model).generate(prompt,{
-      signal:AbortSignal.timeout(60_000)
+      signal:AbortSignal.timeout(60_000),maxOutputTokens:512
     }));
   let running = 0;
   return async (request: IncomingMessage, reply: ServerResponse): Promise<void> => {

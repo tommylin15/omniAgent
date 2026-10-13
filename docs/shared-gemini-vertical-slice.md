@@ -68,7 +68,7 @@ provides authorization. Do not put Gemini keys in market-mart, Life, Flutter or 
 
 **Billing guard:** one non-retried Gemini `generateContent` request per
 accepted invocation; at most two in-flight calls per Gateway instance;
-8 KiB UTF-8 prompt, 32K returned characters, 60s HTTP timeout. No grounding,
+8 KiB UTF-8 prompt, 512 maximum generated tokens, 32K returned characters,\n60s HTTP timeout. No grounding,
 tools or background tasks. `GEMINI_PAID_ENABLED=true` fails closed. Actual
 free quota and zero billing are **not** guaranteed by that environment flag:
 confirm API project tier, quota and permission before setting enabled=true.

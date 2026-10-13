@@ -38,6 +38,16 @@ describe("Gemini REST provider", () => {
     expect(result.queriedAt).toMatch(/Z$/);
   });
 
+  it("caps one generation using Gemini maxOutputTokens", async () => {
+    const fetcher = vi.fn().mockResolvedValue(response({candidates:[{content:{parts:[{text:"bounded"}]}}]}));
+    const provider = new GeminiProvider("secret","gemini-3.5-flash-lite",fetcher as typeof fetch);
+    await provider.generate("Ping",{maxOutputTokens:512});
+    const body = JSON.parse(String(fetcher.mock.calls[0][1].body));
+    expect(body.generationConfig).toEqual({maxOutputTokens:512});
+    await expect(provider.generate("Ping",{maxOutputTokens:2049})).rejects.toThrow("token limit");
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
   it.each([[429, "quota"], [503, "provider_unavailable"]] as const)("maps HTTP %s to %s without leaking provider text", async (status, kind) => {
     const provider = new GeminiProvider("secret", "gemini-3.5-flash-lite", vi.fn().mockResolvedValue(response({ error: { message: "secret detail" } }, status)) as typeof fetch);
     await expect(provider.generate("Question")).rejects.toMatchObject({ kind, status, message: kind });
