@@ -242,7 +242,14 @@ jobs:
                   env=[e for e in env if e.get("name") not in remove]
               elif remove and any(e.get("name") in remove for e in env):
                   raise SystemExit("BLOCKED: old legacy alias still present")
-              return (s.get("serviceAccountName"),s.get("vpcAccess"),env,
+              # Cloud Run may reorder equal env entries after --set-secrets.
+              # Compare every name+value/ref, rejecting duplicate or unnamed
+              # keys; order alone is not a security or configuration change.
+              names=[row.get("name") for row in env]
+              if any(not isinstance(name,str) or not name for name in names) or len(names)!=len(set(names)):
+                  raise SystemExit("BLOCKED: duplicate or unnamed runtime environment")
+              canonical=sorted(env,key=lambda row:row["name"])
+              return (s.get("serviceAccountName"),s.get("vpcAccess"),canonical,
                 d.get("metadata",{}).get("annotations",{}).get("run.googleapis.com/ingress"))
           if protected(before,True)!=protected(after):
               raise SystemExit("BLOCKED: unapproved runtime identity/Secret/VPC/ingress change")
