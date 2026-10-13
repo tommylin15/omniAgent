@@ -201,8 +201,15 @@ class _ChatPageState extends State<ChatPage> {
       if (!mounted) return;
       await select(Map<String, dynamic>.from(value));
       reloadThreads();
-    } catch (_) {
-      if (mounted) _error('無法建立對話');
+    } catch (error) {
+      // The API already returns only safe error categories and a random
+      // request reference. Keep them visible so a failed POST can be traced
+      // without exposing provider payloads or an OAuth credential.
+      if (mounted) {
+        _error(error is StateError
+            ? error.message.toString()
+            : '建立對話時發生網路或載入錯誤，請勿連續重試');
+      }
     } finally {
       if (mounted) setState(() => busy = false);
     }
