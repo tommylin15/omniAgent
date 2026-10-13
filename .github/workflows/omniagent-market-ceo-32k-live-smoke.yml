@@ -133,7 +133,7 @@ jobs:
               body={"project":project_name,"ownerId":"00000000-0000-4000-8000-000000000001",
                     "requestId":rid,"model":"gemini-3.5-flash-lite","prompt":prompt}
               # Default Python JSON encoding escapes CJK as backslash-u sequences:
-              # this must be supported for Janus's complete CEO payload.
+              # this must be supported for market-mart's complete CEO payload.
               encoded=json.dumps(body).encode()
               req=urllib.request.Request(url,method="POST",data=encoded,
                   headers={"Authorization":"Bearer "+token,"Content-Type":"application/json"})
