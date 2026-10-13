@@ -137,6 +137,16 @@ class DurabilityReceiptChatApi extends FakeChatApi {
   }
 }
 
+class FailedThreadCreationChatApi extends FakeChatApi {
+  @override
+  Future<dynamic> post(String path, Map<String, dynamic> body) async {
+    if (path == '/v1/threads') {
+      throw StateError('omniAgent API 503（追蹤碼：01234567-89ab-4cde-8fab-0123456789ab）');
+    }
+    return super.post(path,body);
+  }
+}
+
 class TracedChatApi extends FakeChatApi {
   @override
   Future<dynamic> post(String path,Map<String,dynamic> body) async {
@@ -369,6 +379,20 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
     });
   }
+
+  testWidgets('failed thread creation surfaces safe HTTP status and request trace', (tester) async {
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.binding.setSurfaceSize(const Size(1000, 800));
+    final api=FailedThreadCreationChatApi();
+    await tester.pumpWidget(MaterialApp(home:ChatPage(api)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('建立對話'));
+    await tester.pump();
+    expect(find.textContaining('omniAgent API 503'), findsOneWidget);
+    expect(find.textContaining('追蹤碼：01234567-89ab-4cde-8fab-0123456789ab'),
+        findsOneWidget);
+    expect(find.text('今天想一起完成什麼？'),findsOneWidget);
+  });
 
   testWidgets('request reference follows only current logged-in ChatPage', (tester) async {
     addTearDown(() => tester.binding.setSurfaceSize(null));
