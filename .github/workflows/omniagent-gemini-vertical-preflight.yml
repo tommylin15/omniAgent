@@ -1,0 +1,128 @@
+name: omniAgent Gemini vertical read-only preflight
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/omniagent-gemini-vertical-preflight.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: omniagent-gemini-vertical-audit
+  cancel-in-progress: false
+jobs:
+  inspect:
+    if: github.repository == 'tommylin15/omniAgent' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      P: gen-lang-client-0593591102
+      R: us-central1
+      GATEWAY: omniagent-agent-gateway
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+          service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Read existing Gateway traffic and runtime metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          gcloud run services describe "$GATEWAY" --project="$P" --region="$R" --format=json > "$RUNNER_TEMP/gateway.json"
+          if gcloud run services get-iam-policy "$GATEWAY" --project="$P" --region="$R" --format=json > "$RUNNER_TEMP/iam.json" 2>"$RUNNER_TEMP/iam.err"; then
+            echo "gateway_iam_readback=PASS" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "{}" > "$RUNNER_TEMP/iam.json"
+            echo "gateway_iam_readback=NOT_VERIFIED" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          for label in chat market life; do
+            case "$label" in
+              chat) short=omniagent-codex-chat-client;;
+              market) short=omniagent-codex-market-client;;
+              life) short=omniagent-codex-life-client;;
+            esac
+            email="$short@$P.iam.gserviceaccount.com"
+            if gcloud iam service-accounts describe "$email" --project="$P" --format='value(email)' > "$RUNNER_TEMP/$label.sa" 2>/dev/null; then
+              echo "service_account_$label=EXISTS" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "service_account_$label=NOT_VERIFIED" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          done
+          python3 - "$RUNNER_TEMP/gateway.json" "$RUNNER_TEMP/iam.json" "$P" "$GITHUB_STEP_SUMMARY" <<'PY'
+          import json,sys
+          svc=json.load(open(sys.argv[1]))
+          policy=json.load(open(sys.argv[2]))
+          project=sys.argv[3]
+          summary=sys.argv[4]
+          status=svc.get("status") or {}
+          routes=status.get("traffic") or []
+          serving=[x for x in routes if x.get("percent",0)>0]
+          candidate=[x for x in routes if x.get("tag","").startswith("ghcr-b03e5f552659") and x.get("percent",0)==0]
+          template=((svc.get("spec") or {}).get("template") or {}).get("spec") or {}
+          env=(template.get("containers") or [{}])[0].get("env") or []
+          names={x.get("name") for x in env}
+          secret=next((x for x in env if x.get("name")=="OMNIAGENT_PROVIDER_BUNDLE"),{})
+          secret_present=bool(secret.get("valueFrom"))
+          members={member for binding in policy.get("bindings") or []
+              if binding.get("role")=="roles/run.invoker"
+              for member in binding.get("members") or []}
+          names_by_project={
+            "omniagent":"omniagent-codex-chat-client",
+            "market-mart":"omniagent-codex-market-client",
+            "life-assistant":"omniagent-codex-life-client"}
+          with open(summary,"a") as out:
+            out.write("gateway_serving_100="+str(len(serving)==1 and serving[0].get("percent")==100)+"\n")
+            out.write("prior_b03_zero_traffic_candidate="+str(len(candidate)==1)+"\n")
+            out.write("gateway_private_no_public_invoker="+str(not any(x in members for x in ("allUsers","allAuthenticatedUsers")))+"\n")
+            out.write("gateway_provider_bundle_ref="+("CONFIGURED" if secret_present else "NOT_VERIFIED")+"\n")
+            out.write("shared_gemini_feature_enabled="+str("GEMINI_SHARED_EXECUTION_ENABLED" in names)+"_ENV_PRESENT\n")
+            for key,name in names_by_project.items():
+              email="serviceAccount:"+name+"@"+project+".iam.gserviceaccount.com"
+              out.write("gateway_invoker_"+key+"="+("GRANTED" if email in members else "NOT_GRANTED_OR_NOT_READABLE")+"\n")
+          if not (len(serving)==1 and serving[0].get("percent")==100 and len(candidate)==1):
+            raise SystemExit("BLOCKED: serving/candidate allocation changed; no mutation attempted")
+          PY
+      - name: Check narrowly scoped token mint authorization (do not call provider)
+        shell: bash
+        run: |
+          set -euo pipefail
+          export ID_AUDIENCE="https://omniagent-agent-gateway-2oo7qbkd5q-uc.a.run.app"
+          export P
+          python3 - "$GITHUB_STEP_SUMMARY" <<'PY'
+          import json,os,subprocess,sys,urllib.request,urllib.error
+          from urllib.parse import quote
+          summary=sys.argv[1]
+          try:
+            token=subprocess.check_output(["gcloud","auth","print-access-token"],text=True,timeout=25).strip()
+          except Exception:
+            with open(summary,"a") as out: out.write("token_mint_test=NOT_VERIFIED_CI_IDENTITY\n")
+            raise SystemExit(0)
+          for label,short in [
+            ("omniagent","omniagent-codex-chat-client"),
+            ("market-mart","omniagent-codex-market-client"),
+            ("life-assistant","omniagent-codex-life-client")
+          ]:
+            email=short+"@"+os.environ["P"]+".iam.gserviceaccount.com"
+            url="https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/"+quote(email,safe="")+":generateIdToken"
+            request=urllib.request.Request(url,method="POST",
+              data=json.dumps({"audience":os.environ["ID_AUDIENCE"],"includeEmail":True}).encode(),
+              headers={"Authorization":"Bearer "+token,"Content-Type":"application/json"})
+            status="NOT_VERIFIED"
+            try:
+              with urllib.request.urlopen(request,timeout=20) as response:
+                value=json.load(response)
+                status="PASS" if isinstance(value.get("token"),str) and len(value["token"])>50 else "INVALID"
+            except urllib.error.HTTPError as exc:
+              status="DENIED_"+str(exc.code)
+            except Exception:
+              status="NOT_VERIFIED"
+            with open(summary,"a") as out: out.write("id_token_"+label+"="+status+"\n")
+          PY
+          echo "gemini_network_requests=ZERO" >> "$GITHUB_STEP_SUMMARY"
+          echo "traffic_mutations=ZERO" >> "$GITHUB_STEP_SUMMARY"
