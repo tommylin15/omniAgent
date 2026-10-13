@@ -6,6 +6,8 @@
 - [x] Node Core / Hygiene / three-image GHCR CI, 0% candidate and signed smoke PASS (source `b03e5f55`).
 - [x] Three service-level Gateway invoker grants, IAM readback, one real Gemini response for each of the **three CI-impersonated caller identities**, negative anonymous/project spoof, and enabled Gateway **0%-traffic** pilot PASS ([#38357794169](https://github.com/tommylin15/omniAgent/actions/runs/38357794169)).
 - [ ] App-level Chat backend → Gateway → Gemini → PostgreSQL/UI remains OPEN; default Chat dispatcher is OFF.
+- [x] Chat signed Gateway Gemini branch source hardening: 512 generated-token limit, 60s timeout, blank-answer failure and regression fixture. Exact-SHA CI/deployment remains separate.
+- [ ] Chat zero-traffic candidate with verified approved Owner Gemini-only entitlement, real signed Gateway invocation, PostgreSQL/SSE durable receipt, and real UI readback. Do not change production dispatch without evidence.
 - [ ] Independent market-mart consumer runtime/API result handling remains OPEN; no changes to that separately owned repository.
 - [ ] Independent life-assistant consumer runtime/API result handling remains OPEN; no changes to that separately owned repository.
 - [ ] Actual three consumer runtime identities (distinct from CI impersonation), failure handling and controlled formal Gateway promotion remain OPEN.

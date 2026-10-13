@@ -22,6 +22,28 @@ describe("Gemini REST provider", () => {
       vi.unstubAllEnvs();
     }
   });
+  it("bounds direct signed Chat Gateway calls and rejects empty replies", async () => {
+    const fetcher=vi.fn().mockResolvedValueOnce(response({
+      candidates:[{content:{parts:[{text:"真實回覆"}]}}]
+    })).mockResolvedValueOnce(response({candidates:[{content:{parts:[]}}]}));
+    vi.stubGlobal("fetch",fetcher);
+    vi.stubEnv("GEMINI_API_KEY","fixture-key");
+    try {
+      const request={ownerId:"owner",threadId:"thread",turnId:"turn",runtime:"gemini" as const,
+        model:"gemini-3.5-flash-lite",messages:[{role:"user" as const,content:"嗨"}]};
+      const result=await dispatchAssistant(request);
+      expect(result).toMatchObject({events:[
+        {type:"text_delta",payload:{text:"真實回覆"}},
+        {type:"turn_completed"}
+      ]});
+      const raw=JSON.parse(String(fetcher.mock.calls[0][1].body));
+      expect(raw.generationConfig).toEqual({maxOutputTokens:512});
+      expect(raw.tools).toBeUndefined();
+      await expect(dispatchAssistant({...request,turnId:"blank"})).rejects.toThrow("blank");
+      expect(fetcher).toHaveBeenCalledTimes(2);
+    } finally {vi.unstubAllEnvs();vi.unstubAllGlobals();}
+  });
+
   it("sends Google Search grounding and preserves citations and usage", async () => {
     const fetcher = vi.fn().mockResolvedValue(response({
       candidates: [{ content: { parts: [{ text: "Answer" }] }, finishReason: "STOP", groundingMetadata: {

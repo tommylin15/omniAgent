@@ -122,3 +122,9 @@ All consumer applications must call from their **server**, not Flutter/Dart/web.
 - Every caller validates `status`, `project`, `requestId`, `model`, and a nonempty bounded `result.text`. Reject errors; do not blindly retry after an uncertain execution. Do not copy Gemini provider API keys into consuming projects.
 
 **Remaining gates:** [ ] genuine owner-authorized Chat UI / DB roundtrip; [ ] market-mart original API/job roundtrip; [ ] life-assistant original backend/API roundtrip; [ ] per-consumer identity impersonation and failure behavior; [ ] controlled formal Gateway promotion and then each consumer's authorized release. No human OAuth acceptance gate is reintroduced.
+
+## 2026-10-13 omniAgent Chat signed-Dispatch follow-up
+
+The existing Chat UI uses Owner-authorized `POST /v1/threads/:id/messages`, PostgreSQL ChatDispatcher, and the signed private Gateway `POST /internal/v1/assistant/turn`. This is **not** the dedicated `/v1/gemini/execute` identity pilot. Gateway's existing approved `OMNIAGENT_PROVIDER_BUNDLE` imports the provider key and HMAC secret. Positive Chat runtime Google ID token, Gateway IAM, matching signing key, real verified Owner UUID and Gemini-only entitlement are separately required.
+
+Signed Chat Gateway Gemini requests now specify 512 maximum output tokens and 60-second deadline, and reject blank model output rather than persisting a false successful turn. Source and test hardening do **not** establish a real user OAuth, PostgreSQL event receipt or UI response. Never substitute a service-account token for a Google user OAuth token. No human OAuth acceptance requirement is reinstated.

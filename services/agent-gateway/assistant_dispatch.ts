@@ -35,7 +35,14 @@ export async function dispatchAssistant(request: DispatchRequest): Promise<Json>
   if (!isAllowedGeminiModel(request.model))
     throw new Error("Gemini model is not on the Flash-Lite allowlist");
   const prompt = request.messages.map((message) => `${message.role}: ${message.content ?? ""}`).join("\n");
-  const result = await GeminiProvider.fromEnvironment(undefined, request.model).generate(prompt, { grounding: request.grounding === true });
+  // Bound signed Chat Gateway inference to the previously accepted pilot limits.
+  const result = await GeminiProvider.fromEnvironment(undefined, request.model).generate(prompt, {
+    grounding: request.grounding === true,
+    maxOutputTokens: 512,
+    signal: AbortSignal.timeout(60_000),
+  });
+  if (!result.text.trim() || Buffer.byteLength(result.text,"utf8") > 32_000)
+    throw new Error("Gemini response is blank or exceeds Chat output limit");
   return { events: [
     { eventId: `${request.turnId}-0`, seq: 0, threadId: request.threadId, turnId: request.turnId,
       type: "text_delta", payload: { text: result.text }, providerIds: { runtime: "gemini", model: result.model } },
