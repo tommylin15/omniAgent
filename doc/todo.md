@@ -1,3 +1,14 @@
+# 2026-10-13 Owner reprioritization — single vertical Gemini round trip
+
+**Priority P0-V: Chat / Janus / Life backend → omniAgent Gateway → Gemini API → the originating application.** Deliver three bounded, real end-to-end text request/response paths first. This does **not** reopen old human OAuth verification or turn on paid provider execution without explicit configuration/quota approval.
+
+- [x] Gateway minimum text endpoint and signed three-project service identity boundary source: `services/agent-gateway/shared_gemini.ts` (OFF by default); no consumer secrets, browser access or cross-project credential reuse.
+- [ ] Exact-commit Node tests + CI accepted; Gateway 0% Cloud Run candidate with enabled and signed live Gemini proof.
+- [ ] Backend-to-Gateway request/response integration verified separately for omniAgent Chat, Janus (market-mart), and Life (life-assistant); the consumers' own repositories, consent, business schema and Owner bindings remain independent.
+- [ ] Positive / negative three-identity IAM acceptance, one bounded real model reply per consumer, real response delivery to each original caller, and guarded formal enablement.
+- [ ] The old P0 Owner PostgreSQL mismatch, advanced replay/cancel, BYOK, Groq, GCS/Iceberg/BigQuery and exhaustive product gates remain OPEN in their original sections; defer them from **this slice's** scope, do not misreport them as DONE.
+- See [single vertical Gemini contract](../docs/shared-gemini-vertical-slice.md).
+
 # 2026-10-10 Owner change: single integration / promotion / cleanup; rollback drill waived
 
 ### 2026-10-12 — P0 Owner Chat 1→3 accepted scope and remaining gates

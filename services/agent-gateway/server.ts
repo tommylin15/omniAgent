@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { CodexBridge, type AgentEvent } from "./codex_bridge.js";
 import { dispatchAssistant } from "./assistant_dispatch.js";
+import { makeSharedGeminiHandler } from "./shared_gemini.js";
 import { McpHost } from "./mcp_host.js";
 
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
@@ -716,8 +717,13 @@ async function signedBody(request: IncomingMessage): Promise<Json> {
 export function makeServer(mcp = new McpHost(), sessions = new OwnerSessionRegistry(),
   turns = new CodexTurnRegistry(), dispatch = dispatchAssistant) {
   let running = false;
+  const sharedGemini = makeSharedGeminiHandler();
   return createServer(async (request: IncomingMessage, response: ServerResponse) => {
     const url = new URL(request.url || "/", "http://localhost");
+    if (request.method === "POST" && url.pathname === "/v1/gemini/execute") {
+      await sharedGemini(request, response);
+      return;
+    }
     if (request.method === "GET" && url.pathname === "/health") {
       send(response, 200, { status: "ok", codexVersion: CODEX_VERSION });
       return;
