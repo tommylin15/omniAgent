@@ -144,6 +144,7 @@ jobs:
           obj=json.load(open(sys.argv[1]))
           images=[x.get("image","") for x in (obj.get("spec") or {}).get("containers") or []]
           if len(images)!=1 or not re.fullmatch(r"ghcr\.io/tommylin15/omniagent-agent-gateway@sha256:[a-f0-9]{64}",images[0]):
+              print("candidate_image_readback="+repr(images)[:300])
               raise SystemExit("BLOCKED: source is not the immutable approved GHCR image")
           print(images[0])
           PY
