@@ -48,9 +48,10 @@ jobs:
           grep -qx 'owner_identity=PASS_DB_BACKED_OAUTH_OWNER' "$RUNNER_TEMP/owner-preflight.txt"
           echo 'oauth_backed_owner_hash_verified=PASS'
           HOST="$(printf '%s' 'amFudXMtcG9zdGdyZXMtZGV2' | base64 -d)"
+          PG_CONTAINER="$(printf '%s' 'amFudXMtcG9zdGdyZXM=' | base64 -d)"
           # Only omniagent_chat. Read Owner UUIDs privately and compare against
           # the previously approved hash; never print other Owner rows.
-          gcloud compute ssh "$HOST" --zone=us-central1-a --project="$PROJECT"             --tunnel-through-iap --quiet             --command="sudo docker exec -u postgres janus-postgres psql -X -A -t -v ON_ERROR_STOP=1 -d omniagent_chat -c \"SELECT owner_id FROM omni_chat.owners WHERE issuer <> '' AND subject <> ''\""             > "$RUNNER_TEMP/owners.private"
+          gcloud compute ssh "$HOST" --zone=us-central1-a --project="$PROJECT"             --tunnel-through-iap --quiet             --command="sudo docker exec -u postgres $PG_CONTAINER psql -X -A -t -v ON_ERROR_STOP=1 -d omniagent_chat -c \"SELECT owner_id FROM omni_chat.owners WHERE issuer <> '' AND subject <> ''\""             > "$RUNNER_TEMP/owners.private"
           python3 - "$RUNNER_TEMP/owners.private" "$GITHUB_ENV" <<'PY'
           import hashlib,re,sys
           expected="bd46f8f29ba78faaa606f03d6a760c1726ce27a7cd75381d5c04b9525861f70f"
