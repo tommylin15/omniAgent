@@ -3,9 +3,12 @@
 **Priority P0-V: Chat / market-mart / Life backend → omniAgent Gateway → Gemini API → the originating application.** Deliver three bounded, real end-to-end text request/response paths first. This does **not** reopen old human OAuth verification or turn on paid provider execution without explicit configuration/quota approval.
 
 - [x] Gateway minimum text endpoint and signed three-project service identity boundary source: `services/agent-gateway/shared_gemini.ts` (OFF by default); no consumer secrets, browser access or cross-project credential reuse.
-- [ ] Exact-commit Node tests + CI accepted; Gateway 0% Cloud Run candidate with enabled and signed live Gemini proof.
-- [ ] Backend-to-Gateway request/response integration verified separately for omniAgent Chat, market-mart, and Life (life-assistant); the consumers' own repositories, consent, business schema and Owner bindings remain independent.
-- [ ] Positive / negative three-identity IAM acceptance, one bounded real model reply per consumer, real response delivery to each original caller, and guarded formal enablement.
+- [x] Node Core / Hygiene / three-image GHCR CI, 0% candidate and signed smoke PASS (source `b03e5f55`).
+- [x] Three service-level Gateway invoker grants, IAM readback, one real Gemini response for each of the **three CI-impersonated caller identities**, negative anonymous/project spoof, and enabled Gateway **0%-traffic** pilot PASS ([#38357794169](https://github.com/tommylin15/omniAgent/actions/runs/38357794169)).
+- [ ] App-level Chat backend → Gateway → Gemini → PostgreSQL/UI remains OPEN; default Chat dispatcher is OFF.
+- [ ] Independent market-mart consumer runtime/API result handling remains OPEN; no changes to that separately owned repository.
+- [ ] Independent life-assistant consumer runtime/API result handling remains OPEN; no changes to that separately owned repository.
+- [ ] Actual three consumer runtime identities (distinct from CI impersonation), failure handling and controlled formal Gateway promotion remain OPEN.
 - [ ] The old P0 Owner PostgreSQL mismatch, advanced replay/cancel, BYOK, Groq, GCS/Iceberg/BigQuery and exhaustive product gates remain OPEN in their original sections; defer them from **this slice's** scope, do not misreport them as DONE.
 - See [single vertical Gemini contract](../docs/shared-gemini-vertical-slice.md).
 

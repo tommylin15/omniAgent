@@ -68,7 +68,8 @@ provides authorization. Do not put Gemini keys in market-mart, Life, Flutter or 
 
 **Billing guard:** one non-retried Gemini `generateContent` request per
 accepted invocation; at most two in-flight calls per Gateway instance;
-8 KiB UTF-8 prompt, 512 maximum generated tokens, 32K returned characters,\n60s HTTP timeout. No grounding,
+8 KiB UTF-8 prompt, 512 maximum generated tokens, 32K returned characters,
+60s HTTP timeout. No grounding,
 tools or background tasks. `GEMINI_PAID_ENABLED=true` fails closed. Actual
 free quota and zero billing are **not** guaranteed by that environment flag:
 confirm API project tier, quota and permission before setting enabled=true.
@@ -99,6 +100,25 @@ multi-owner full-scope scenarios and the previous P0 canonical DB incident.
 Existing security requirements (IAM, request binding, no-secret logs) remain
 minimum requirements and are never waived.
 
-> Current status: **SOURCE ONLY until latest Actions, Cloud Run and all three
-> consumers are independently verified.** Record exact run IDs and release SHA
-> before upgrading any gate to PASS.
+> Current status: **Gateway G0/G1 and bounded CI-identity portion of G2 PASS; G3/G4 OPEN**. No consumer application has yet been shown to invoke the Gateway from its own runtime. No formal production traffic was moved.
+
+## 2026-10-13 verified Gemini 3-identity pilot
+
+- Gateway image source: immutable public GHCR code SHA `b03e5f552659845a1ca0904fe2b3d36915ff2bbc`; Node Core / project hygiene / GHCR three-image publish PASS; normal GHCR 0% candidate and signed smoke PASS.
+- Read-only GCP audit: [#38357097987](https://github.com/tommylin15/omniAgent/actions/runs/38357097987) PASS. Gateway private, Provider bundle reference configured, dedicated Chat, market-mart and life-assistant service accounts exist; narrow CI impersonation generated ID tokens for all three. Before pilot all three lacked Gateway invoker role.
+- Scoped IAM deployment pilot: [#38357410764](https://github.com/tommylin15/omniAgent/actions/runs/38357410764) shows exactly three Gateway `roles/run.invoker` service-level grants and safe readback. The same run initially failed to normalize Cloud Run's OCI cache image URL; no pilot traffic was created at that attempt.
+- **Successful zero-traffic pilot**: [#38357794169](https://github.com/tommylin15/omniAgent/actions/runs/38357794169) PASS. Cloud Run returned its cached `cache.us-docker.pkg.dev/ghcr.io/...` revision reference; the workflow accepted only that exact cached mirror and normalized to the immutable originating GHCR digest before deploy. Private `gemini-p0v-b03e5f55` tag created at **0%**. Original production serving revision retained 100%.
+- On that genuine GCP candidate, IAMCredentials minted three distinct audience-bound ID tokens and each called Gemini Flash-Lite via the same Gateway; `omniagent`, `market-mart`, `life-assistant` each received 200/COMPLETED, echoed matching project/request IDs, approved model ID and nonempty response text. Anonymous caller and a mismatched project/identity both denied. **These are CI-controlled service-identity calls, not consumer application round-trips.**
+- No secrets, user documents or model text written to logs; prompts were short non-personal smoke prompts. No BYOK/Chat dispatcher enabled; no GCS/Iceberg changes or formal traffic promotion. No provider billing tier or monetary cost was independently verified merely by response success.
+- Next: consumer runtime permission/readback and app-level result handling under each project's separately approved repository. Chat's existing thread/turn path remains explicitly OFF; do not pretend the pilot proves live owner-account PostgreSQL persistence or that user-facing Chat works.
+
+## Consumer implementation handoff (not a completed application)
+
+All consumer applications must call from their **server**, not Flutter/Dart/web. Use Google IAM Credentials `generateIdToken` with `audience=https://omniagent-agent-gateway-2oo7qbkd5q-uc.a.run.app` and `includeEmail=true`, using their approved dedicated caller identity. Current Cloud Run service-level `run.invoker` rights for the three identities are present, but a consumer runtime's ability to impersonate its dedicated identity must be verified independently. CI's separate TokenCreator ability does **not** grant consumer runtimes impersonation. Use canonical Gateway service URL after independently approved formal promotion; the `gemini-p0v-b03e5f55` 0%-candidate URL is only for fenced runtime acceptance.
+
+- `omniagent`: Chat API derives Owner UUID from verified Google user token; persists or returns the model result through the existing authorized Chat contract, not from browser-supplied ownerId.
+- `market-mart`: caller preserves existing CEO immutable JSON schema, validated Specialist hashes and fail-closed publication logic; a successful raw text response is not automatically a valid CEO report.
+- `life-assistant`: caller preserves documented user consent, bounded context, cache/fingerprint, structured output validation and backend-owned DB writes; activity exploration AI is a separate feature.
+- Every caller validates `status`, `project`, `requestId`, `model`, and a nonempty bounded `result.text`. Reject errors; do not blindly retry after an uncertain execution. Do not copy Gemini provider API keys into consuming projects.
+
+**Remaining gates:** [ ] genuine owner-authorized Chat UI / DB roundtrip; [ ] market-mart original API/job roundtrip; [ ] life-assistant original backend/API roundtrip; [ ] per-consumer identity impersonation and failure behavior; [ ] controlled formal Gateway promotion and then each consumer's authorized release. No human OAuth acceptance gate is reintroduced.
