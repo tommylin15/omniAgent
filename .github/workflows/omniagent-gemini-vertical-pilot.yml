@@ -1,0 +1,255 @@
+name: omniAgent Gemini bounded zero-traffic pilot
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/omniagent-gemini-vertical-pilot.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: omniagent-ghcr-cloudrun-release
+  cancel-in-progress: false
+jobs:
+  gateway-pilot:
+    if: github.repository == 'tommylin15/omniAgent' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      PROJECT: gen-lang-client-0593591102
+      REGION: us-central1
+      SERVICE: omniagent-agent-gateway
+      SOURCE_SHA: b03e5f552659845a1ca0904fe2b3d36915ff2bbc
+      PILOT_TAG: gemini-p0v-b03e5f55
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+          service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Fail-closed exact-image, private IAM, and traffic preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          gcloud run services describe "$SERVICE" --project="$PROJECT" --region="$REGION" --format=json > "$RUNNER_TEMP/before.json"
+          gcloud run services get-iam-policy "$SERVICE" --project="$PROJECT" --region="$REGION" --format=json > "$RUNNER_TEMP/iam-before.json"
+          python3 - "$RUNNER_TEMP/before.json" "$RUNNER_TEMP/iam-before.json" "$RUNNER_TEMP/pilot.env" <<'PY'
+          import json,os,pathlib,sys,re
+          service=json.load(open(sys.argv[1]))
+          policy=json.load(open(sys.argv[2]))
+          status=service.get("status") or {}
+          traffic=status.get("traffic") or []
+          serving=[x for x in traffic if x.get("percent",0)>0]
+          tag="ghcr-"+os.environ["SOURCE_SHA"][:12]
+          candidates=[x for x in traffic if x.get("tag")==tag and x.get("percent",0)==0]
+          if len(serving)!=1 or serving[0].get("percent")!=100 or len(candidates)!=1:
+              raise SystemExit("BLOCKED: serving / exact GHCR candidate differs from approved snapshot")
+          audience=status.get("url","")
+          if not re.fullmatch(r"https://omniagent-agent-gateway-[a-z0-9-]+\.a\.run\.app",audience):
+              raise SystemExit("BLOCKED: canonical Gateway audience changed")
+          members={member for binding in policy.get("bindings") or []
+              if binding.get("role")=="roles/run.invoker"
+              for member in binding.get("members") or []}
+          if "allUsers" in members or "allAuthenticatedUsers" in members:
+              raise SystemExit("BLOCKED: Gateway must stay private")
+          spec=(((service.get("spec") or {}).get("template") or {}).get("spec") or {})
+          environment=((spec.get("containers") or [{}])[0].get("env") or [])
+          if not any(row.get("name")=="OMNIAGENT_PROVIDER_BUNDLE" and row.get("valueFrom") for row in environment):
+              raise SystemExit("BLOCKED: existing Gateway secret reference unavailable")
+          if any(row.get("name")=="GEMINI_PAID_ENABLED" and row.get("value")=="true" for row in environment):
+              raise SystemExit("BLOCKED: paid Gateway tier enabled")
+          path=pathlib.Path(sys.argv[3])
+          path.write_text(json.dumps({"audience":audience,"candidate":candidates[0]["revisionName"],
+              "serving":serving[0]["revisionName"]},sort_keys=True))
+          print("candidate_provenance=PASS canonical_audience=PASS private_iam=PASS previous_traffic_frozen=PASS")
+          PY
+          python3 - "$RUNNER_TEMP/pilot.env" "$PROJECT" "$RUNNER_TEMP/accounts.json" <<'PY'
+          import json,sys
+          expected={"omniagent":"omniagent-codex-chat-client",
+                    "market-mart":"omniagent-codex-market-client",
+                    "life-assistant":"omniagent-codex-life-client"}
+          project=sys.argv[2]
+          result={key:name+"@"+project+".iam.gserviceaccount.com" for key,name in expected.items()}
+          open(sys.argv[3],"w").write(json.dumps(result,separators=(",",":")))
+          print("dedicated_caller_map=THREE_FIXED_IDENTITIES")
+          PY
+          for short in omniagent-codex-chat-client omniagent-codex-market-client omniagent-codex-life-client; do
+            gcloud iam service-accounts describe "$short@$PROJECT.iam.gserviceaccount.com" --project="$PROJECT" --format='value(email)' >/dev/null
+          done
+      - name: Grant only three dedicated Gateway invokers, or stop for IAM approval
+        shell: bash
+        run: |
+          set -euo pipefail
+          for short in omniagent-codex-chat-client omniagent-codex-market-client omniagent-codex-life-client; do
+            principal="serviceAccount:$short@$PROJECT.iam.gserviceaccount.com"
+            policy="$(gcloud run services get-iam-policy "$SERVICE" --project="$PROJECT" --region="$REGION" --format=json)"
+            if printf '%s' "$policy" | python3 -c 'import json,sys; p=json.load(sys.stdin); print(int(any(b.get("role")=="roles/run.invoker" and sys.argv[1] in b.get("members",[]) for b in p.get("bindings",[]))))' "$principal" | grep -qx 1; then
+              echo "gateway_invoker_$short=ALREADY_PRESENT"
+            else
+              if ! gcloud run services add-iam-policy-binding "$SERVICE" --project="$PROJECT" --region="$REGION" --quiet                 --member="$principal" --role="roles/run.invoker" > "$RUNNER_TEMP/iam-update.txt" 2>&1; then
+                echo "::error::IAM_OPERATOR_REQUIRED: existing omniagent-ci cannot grant service-level roles/run.invoker for $short"
+                exit 1
+              fi
+              echo "gateway_invoker_$short=GRANTED"
+            fi
+          done
+          gcloud run services get-iam-policy "$SERVICE" --project="$PROJECT" --region="$REGION" --format=json > "$RUNNER_TEMP/iam-after.json"
+          python3 - "$RUNNER_TEMP/iam-after.json" "$RUNNER_TEMP/accounts.json" <<'PY'
+          import json,sys
+          policy=json.load(open(sys.argv[1]))
+          expected=json.load(open(sys.argv[2]))
+          members={member for binding in policy.get("bindings") or []
+              if binding.get("role")=="roles/run.invoker" for member in binding.get("members") or []}
+          if any("serviceAccount:"+email not in members for email in expected.values()):
+              raise SystemExit("BLOCKED: missing narrow IAM readback")
+          if "allUsers" in members or "allAuthenticatedUsers" in members:
+              raise SystemExit("BLOCKED: public IAM is forbidden")
+          print("three_gateway_service_invokers=PASS public_invoker=DENIED")
+          PY
+      - name: Deploy Gemini-enabled immutable Gateway pilot without production traffic
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - "$RUNNER_TEMP/pilot.env" "$RUNNER_TEMP/before.json" "$RUNNER_TEMP/deploy.env" <<'PY'
+          import json,sys
+          pilot=json.load(open(sys.argv[1]))
+          service=json.load(open(sys.argv[2]))
+          candidate=pilot["candidate"]
+          # The pinned GHCR candidate is checked from the live revision in the next step.
+          env={
+            "GEMINI_SHARED_EXECUTION_ENABLED":"true",
+            "GEMINI_SHARED_AUDIENCE":pilot["audience"],
+            "GEMINI_SHARED_MODEL":"gemini-3.5-flash-lite",
+            "GEMINI_SHARED_CALLERS_JSON":json.dumps({
+              "omniagent":"omniagent-codex-chat-client@gen-lang-client-0593591102.iam.gserviceaccount.com",
+              "market-mart":"omniagent-codex-market-client@gen-lang-client-0593591102.iam.gserviceaccount.com",
+              "life-assistant":"omniagent-codex-life-client@gen-lang-client-0593591102.iam.gserviceaccount.com"
+            },separators=(",",":"))
+          }
+          if any("~" in value or "^" in value for value in env.values()):
+              raise SystemExit("unsafe env delimiter")
+          with open(sys.argv[3],"w") as output:
+              output.write("^~^"+"~".join(key+"="+value for key,value in env.items()))
+          print("candidate_env=VALIDATED")
+          PY
+          rev="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["candidate"])' "$RUNNER_TEMP/pilot.env")"
+          gcloud run revisions describe "$rev" --project="$PROJECT" --region="$REGION" --format=json > "$RUNNER_TEMP/original-revision.json"
+          image="$(python3 - "$RUNNER_TEMP/original-revision.json" <<'PY'
+          import json,re,sys
+          obj=json.load(open(sys.argv[1]))
+          images=[x.get("image","") for x in (obj.get("spec") or {}).get("containers") or []]
+          if len(images)!=1 or not re.fullmatch(r"ghcr\.io/tommylin15/omniagent-agent-gateway@sha256:[a-f0-9]{64}",images[0]):
+              raise SystemExit("BLOCKED: source is not the immutable approved GHCR image")
+          print(images[0])
+          PY
+          )"
+          overrides="$(cat "$RUNNER_TEMP/deploy.env")"
+          gcloud run deploy "$SERVICE" --project="$PROJECT" --region="$REGION"             --image="$image" --no-traffic --tag="$PILOT_TAG" --update-env-vars="$overrides" --quiet             > "$RUNNER_TEMP/deploy.log" 2>&1 || {
+              echo "::error::Gemini candidate deploy command failed; no traffic change authorized"
+              exit 1
+            }
+          gcloud run services describe "$SERVICE" --project="$PROJECT" --region="$REGION" --format=json > "$RUNNER_TEMP/after.json"
+          python3 - "$RUNNER_TEMP/before.json" "$RUNNER_TEMP/after.json" "$PILOT_TAG" "$image" "$RUNNER_TEMP/pilot-url" <<'PY'
+          import json,sys
+          before,after=(json.load(open(x)) for x in sys.argv[1:3])
+          tag,image,urlpath=sys.argv[3:]
+          def serving(svc):
+              return {x.get("revisionName"):x.get("percent") for x in (svc.get("status") or {}).get("traffic") or [] if x.get("percent",0)>0}
+          if serving(before)!=serving(after): raise SystemExit("BLOCKED: formal traffic allocation changed")
+          tag_rows=[x for x in (after.get("status") or {}).get("traffic") or [] if x.get("tag")==tag and x.get("percent",0)==0]
+          if len(tag_rows)!=1 or not tag_rows[0].get("url","").startswith("https://"):
+              raise SystemExit("BLOCKED: Gemini pilot tag missing or nonzero traffic")
+          open(urlpath,"w").write(tag_rows[0]["url"].rstrip("/"))
+          print("gateway_pilot_deployment=ZERO_TRAFFIC_READY_TAGGED")
+          PY
+      - name: Real three-service-identity bounded Gemini smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          export PILOT_URL="$(cat "$RUNNER_TEMP/pilot-url")"
+          export MAIN_AUDIENCE="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["audience"])' "$RUNNER_TEMP/pilot.env")"
+          export CI_ACCESS_TOKEN="$(gcloud auth print-access-token)"
+          python3 - <<'PY'
+          import json,os,urllib.request,urllib.error,uuid
+          from urllib.parse import quote
+          audience=os.environ["MAIN_AUDIENCE"]
+          url=os.environ["PILOT_URL"]
+          access=os.environ["CI_ACCESS_TOKEN"]
+          project=os.environ["PROJECT"]
+          callers={
+            "omniagent":"omniagent-codex-chat-client",
+            "market-mart":"omniagent-codex-market-client",
+            "life-assistant":"omniagent-codex-life-client"
+          }
+          def mint(label):
+              account=callers[label]+"@"+project+".iam.gserviceaccount.com"
+              request=urllib.request.Request(
+                "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/"+quote(account,safe="")+":generateIdToken",
+                method="POST",data=json.dumps({"audience":audience,"includeEmail":True}).encode(),
+                headers={"Authorization":"Bearer "+access,"Content-Type":"application/json"})
+              with urllib.request.urlopen(request,timeout=25) as response:
+                  return json.load(response)["token"]
+          def post(label,claimed):
+              token=mint(label)
+              reqid=str(uuid.uuid4())
+              payload={"project":claimed,"ownerId":"00000000-0000-4000-8000-000000000001",
+                  "requestId":reqid,"prompt":"Reply in one short sentence: Gemini Gateway integration confirmed.",
+                  "model":"gemini-3.5-flash-lite"}
+              request=urllib.request.Request(url+"/v1/gemini/execute",
+                  data=json.dumps(payload).encode(),method="POST",
+                  headers={"Authorization":"Bearer "+token,"Content-Type":"application/json"})
+              try:
+                  with urllib.request.urlopen(request,timeout=80) as response:
+                      return response.status,json.load(response),reqid
+              except urllib.error.HTTPError as exc:
+                  return exc.code, json.load(exc),reqid
+          # Explicit denial before ANY paid/real provider request.
+          anonymous=urllib.request.Request(url+"/v1/gemini/execute",
+              data=b"{}",method="POST",headers={"Content-Type":"application/json"})
+          try:
+              urllib.request.urlopen(anonymous,timeout=25)
+              raise SystemExit("FAILED: unauthorized request unexpectedly succeeded")
+          except urllib.error.HTTPError as error:
+              if error.code not in (401,403): raise SystemExit("BLOCKED: unexpected anonymous response")
+          status,body,_=post("omniagent","market-mart")
+          if status!=403: raise SystemExit("FAILED: project/identity mismatch not denied")
+          print("gemini_anonymous_denial=PASS cross_project_denial=PASS")
+          for label in callers:
+              status,body,reqid=post(label,label)
+              if not (status==200 and body.get("status")=="completed" and
+                  body.get("project")==label and body.get("requestId")==reqid and
+                  body.get("model")=="gemini-3.5-flash-lite" and
+                  isinstance(body.get("result",{}).get("text"),str) and body["result"]["text"].strip()):
+                  safe=(body.get("error") if isinstance(body,dict) else "invalid_response")
+                  raise SystemExit("BLOCKED: real Gem API "+label+" status="+str(status)+" failure="+str(safe)[:70])
+              print("real_gemini_identity_roundtrip="+label+" PASS model=flash-lite text=NONEMPTY")
+          PY
+      - name: Confirm immutable serving allocation and Gemini 0 percent
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if test ! -f "$RUNNER_TEMP/before.json"; then
+            echo "traffic_postcheck=NOT_VERIFIED_NO_BASELINE"
+            exit 0
+          fi
+          gcloud run services describe "$SERVICE" --project="$PROJECT" --region="$REGION" --format=json > "$RUNNER_TEMP/final.json"
+          python3 - "$RUNNER_TEMP/before.json" "$RUNNER_TEMP/final.json" "$PILOT_TAG" <<'PY'
+          import json,sys
+          old,new=(json.load(open(x)) for x in sys.argv[1:3])
+          tag=sys.argv[3]
+          def active(s):
+              return {x.get("revisionName"):x.get("percent") for x in (s.get("status") or {}).get("traffic") or [] if x.get("percent",0)>0}
+          if active(old)!=active(new):
+              raise SystemExit("BLOCKED: formal allocation differed from preflight")
+          tagged=[x for x in (new.get("status") or {}).get("traffic") or [] if x.get("tag")==tag]
+          if tagged and any(x.get("percent",0)!=0 for x in tagged):
+              raise SystemExit("BLOCKED: candidate unexpectedly serving traffic")
+          print("final_formal_traffic_unchanged=PASS tagged_zero_traffic="+str(bool(tagged)))
+          PY
