@@ -40,10 +40,20 @@ jobs:
           # checkout@v4 is shallow; fetch only the approved immutable parent.
           git fetch --no-tags --depth=2 origin "$SOURCE_SHA" >/dev/null
           changed="$(git diff --name-only "$SOURCE_SHA" HEAD)"
-          [[ "$changed" == ".github/workflows/omniagent-p0v-gemini-chat-canary.yml" ]] || {
+          # Published service source must remain untouched; only the scoped
+          # action and its acceptance documentation may differ from the image.
+          if ! printf '%s\n' "$changed" | python3 -c '
+          import sys
+          expected={".github/workflows/omniagent-p0v-gemini-chat-canary.yml",
+            "doc/todo.md","docs/shared-gemini-vertical-slice.md",
+            "docs/p0-owner-chat-runbook.md"}
+          got={line.strip() for line in sys.stdin if line.strip()}
+          raise SystemExit(0 if (got and got.issubset(expected) and
+            ".github/workflows/omniagent-p0v-gemini-chat-canary.yml" in got) else 1)
+          '; then
             echo "::error::Candidate must match exact approved service source"
             exit 1
-          }
+          fi
           bash infra/gcp/p0-owner-identity-preflight.sh > "$RUNNER_TEMP/owner-preflight.txt"
           grep -qx 'owner_identity=PASS_DB_BACKED_OAUTH_OWNER' "$RUNNER_TEMP/owner-preflight.txt"
           echo 'oauth_backed_owner_hash_verified=PASS'
