@@ -18,10 +18,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      SOURCE_SHA: 1cb6542b178db026f8bb1714d71ae43c5721af25
+      SOURCE_SHA: 9aac67574f585af0d166e2dd823c442c15402c0d
       PROJECT: gen-lang-client-0593591102
       REGION: us-central1
-      CANARY_TAG: p0v-gemini-chat-1cb6542b
+      CANARY_TAG: p0v-gemini-chat-9aac6757
     steps:
       - uses: actions/checkout@v4
         with:
