@@ -1,14 +1,14 @@
-# Shared Gemini vertical slice — Chat / Janus / Life
+# Shared Gemini vertical slice — Chat / market-mart / Life
 
 > Priority decision: 2026-10-13. **SCOPE: one request and one response per consumer.**
 > This document describes omniAgent-owned Gateway implementation only. It does
-> not claim or modify the Janus / Life repositories or their business workflows.
+> not claim or modify the market-mart / Life repositories or their business workflows.
 
 ## Smallest supported route
 
 ```
 Authenticated Flutter Chat -> omniAgent Chat API -> private Agent Gateway -> Gemini
-Janus backend/job (market-mart SA) ------^                           |
+market-mart backend/job (dedicated SA) ------^                           |
 Life backend (life-assistant SA) --------^                           v
                                      JSON text response to the original caller
 ```
@@ -64,7 +64,7 @@ Cloud Run `roles/run.invoker` must be granted **only** to the verified
 dedicated callers, not `allUsers`. Each consumer mints a Google ID token
 with Gateway audience, sends `Authorization: Bearer <token>`, and binds its
 server-authorized Owner UUID in the JSON. A claimed project field alone never
-provides authorization. Do not put Gemini keys in Janus, Life, Flutter or logs.
+provides authorization. Do not put Gemini keys in market-mart, Life, Flutter or logs.
 
 **Billing guard:** one non-retried Gemini `generateContent` request per
 accepted invocation; at most two in-flight calls per Gateway instance;
@@ -84,10 +84,10 @@ confirm API project tier, quota and permission before setting enabled=true.
    with requestId matched on the consumer side and three negative cross-project
    tests. A test caller impersonating the service identity is NOT the same as
    a consumer backend implementation.
-4. G3 **consumer application round-trip:** original Chat, Janus, and Life
+4. G3 **consumer application round-trip:** original Chat, market-mart, and Life
    user-facing/server-side operation consumes, validates and displays/persists
    the answer under its own business contract. This needs separately owned
-   consumer repo changes and runtime evidence. Janus CEO structured immutable
+   consumer repo changes and runtime evidence. market-mart CEO structured immutable
    JSON and Life Drive AI consent/caching are **not** replaced by text-only
    smoke responses.
 5. G4 **controlled formal promotion:** after evidence from G1–G3; do not

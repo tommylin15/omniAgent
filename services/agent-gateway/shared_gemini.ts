@@ -1,6 +1,6 @@
 /**
  * Minimal, private text-only Gemini vertical slice for omniAgent Chat,
- * market-mart (Janus), and life-assistant.
+ * market-mart, and life-assistant.
  *
  * Cloud Run IAM must independently restrict invokers. A signed Google service
  * account ID token is checked again here against an exact project->SA map.
