@@ -1,3 +1,10 @@
+## 2026-10-13 — Life P0-V technical integration handoff (consumer-reported DONE)
+
+- **Life Assistant project report:** P0-V technical connection is **DONE on the Life side**. The agreed scope is the existing Life backend/service identity → private omniAgent Gateway → Gemini Flash-Lite → validated response returned to the existing Life application workflow. This is **not** a requirement to add a user-facing chat page, conversation UI, or any new unplanned Life product feature.
+- **Evidence separation:** this handoff status is **reported by the Life project via the Owner**, not a new independent verification of Life's repository, CI, runtime logs, or application data from within the omniAgent project. omniAgent previously verified the dedicated Life service identity via its bounded Gateway Gemini pilot ([#38357794169](https://github.com/tommylin15/omniAgent/actions/runs/38357794169)); that CI impersonation alone does not prove the separate Life runtime. Do not mislabel this project report as a fresh omniAgent G3 runtime readback.
+- **Acceptance boundary:** preserve all existing user consent, data authorization, context restrictions and backend validation/write rules. No new UI requirement, no artificial OAuth manual acceptance, no broad production traffic promotion, no extra provider calls and no changes to the Life repository as part of this handoff.
+- **Next:** record Life-side technical completion as `REPORTED_DONE`, keep independent omniAgent-side consumer-runtime provenance `NOT_INDEPENDENTLY_VERIFIED_HERE`, and continue tracking market-mart separately. P0-V engineering technical completion is not identical to formal multi-consumer public launch.
+
 # Shared Gemini vertical slice — Chat / market-mart / Life
 
 > Priority decision: 2026-10-13. **SCOPE: one request and one response per consumer.**
@@ -100,7 +107,7 @@ multi-owner full-scope scenarios and the previous P0 canonical DB incident.
 Existing security requirements (IAM, request binding, no-secret logs) remain
 minimum requirements and are never waived.
 
-> Current status: **Gateway G0/G1 and bounded CI-identity portion of G2 PASS; G3/G4 OPEN**. No consumer application has yet been shown to invoke the Gateway from its own runtime. No formal production traffic was moved.
+> Historical pilot checkpoint (before consumer handoffs): **Gateway G0/G1 and bounded CI-identity portion of G2 PASS; G3/G4 then OPEN**. Subsequent Chat Preview acceptance and Life-side project-reported technical completion are recorded above; independent omniAgent G3 runtime provenance for Life is still not in this repository. No formal Gemini-enabled production Gateway promotion is implied.
 
 ## 2026-10-13 verified Gemini 3-identity pilot
 
@@ -121,7 +128,7 @@ All consumer applications must call from their **server**, not Flutter/Dart/web.
 - `life-assistant`: caller preserves documented user consent, bounded context, cache/fingerprint, structured output validation and backend-owned DB writes; activity exploration AI is a separate feature.
 - Every caller validates `status`, `project`, `requestId`, `model`, and a nonempty bounded `result.text`. Reject errors; do not blindly retry after an uncertain execution. Do not copy Gemini provider API keys into consuming projects.
 
-**Remaining gates:** [x] minimum owner-authorized Chat Preview UI / DB roundtrip (2026-10-13 user observation + DB proof, no automated user OAuth); [ ] market-mart original API/job roundtrip; [ ] life-assistant original backend/API roundtrip; [ ] per-consumer identity impersonation and failure behavior; [ ] controlled formal Gateway promotion and then each consumer's authorized release. No human OAuth acceptance gate is reintroduced.
+**Remaining gates:** [x] minimum owner-authorized Chat Preview UI / DB roundtrip (2026-10-13 user observation + DB proof, no automated user OAuth); [ ] market-mart original API/job roundtrip; [x] Life application technical integration **REPORTED_DONE by its own project**, with independent omniAgent-side Life runtime receipt `NOT_INDEPENDENTLY_VERIFIED_HERE`; [ ] remaining per-consumer identity/runtime and negative-case evidence not already documented as passed; [ ] controlled formal Gateway promotion and any separately authorized release. No human OAuth acceptance gate is reintroduced.
 
 ## 2026-10-13 omniAgent Chat signed-Dispatch follow-up
 
