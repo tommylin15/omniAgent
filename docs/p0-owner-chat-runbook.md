@@ -1,3 +1,11 @@
+## 2026-10-13 P0-V Chat create-thread UI failure follow-up
+
+- [x] Fixed Preview alias `https://preview---omniagent-chat-2oo7qbkd5q-uc.a.run.app/` now points to `omniagent-chat-00081-gob` (the pinned Gemini-only single approved Owner test canary). [Safe Preview bind #38374482613](https://github.com/tommylin15/omniAgent/actions/runs/38374482613) PASS, formal traffic and other tags unchanged. Prior revision `00077-xas` was superseded only for Preview.
+- [x] Flutter UI now displays sanitized HTTP response status and request trace on failed `POST /v1/threads`; after a successful POST, a separate thread-selection error no longer falsely reports that creation failed. [Source `9aac67574f585af0d166e2dd823c442c15402c0d`](https://github.com/tommylin15/omniAgent/commit/9aac67574f585af0d166e2dd823c442c15402c0d); Flutter tests, complete GHCR, private 0%-candidate and signed smoke PASS [#38373409149](https://github.com/tommylin15/omniAgent/actions/runs/38373409149), [#38373953746](https://github.com/tommylin15/omniAgent/actions/runs/38373953746), [#38374120107](https://github.com/tommylin15/omniAgent/actions/runs/38374120107).
+- [x] Direct owner-schema `omni_chat.threads` INSERT inside a DB transaction succeeded with a verified ROLLBACK, probe row count 0 and **zero newly created threads during the preceding 90 minutes** at readback. [#38373089607](https://github.com/tommylin15/omniAgent/actions/runs/38373089607) PASS. Does not prove that a human browser POST reached the API.
+- [ ] **Still OPEN**: true cause of reported browser "unable to create thread"; GitHub CI service account's Cloud Logging read permission was unavailable ([#38372465093](https://github.com/tommylin15/omniAgent/actions/runs/38372465093)), so no genuine request status/trace was available in this session. User must retry **one** create-thread click on refreshed fixed Preview and report only the sanitized new UI error/status/request ID, or report actual creation success. Do not send OAuth bearer token or personal email.
+- [ ] **Still OPEN**: real authenticated Owner Chat→signed Gateway→Gemini→PostgreSQL terminal receipt and visible Flutter answer. Service-account Gemini pilot PASS does not establish this.
+
 # P0 Owner Chat — implementation and single acceptance gate
 
 ### 2026-10-12 P0 incident correlation and reproducible nonbillable acceptance
