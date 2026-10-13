@@ -60,6 +60,19 @@ describe("Gemini REST provider", () => {
     expect(result.queriedAt).toMatch(/Z$/);
   });
 
+  it("exposes only Gemini blockReason and finishReason metadata, never prompt text in diagnostic",async()=>{
+    const fetcher=vi.fn().mockResolvedValue(response({
+      promptFeedback:{blockReason:"SAFETY",safetyRatings:[{category:"ignored"}]},
+      candidates:[],
+      usageMetadata:{promptTokenCount:6500,candidatesTokenCount:0,totalTokenCount:6500}
+    }));
+    const provider=new GeminiProvider("secret","gemini-3.5-flash-lite",fetcher as typeof fetch);
+    const result=await provider.generate("PRIVATE PROMPT");
+    expect(result).toMatchObject({text:"",blockReason:"SAFETY",
+      usage:{promptTokens:6500,candidateTokens:0,totalTokens:6500}});
+    expect(result).not.toHaveProperty("prompt");
+  });
+
   it("caps one generation using Gemini maxOutputTokens", async () => {
     const fetcher = vi.fn().mockResolvedValue(response({candidates:[{content:{parts:[{text:"bounded"}]}}]}));
     const provider = new GeminiProvider("secret","gemini-3.5-flash-lite",fetcher as typeof fetch);

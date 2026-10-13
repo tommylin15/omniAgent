@@ -119,18 +119,57 @@ describe("Shared Gateway Gemini vertical slice",()=>{
     expect(cross.status).toBe(403);
     expect(generate).toHaveBeenCalledTimes(3);
   });
+  it("distinguishes output exhaustion, blocked candidates, provider errors and timeout without leaking content",async()=>{
+    const answers:GeminiResult[]=[
+      {...answer,text:"{\"incomplete\":",finishReason:"MAX_TOKENS"},
+      {...answer,text:"",blockReason:"SAFETY"},
+      {...answer,text:"blocked",finishReason:"SAFETY"},
+      {...answer,text:"partial",finishReason:"OTHER"},
+      {...answer,text:"x".repeat(32_001)},
+    ];
+    const causes=[
+      ...answers,
+      new GeminiProviderError("provider_error",400),
+      new GeminiProviderError("provider_unavailable",503),
+      Object.assign(new Error("secret timeout"),{name:"TimeoutError"}),
+    ];
+    const expected=[
+      "output_limit","safety_blocked","safety_blocked","model_stopped",
+      "response_too_large","provider_rejected","provider_unavailable","provider_timeout",
+    ];
+    const generate=vi.fn(async()=>{
+      const value=causes.shift();
+      if(value instanceof Error)throw value;
+      return value!;
+    });
+    const url=await serve(makeSharedGeminiHandler({env,verify:async()=>sa.omniagent,generate}));
+    for(const reason of expected){
+      const res=await post(url,base);
+      expect(res.status).toBe(502);
+      const result=await res.json();
+      expect(result).toEqual({status:"failed",requestId:base.requestId,
+        error:"gemini_execution_failed",reason});
+      expect(JSON.stringify(result)).not.toContain("secret");
+    }
+    expect(generate).toHaveBeenCalledTimes(expected.length);
+  });
   it("fails closed without exposing private output/provider exceptions",async()=>{
     const verify=vi.fn(async()=>sa.omniagent);
     const generate=vi.fn().mockRejectedValueOnce(new GeminiProviderError("quota",429))
       .mockRejectedValueOnce(new Error("SENSITIVE-TOKEN-KEY"))
       .mockResolvedValueOnce({...answer,text:""});
     const url=await serve(makeSharedGeminiHandler({env,verify,generate}));
-    for(const [status,error] of [[429,"gemini_quota"],[502,"gemini_execution_failed"],[502,"gemini_execution_failed"]] as const){
+    for(const [status,code,reason] of [[429,"gemini_quota",undefined],
+      [502,"gemini_execution_failed","unexpected_failure"],
+      [502,"gemini_execution_failed","empty_model_reply"]] as const){
       const res=await post(url,base);
       expect(res.status).toBe(status);
-      const body=await res.text();
-      expect(body).toContain(error);
-      expect(body).not.toContain("SENSITIVE");
+      const body=await res.json();
+      expect(body).toMatchObject({error:code,requestId:base.requestId,status:"failed"});
+      expect(body).toEqual({...body,...(reason?{reason}:{})});
+      if(reason)expect(body.reason).toBe(reason);
+      else expect(body).not.toHaveProperty("reason");
+      expect(JSON.stringify(body)).not.toContain("SENSITIVE");
     }
   });
 });

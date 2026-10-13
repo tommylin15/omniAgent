@@ -37,6 +37,43 @@ type Configuration = {
   generate?: Generate;
 };
 
+// Stable, deliberately coarse diagnostic categories; never serialize raw Gemini
+// errors, prompts, provider payloads, safety ratings or token credentials.
+type ExecutionReason = "output_limit" | "safety_blocked" | "model_stopped" |
+  "empty_model_reply" | "response_too_large" | "provider_rejected" |
+  "provider_unavailable" | "provider_timeout" | "provider_network_error" |
+  "unexpected_failure";
+
+class SharedExecutionError extends Error {
+  constructor(public readonly reason: ExecutionReason) { super(reason); }
+}
+
+function classifyExecutionError(error: unknown): ExecutionReason {
+  if (error instanceof SharedExecutionError) return error.reason;
+  if (error instanceof GeminiProviderError)
+    return error.kind === "provider_unavailable" ? "provider_unavailable" :
+      error.status >= 400 && error.status < 500 ? "provider_rejected" : "unexpected_failure";
+  if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError"))
+    return "provider_timeout";
+  if (error instanceof TypeError) return "provider_network_error";
+  return "unexpected_failure";
+}
+
+function assertSafeGeminiAnswer(answer: GeminiResult, expectedModel: string): void {
+  if (answer.model !== expectedModel) throw new SharedExecutionError("unexpected_failure");
+  // MAX_TOKENS may include a nonempty but incomplete JSON fragment: never
+  // publish it as a completed CEO analysis for downstream persistence.
+  if (answer.finishReason === "MAX_TOKENS") throw new SharedExecutionError("output_limit");
+  if (answer.blockReason && answer.blockReason !== "BLOCK_REASON_UNSPECIFIED")
+    throw new SharedExecutionError("safety_blocked");
+  if (answer.finishReason && answer.finishReason !== "STOP") {
+    const safety = ["SAFETY","RECITATION","BLOCKLIST","PROHIBITED_CONTENT","SPII","IMAGE_SAFETY"];
+    throw new SharedExecutionError(safety.includes(answer.finishReason) ? "safety_blocked" : "model_stopped");
+  }
+  if (!answer.text.trim()) throw new SharedExecutionError("empty_model_reply");
+  if (answer.text.length > MAX_OUTPUT) throw new SharedExecutionError("response_too_large");
+}
+
 const isObject = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value);
 
@@ -133,8 +170,7 @@ export function makeSharedGeminiHandler(options: Configuration = {}) {
     const started = Date.now();
     try {
       const answer = await generate(body.prompt,body.model);
-      if (!answer.text.trim() || answer.text.length > MAX_OUTPUT ||
-          answer.model !== body.model) throw new Error("invalid_provider_reply");
+      assertSafeGeminiAnswer(answer,body.model);
       console.info(JSON.stringify({kind:"shared_gemini_call",project:body.project,requestId:body.requestId,
         status:"completed",model:answer.model,durationMs:Date.now()-started}));
       return send(reply,200,{status:"completed",project:body.project,ownerId:body.ownerId,
@@ -143,9 +179,13 @@ export function makeSharedGeminiHandler(options: Configuration = {}) {
     } catch (error) {
       const status = error instanceof GeminiProviderError && error.kind === "quota" ? 429 : 502;
       const code = status === 429 ? "gemini_quota" : "gemini_execution_failed";
+      const reason = classifyExecutionError(error);
       console.info(JSON.stringify({kind:"shared_gemini_call",project:body.project,requestId:body.requestId,
-        status:"failed",failureCode:code,durationMs:Date.now()-started}));
-      return send(reply,status,{status:"failed",requestId:body.requestId,error:code});
+        status:"failed",failureCode:code,reason,
+        ...(error instanceof GeminiProviderError ? {upstreamStatus:error.status}:{}),
+        promptBytes:Buffer.byteLength(body.prompt,"utf8"),durationMs:Date.now()-started}));
+      return send(reply,status,{status:"failed",requestId:body.requestId,error:code,
+        ...(status === 502 ? {reason}:{})});
     } finally { running--; }
   };
 }

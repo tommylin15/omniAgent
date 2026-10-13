@@ -10,6 +10,7 @@ export type GeminiResult = {
   citations: GeminiCitation[];
   usage?: GeminiUsage;
   finishReason?: string;
+  blockReason?: string;
 };
 type JsonRecord = Record<string, unknown>;
 type Fetcher = typeof fetch;
@@ -35,6 +36,7 @@ function result(body: unknown, model: string, queriedAt: string): GeminiResult {
   const candidates = record(body).candidates;
   const candidate = record(Array.isArray(candidates) ? candidates[0] : undefined);
   const metadata = record(candidate.groundingMetadata);
+  const feedback = record(record(body).promptFeedback);
   const citations = (Array.isArray(metadata.groundingChunks) ? metadata.groundingChunks : [])
     .map((chunk) => record(record(chunk).web))
     .filter((web) => typeof web.uri === "string")
@@ -50,6 +52,7 @@ function result(body: unknown, model: string, queriedAt: string): GeminiResult {
     ...(typeof promptTokens === "number" && typeof candidateTokens === "number" && typeof totalTokens === "number"
       ? { usage: { promptTokens, candidateTokens, totalTokens } } : {}),
     ...(typeof candidate.finishReason === "string" ? { finishReason: candidate.finishReason } : {}),
+    ...(typeof feedback.blockReason === "string" ? { blockReason: feedback.blockReason } : {}),
   };
 }
 
