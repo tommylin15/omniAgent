@@ -126,3 +126,4 @@ jobs:
           PY
           echo "gemini_network_requests=ZERO" >> "$GITHUB_STEP_SUMMARY"
           echo "traffic_mutations=ZERO" >> "$GITHUB_STEP_SUMMARY"
+          cat "$GITHUB_STEP_SUMMARY"
