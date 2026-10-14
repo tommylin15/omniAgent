@@ -23,8 +23,14 @@ KNOWN_ACTIVE = {
     GATEWAY: "omniagent-agent-gateway-00076-pog",
     "omniagent-shared-codex": "omniagent-shared-codex-00046-naj",
 }
-# Last formally serving Gateway before the P0-V model-enabled rollout.
-GATEWAY_FALLBACK = "omniagent-agent-gateway-00060-vup"
+# Previously verified per-service GHCR fallbacks. These are only candidates
+# for protection, never assumed valid until runtime Ready and Secrets readback.
+FALLBACKS = {
+    "omniagent-chat": "omniagent-chat-00045-fer",
+    GATEWAY: "omniagent-agent-gateway-00060-vup",
+    "omniagent-shared-codex": "omniagent-shared-codex-00024-naw",
+}
+GATEWAY_FALLBACK = FALLBACKS[GATEWAY]
 _NAME = re.compile(r"^[a-z][a-z0-9-]+$")
 
 @dataclass(frozen=True)
@@ -111,8 +117,8 @@ def plan(svc: str, doc: dict, revs: list) -> Plan:
         raise Blocked("tag_or_traffic_revision_missing")
     if active not in names:
         raise Blocked("active_revision_missing")
-    if svc == GATEWAY and GATEWAY_FALLBACK not in names:
-        raise Blocked("gateway_previous_formal_missing")
+    if FALLBACKS[svc] not in names:
+        raise Blocked("approved_fallback_missing")
     # Service itself must stay on the previously accepted P0-V configuration.
     if svc == GATEWAY:
         spec = ((doc.get("spec") or {}).get("template") or {}).get("spec") or {}
@@ -124,9 +130,16 @@ def plan(svc: str, doc: dict, revs: list) -> Plan:
             raise Blocked("gateway_gemini_not_enabled")
         if (env.get("GEMINI_PAID_ENABLED") or {}).get("value") == "true":
             raise Blocked("unexpected_paid_provider_enablement")
+    if svc == "omniagent-chat":
+        spec = ((doc.get("spec") or {}).get("template") or {}).get("spec") or {}
+        cs = spec.get("containers") or []
+        if len(cs)!=1:
+            raise Blocked("chat_container_invalid")
+        env = {r.get("name"):r for r in cs[0].get("env") or []}
+        if (env.get("CHAT_DISPATCH_ENABLED") or {}).get("value") == "true":
+            raise Blocked("unexpected_chat_dispatch_enablement")
     protected = {active} | {r[0] for r in routes if r[2]}
-    if svc == GATEWAY:
-        protected.add(GATEWAY_FALLBACK)
+    protected.add(FALLBACKS[svc])
     # Preserve ALL reachable tagged URLs, even deprecated-looking ones.
     # Keep a minimum of ten newest records if fewer than ten are protected.
     keep = set(protected)
@@ -152,17 +165,27 @@ def signature(svc: str, doc: dict, revs: list):
             status.get("latestReadyRevisionName"))
 
 def check_backup(svc: str, p: Plan) -> str:
-    # At least one distinct Ready 0%-tagged revision is retained as candidate
-    # emergency fallback. Gateway additionally pins previous formal version.
-    candidate = GATEWAY_FALLBACK if svc == GATEWAY else next(
-        (n for n in p.keep if n != p.current and n.endswith("_unlikely")), None)
-    if candidate is None:
+    # Confirm exact pinned historical rollback, not just existence in list.
+    candidate = FALLBACKS[svc]
+    if candidate == p.current or candidate not in p.keep:
         raise Blocked("backup_not_explicitly_verified")
     rev = cloud("run", "revisions", "describe", candidate)
     ready = any(r.get("type") == "Ready" and r.get("status") == "True"
                 for r in (rev.get("status") or {}).get("conditions") or [])
     if not ready:
         raise Blocked("backup_not_ready")
+    try:
+        from ghcr_release_readiness import enabled_secrets
+        def secret_state(name: str, version: str) -> str:
+            proc = subprocess.run(["gcloud","secrets","versions","describe",version,
+                "--secret="+name,"--project="+PROJECT,"--format=value(state)"],
+                capture_output=True,text=True,timeout=60)
+            if proc.returncode:
+                raise Blocked("fallback_secret_metadata_unavailable")
+            return proc.stdout.strip()
+        enabled_secrets(rev,secret_state)
+    except (OSError,subprocess.SubprocessError,ValueError):
+        raise Blocked("fallback_secret_reference_not_usable") from None
     return candidate
 
 def receipt(p: Plan) -> dict:
