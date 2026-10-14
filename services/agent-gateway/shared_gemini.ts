@@ -44,21 +44,38 @@ type Configuration = {
 type ExecutionReason = "output_limit" | "safety_blocked" | "model_stopped" |
   "empty_model_reply" | "response_too_large" | "provider_rejected" |
   "provider_unavailable" | "provider_timeout" | "provider_network_error" |
-  "unexpected_failure";
+  "provider_invalid_response" | "unexpected_failure";
 
 class SharedExecutionError extends Error {
   constructor(public readonly reason: ExecutionReason) { super(reason); }
 }
 
-function classifyExecutionError(error: unknown): ExecutionReason {
-  if (error instanceof SharedExecutionError) return error.reason;
-  if (error instanceof GeminiProviderError)
-    return error.kind === "provider_unavailable" ? "provider_unavailable" :
-      error.status >= 400 && error.status < 500 ? "provider_rejected" : "unexpected_failure";
-  if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError"))
-    return "provider_timeout";
-  if (error instanceof TypeError) return "provider_network_error";
-  return "unexpected_failure";
+type GatewayFailure = {httpStatus:429|502|503|504; reason:ExecutionReason;
+  upstreamStatus?:number; transient:boolean};
+
+// A classification is not permission to replay or publish a failed CEO request.
+function classifyExecutionFailure(error:unknown):GatewayFailure {
+  if (error instanceof GeminiProviderError) {
+    const upstreamStatus=error.status;
+    if (upstreamStatus===429) return {httpStatus:429,reason:"provider_rejected",
+      upstreamStatus,transient:false};
+    if (upstreamStatus===503) return {httpStatus:503,reason:"provider_unavailable",
+      upstreamStatus,transient:true};
+    if (upstreamStatus===408 || upstreamStatus===504)
+      return {httpStatus:504,reason:"provider_timeout",upstreamStatus,transient:true};
+    if (upstreamStatus===500 || upstreamStatus===502)
+      return {httpStatus:502,reason:"provider_unavailable",upstreamStatus,transient:true};
+    return {httpStatus:502,reason:"provider_rejected",upstreamStatus,transient:false};
+  }
+  if (error instanceof SharedExecutionError)
+    return {httpStatus:502,reason:error.reason,transient:false};
+  if (error instanceof Error && (error.name==="TimeoutError" || error.name==="AbortError"))
+    return {httpStatus:504,reason:"provider_timeout",transient:true};
+  if (error instanceof TypeError)
+    return {httpStatus:502,reason:"provider_network_error",transient:true};
+  if (error instanceof SyntaxError)
+    return {httpStatus:502,reason:"provider_invalid_response",transient:false};
+  return {httpStatus:502,reason:"unexpected_failure",transient:false};
 }
 
 function assertSafeGeminiAnswer(answer: GeminiResult, expectedModel: string): void {
@@ -181,15 +198,17 @@ export function makeSharedGeminiHandler(options: Configuration = {}) {
         requestId:body.requestId,model:answer.model,result:{text:answer.text},
         ...(answer.usage?{usage:answer.usage}:{})});
     } catch (error) {
-      const status = error instanceof GeminiProviderError && error.kind === "quota" ? 429 : 502;
-      const code = status === 429 ? "gemini_quota" : "gemini_execution_failed";
-      const reason = classifyExecutionError(error);
+      const failure=classifyExecutionFailure(error);
+      const code=failure.httpStatus===429 ? "gemini_quota" : "gemini_execution_failed";
       console.info(JSON.stringify({kind:"shared_gemini_call",project:body.project,requestId:body.requestId,
-        status:"failed",failureCode:code,reason,
-        ...(error instanceof GeminiProviderError ? {upstreamStatus:error.status}:{}),
+        status:"failed",failureCode:code,reason:failure.reason,
+        ...(failure.upstreamStatus ? {upstreamStatus:failure.upstreamStatus}:{}),
+        transient:failure.transient,retriesPerformed:0,
         promptBytes:Buffer.byteLength(body.prompt,"utf8"),durationMs:Date.now()-started}));
-      return send(reply,status,{status:"failed",requestId:body.requestId,error:code,
-        ...(status === 502 ? {reason}:{})});
+      return send(reply,failure.httpStatus,{status:"failed",requestId:body.requestId,error:code,
+        ...(failure.httpStatus!==429 ? {reason:failure.reason}:{}),
+        ...(failure.upstreamStatus ? {upstreamStatus:failure.upstreamStatus}:{}),
+        ...(failure.transient ? {transient:true}:{})});
     } finally { running--; }
   };
 }
