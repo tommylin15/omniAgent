@@ -147,11 +147,13 @@ def planning(svc: str, service: dict, revisions: list,
     if svc not in SERVICES:
         raise Blocked("unexpected_service")
     live=current(service,svc)
-    if len(revisions)!=EXPECTED_COUNTS[svc]:
-        raise Blocked("approved_revision_count_changed")
+    # Build/release CI may create new 0% candidates between checkpoints.
+    # Always use a fresh exact snapshot, never guess a stale fixed count.
+    if not isinstance(revisions,list) or not TARGET <= len(revisions) <= 100:
+        raise Blocked("revision_count_outside_safe_bounds")
     ranked=records(revisions,svc)
     routes=tags(service,svc)
-    if len(ranked)!=EXPECTED_COUNTS[svc]:
+    if len(ranked)!=len(revisions):
         raise Blocked("revision_identity_inconsistent")
     if any(row[0] not in ranked for row in routes):
         raise Blocked("dangling_live_tag_revision")
