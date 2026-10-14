@@ -21,8 +21,8 @@ jobs:
       PROJECT: gen-lang-client-0593591102
       REGION: us-central1
       SERVICE: omniagent-agent-gateway
-      SOURCE_SHA: 227a0bdcbd7eea801470110ab8d55037bcecafee
-      PILOT_TAG: p0v-market2048-227a0bdc
+      SOURCE_SHA: 00d45861c78c60b005cab93a0a164804d555923e
+      PILOT_TAG: p0v-market2048-00d45861
     steps:
       - uses: actions/checkout@v4
         with:
