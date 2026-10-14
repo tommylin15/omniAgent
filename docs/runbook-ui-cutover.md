@@ -1,6 +1,6 @@
 # omniAgent UI/runtime deployment runbook
 
-This is the active cutover runbook for omniAgent. It does not depend on another project's deployment state.
+This is a UI-specific historical/supporting checklist. For current GHCR/Cloud Run production rollout use [current release runbook](cicd-ghcr-actions-runbook.md), [TODO](../doc/todo.md), and [acceptance](../doc/acceptance.md). It does not depend on another project's deployment state.
 
 ## 1. Source gate
 
