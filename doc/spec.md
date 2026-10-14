@@ -286,8 +286,8 @@ never silently rely on old serving images. If no validated new-only
 fallback is available, BLOCK formal promotion rather than fabricate a
 successful rollback. No synthetic approval or application gate skip.
 
-**Post-success retention policy:** after real integration/rollback rehearsal,
-successful promotion and traffic readback, the final pipeline job keeps
+**Post-success retention policy:** after approved scope-specific integration,
+successful promotion and traffic readback, a separately authorized job keeps
 the newest **10 Cloud Run revisions per existing service** (or all when
 fewer than ten exist). The approved new-GHCR 100%-traffic revision and
 its verified **previous GHCR** rollback target must both fall within
@@ -298,7 +298,7 @@ untagged/zero-traffic revisions; never remove a serving, tagged, or
 protected revision. Stale SHA, missing readback, latest revision
 unready, traffic split, altered service state or protected version
 outside the ten must BLOCK deletion, leaving more than ten if necessary.
-Dry-run, revalidate before each delete and read back afterwards.
+On 2026-10-14 the Owner separately approved removal of obsolete tagged routes to reach exactly ten per service; this exceptional cleanup already PASSED (#38574373341). For future cleanup, dry-run, verify the protected current/rollback revisions, explicitly authorize retirement of any tagged URLs, revalidate before each delete and independently read back afterwards.
 No image deletion: GHCR, legacy GCS and Artifact Registry assets are
 outside this policy. Source/publish-only Actions never trigger cleanup.
 Idle Cloud Run revisions are generally not billed for compute, except
