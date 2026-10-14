@@ -34,3 +34,8 @@ See [current TODO](../doc/todo.md) and [acceptance](../doc/acceptance.md).
 - **R14 / P2:** GCS artifact tier, Iceberg archival and BigLake analytics are architectural targets, not independently accepted deployed services.
 
 This is a static evidence review, not a live security incident or penetration-test claim. Closure requires code, tests, CI, deployment and runtime proof.
+
+## GCP bootstrap/IAM scope risk (additional finding)
+
+- **R15 / P0 conditional:** Historical `infra/gcp/bootstrap-omniagent-ci.sh` grants project-level `roles/run.admin` and `roles/cloudbuild.builds.editor`; `infra/gcp/bootstrap-omniagent-postgres-access.sh` may grant project-level `roles/compute.osAdminLogin` and IAP rights to the CI identity. These are confirmed script instructions, **not a verified statement of current live IAM bindings**. Before any re-run, inventory actual bindings, split bootstrap from daily deploy identity, and limit scopes to the minimum necessary.
+- **R16 / P1:** `infra/gcp/retire-legacy-codex-auth.sh` contains a destructive Secret deletion operation. It should be regarded as a historical, separate owner-controlled retirement action, not ordinary delivery. Confirm no downstream dependency, approved exact target and recoverability before use; no Secret deletion was performed in this documentation audit.
