@@ -57,7 +57,23 @@ def latest_tag_request(service: str, host: str, start: str) -> dict:
     except (OSError, subprocess.SubprocessError):
         return {"state": "LOGGING_UNAVAILABLE", "observed": None, "last_seen_utc": None}
     if proc.returncode:
-        return {"state": "LOGGING_UNAVAILABLE", "observed": None, "last_seen_utc": None}
+        # Do not print sensitive CLI stderr; classify only stable safe categories.
+        detail = (proc.stderr or "").lower()
+        if any(term in detail for term in (
+                "permission denied", "permission 'logging.logentries.list'",
+                "does not have permission", "403 forbidden", "permission_denied")):
+            reason = "LOGGING_PERMISSION_DENIED"
+        elif any(term in detail for term in ("unrecognized arguments", "invalid filter",
+                                            "invalid log filter", "invalid argument", "syntax error")):
+            reason = "LOGGING_QUERY_INVALID"
+        elif any(term in detail for term in ("api has not been used", "api is disabled",
+                                            "logging.googleapis.com has not been used")):
+            reason = "LOGGING_API_DISABLED"
+        elif any(term in detail for term in ("authentication", "unauthorized", "401")):
+            reason = "LOGGING_AUTH_UNAVAILABLE"
+        else:
+            reason = "LOGGING_OTHER_UNAVAILABLE"
+        return {"state": reason, "observed": None, "last_seen_utc": None}
     try:
         events = json.loads(proc.stdout)
     except ValueError:
@@ -83,11 +99,21 @@ def latest_tag_request(service: str, host: str, start: str) -> dict:
 def inspect(rows: list[dict], now: datetime, check=latest_tag_request) -> dict:
     start = (now.astimezone(timezone.utc) - timedelta(days=LOOKBACK_DAYS)).isoformat()
     output = []
+    # Persistent permission/query/API errors cannot be fixed by more reads.
+    persistent_failure = None
+    stop_states = {"LOGGING_PERMISSION_DENIED", "LOGGING_QUERY_INVALID",
+                   "LOGGING_API_DISABLED", "LOGGING_AUTH_UNAVAILABLE"}
     for row in rows:
         host = tag_host(row)
-        evidence = (check(row["service"], host, start) if host
-                    else {"state": "TAG_URL_NOT_VERIFIABLE",
-                          "observed": None, "last_seen_utc": None})
+        if not host:
+            evidence = {"state": "TAG_URL_NOT_VERIFIABLE",
+                        "observed": None, "last_seen_utc": None}
+        elif persistent_failure is not None:
+            evidence = persistent_failure
+        else:
+            evidence = check(row["service"], host, start)
+            if evidence["state"] in stop_states:
+                persistent_failure = evidence
         output.append({
             "service": row["service"], "tag": row["tag"],
             "revision": row["revision"], "classification": row["classification"],
