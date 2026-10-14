@@ -1,5 +1,7 @@
 # omniAgent SPEC
 
+> **2026-10-14 status note:** Gateway-only Gemini production PASS ([#38559065522](https://github.com/tommylin15/omniAgent/actions/runs/38559065522)); independent Cloud Run/retention readback PASS ([#38498845455 attempt 3](https://github.com/tommylin15/omniAgent/actions/runs/38498845455/attempts/3)); Chat formal Dispatch OFF. Earlier dated baselines are historical. See [TODO](todo.md) for live backlog.
+
 ### 2026-10-12 OAuth acceptance override
 
 Human Google browser sign-in, A→B→A account switching and manual Preview login are no longer release prerequisites (NOT_REQUIRED, not PASS). All feasible automated JWT issuer/audience/subject, OAuth Client/origin, IAM/HMAC, negative auth and cross-owner isolation tests remain mandatory. If legitimate real-user OAuth token automation is unavailable, label that scope NOT_VERIFIED_AUTOMATION_UNAVAILABLE; do not ask for human sign-in. Durable Chat/DB, provider, security and deployment gates remain independent. See [OAuth policy](../docs/oauth-automated-acceptance-policy.md).
@@ -206,13 +208,13 @@ New buckets, BigLake/BigQuery resources, schedulers, archive jobs, secret versio
 
 | Capability | Reviewed source/evidence | Accepted current status |
 | --- | --- | --- |
-| Chat API + `omni_chat` source | present | source only; live storage/cutover open |
-| durable dispatcher | no integrated accepted path | OPEN |
-| Gemini | source + prior real Gateway probe | VERIFIED-DEV at provider probe scope |
+| Chat API + `omni_chat` source | deployed and PostgreSQL runtime evidenced | single-Owner Preview text persistence PASS; formal model Dispatch still OFF |
+| durable dispatcher | source and private Owner Preview path present | formal production E2E PARTIAL; Chat Dispatch OFF |
+| Gemini | formal Gateway-only signed inference PASS (2026-10-14) | Gateway production PASS; Chat formal Dispatch OFF |
 | OpenRouter | source + prior real Gateway probe | VERIFIED-DEV at provider probe scope |
-| Codex | bridge/auth source | live owner auth/isolation OPEN |
-| Groq direct adapter | not found | TARGET-DESIGN / OPEN |
-| BYOK/platform Credential Resolver | not found | TARGET-DESIGN / OPEN |
+| Codex | Shared Codex scoped SA runtime PASS; Owner execution source | multi-Owner Chat integration/isolation PARTIAL |
+| Groq direct adapter | `services/agent-gateway/groq_provider.ts` exists | SOURCE_ONLY; full Chat wiring/E2E OPEN |
+| BYOK/platform Credential Resolver | BYOK metadata/vault source present | SOURCE_ONLY; management OFF; full resolver OPEN |
 | owner-isolated memory | owner model/source exists | full multi-owner live acceptance OPEN |
 | GCS omniAgent artifact tier | no accepted path evidenced | TARGET-DESIGN / OPEN |
 | Iceberg omniAgent historical lakehouse | no accepted path evidenced | TARGET-DESIGN / OPEN |
@@ -250,7 +252,7 @@ omniAgent final acceptance may be declared only after exact-head implementation/
 
 ## 8. CI/CD — GitHub Actions + public GHCR + Cloud Run (2026-10-08)
 
-**Owner-approved TARGET-DESIGN; migration and runtime acceptance OPEN.** This
+**Delivery path implemented and formally used; remaining Chat product integration gates PARTIAL (2026-10-14).** This
 section supersedes the historical Cloud Build V2 policy for **new releases**.
 
 Control loop: `ChatGPT → GitHub → GitHub Actions → GCP API → GitHub Actions
@@ -320,7 +322,5 @@ Cloud Build a new release dependency.
 **Acceptance stages:** exact-commit complete Actions quality; three verified
 public GHCR digests; WIF/IAM; 0%-candidate revisions/readbacks; live integration
 and real recovery; protected traffic/rollback readback; only then verified
-retirement of old push/release Cloud Build triggers. Until all are evidenced,
-status is **PARTIAL/OPEN**, not DONE. Source workflows are incomplete at
-this checkpoint. [New runbook](../docs/cicd-ghcr-actions-runbook.md),
+retirement of old push/release Cloud Build triggers. The 2026-10-14 P0-V Gateway-only production release and separate 10/10/10 revision-retention operation have runtime PASS evidence, but full Chat feature acceptance is PARTIAL. Current status lives in `doc/todo.md`; this SPEC describes future release requirements, not an unsatisfied historical migration. [New runbook](../docs/cicd-ghcr-actions-runbook.md),
 [acceptance](acceptance.md), and [TODO](todo.md) govern execution.
