@@ -1,0 +1,64 @@
+# Modern P0-V retention scan. This workflow NEVER unsets tags automatically.
+# Default push: readonly inventory. An exact one-shot commit marker may later
+# enable a separately approved narrow untagged-revision deletion gate.
+name: omniAgent P0-V protected revision inventory
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/omniagent-p0v-protected-revision-inventory.yml'
+      - 'scripts/p0v_safe_revision_cleanup.py'
+      - 'tests/test_p0v_safe_revision_cleanup.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: omniagent-p0v-retention-isolated
+  cancel-in-progress: false
+jobs:
+  inspect:
+    if: github.repository == 'tommylin15/omniAgent' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify strict no-tag-retirement planner
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_p0v_safe_revision_cleanup.py' -v
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+          service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Inventory exact live revisions and all reachable tags, zero mutations
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p retention-receipts
+          for svc in omniagent-chat omniagent-agent-gateway omniagent-shared-codex; do
+            python3 scripts/p0v_safe_revision_cleanup.py --mode inventory --service "$svc" \
+              --receipt "retention-receipts/$svc.json"
+          done
+          python3 - <<'PY'
+          import json, pathlib, os
+          rows=[json.loads(p.read_text()) for p in sorted(pathlib.Path("retention-receipts").glob("*.json"))]
+          with open(os.environ["GITHUB_STEP_SUMMARY"],"a") as out:
+              out.write("### P0-V all-tag-preserving retention inventory (read-only)\n\n")
+              out.write("| Service | Current | Tags | Protected | Untagged deletable | If pruned | Ten possible now |\n")
+              out.write("|---|---:|---:|---:|---:|---:|---|\n")
+              for r in rows:
+                  out.write(f'| {r["service"]} | {r["revisions_before"]} | {r["tag_count"]} | {r["protected_revisions"]} | {len(r["proposed_delete"])} | {r["revisions_after_if_applied"]} | {r["ten_policy_possible_without_tag_retirement"]} |\n')
+              out.write("\nZero revisions, tags, traffic, IAM, Secrets or model calls modified.\n")
+          PY
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p0v-tag-protected-retention-${{ github.run_id }}
+          path: retention-receipts/*.json
+          if-no-files-found: warn
+          retention-days: 30
