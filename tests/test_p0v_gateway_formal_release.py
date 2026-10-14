@@ -78,12 +78,14 @@ class GatewayReleaseTests(unittest.TestCase):
         baseline={"before":"omniagent-agent-gateway-00060-vup","pilot":"old",
                   "others":{},"snapshot":{},"audience":"https://omniagent-agent-gateway-x.a.run.app"}
         tag="p0v-formal-"+sha[:8]
+        state={"revision":baseline["before"]}
         def snap():
-            return {"status":{"traffic":[{"revisionName":"new" if calls else baseline["before"],"percent":100},
+            return {"status":{"traffic":[{"revisionName":state["revision"],"percent":100},
                        {"revisionName":"new","percent":0,"tag":tag,"url":"https://test.a.run.app"}]}}
         calls=[]
         def traffic(rev):
             calls.append(rev)
+            state["revision"]=rev
         with tempfile.TemporaryDirectory() as temp,patch.object(release,"current_main",return_value=sha),\
                 patch.object(release,"preflight",return_value=baseline),patch.object(release,"publish",return_value="new"),\
                 patch.object(release,"check_new"),patch.object(release,"service",side_effect=lambda _:snap()),\
