@@ -47,8 +47,8 @@ class TenRetentionTests(unittest.TestCase):
     def test_bad_count_fails_closed(self):
         svc="omniagent-agent-gateway"
         service,revs,_=fixture(svc)
-        with self.assertRaisesRegex(target.Blocked,"approved_revision_count_changed"):
-            target.planning(svc,service,revs[:-1],fake_rev)
+        with self.assertRaisesRegex(target.Blocked,"revision_count_outside_safe_bounds"):
+            target.planning(svc,service,revs[:9],fake_rev)
     def test_no_verified_fallback_fails_closed(self):
         svc="omniagent-agent-gateway"
         service,revs,_=fixture(svc)
