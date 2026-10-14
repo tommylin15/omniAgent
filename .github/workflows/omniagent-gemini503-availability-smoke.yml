@@ -57,6 +57,11 @@ jobs:
           print("private_market_mart_identity=PASS")
           print("provider_candidate_zero_traffic=PASS")
           PY
+      - name: Verify ready private Gemini pilot after env propagation
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
           gcloud run revisions describe "$PROBE_REV" --project="$PROJECT" --region="$REGION" --format=json > "$RUNNER_TEMP/rev.json"
           python3 - "$RUNNER_TEMP/rev.json" <<'PY'
           import json,sys
