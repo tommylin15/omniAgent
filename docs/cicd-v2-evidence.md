@@ -1,4 +1,6 @@
-# CI/CD V2 evidence — ACTIVE / PARTIAL
+# CI/CD V2 evidence — HISTORICAL CHECKPOINT (superseded by GHCR)
+
+> Historical Cloud Build V2 evidence, **not** an active release pipeline. Current GitHub Actions/GHCR Gateway production and revision cleanup passed on 2026-10-14; refer to [current runbook](cicd-ghcr-actions-runbook.md) and [active TODO](../doc/todo.md).
 
 ## Source and first Push
 
