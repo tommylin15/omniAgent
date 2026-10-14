@@ -18,13 +18,10 @@
   https://ai.google.dev/gemini-api/docs/models and
   https://ai.google.dev/gemini-api/docs/pricing.
 - Latest exact SHA tests / GHCR publish / 0%-candidate / full app runtime
-  acceptance must be tracked separately as PASS/FAIL/NOT VERIFIED. Previous
-  formal production revision remains the deployed baseline until a new
-  verified explicit promotion. No rollback exercise is newly required.
+  acceptance must be tracked separately as PASS/FAIL/NOT VERIFIED. The 2026-10-14 verified formal Gateway-only production activation is separately documented in `docs/shared-gemini-vertical-slice.md`; this credential source contract does not enable the formal Chat dispatcher. No rollback exercise is newly required.
 
 
-**Status: SOURCE IMPLEMENTED ONLY; BYOK MANAGEMENT OFF; MODEL EXECUTION OFF.
-Not a fully accepted Credential Resolver or live BYOK deployment.**
+**Status updated 2026-10-14: BYOK management remains OFF and general Credential Resolver is NOT accepted; formal Gateway-only Gemini execution is ON, while production Chat Dispatch remains OFF. Do not conflate Gateway activation with BYOK or full owner-scoped Chat model execution.**
 
 ## Invariants
 - Authenticated Google subject maps to a server-derived UUID; clients cannot
