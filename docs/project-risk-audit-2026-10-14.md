@@ -25,3 +25,12 @@ See [current TODO](../doc/todo.md) and [acceptance](../doc/acceptance.md).
 | R09 | Actions overall `success` 可能代表 guard/no-op，非真正發布。[#38568825058](https://github.com/tommylin15/omniAgent/actions/runs/38568825058) 的 promotion steps 為 `skipped`。 | **CONFIRMED** | step-level gate、source SHA／digest／正式 traffic readback |
 | R10 | 舊的建立 Chat 對話錯誤因 Logging 權限不足未獨立確認原始根因，之後成功不能反推當時是哪項缺陷。 | **MISSING_EVIDENCE** | 精確的 requestId 對應脫敏審計、最小唯讀 logging 權限 |
 
+
+## Additional coverage
+
+- **R11 / P1:** Groq provider adapter source exists, but production Chat integration is unaccepted; BYOK management is off by default.
+- **R12 / P1:** Historic documentation conflicted with the current formal Gateway and ten-revision acceptance. Current TODO and acceptance now supersede it.
+- **R13 / P2:** Legacy Cloud Build YAML and workflows remain in the repository. Actual trigger and old asset dependencies require fresh GCP readback before deletion.
+- **R14 / P2:** GCS artifact tier, Iceberg archival and BigLake analytics are architectural targets, not independently accepted deployed services.
+
+This is a static evidence review, not a live security incident or penetration-test claim. Closure requires code, tests, CI, deployment and runtime proof.
