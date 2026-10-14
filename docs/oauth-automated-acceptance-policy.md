@@ -8,6 +8,6 @@
 
 **發布分層判斷。** Chat dispatch／BYOK 仍關閉的程式碼／基礎正式部署，不因缺人工 OAuth 而阻塞，但仍須 CI、自動 auth 負向驗證、GHCR 候選、signed Smoke、IAM／Secret／路由讀回及正式發布核准。實際啟用 Owner 模型／Chat 功能前，仍須有 Chat→Gateway→PostgreSQL/SSE 持久化、跨 Owner 隔離、模型 entitlement／成本授權與真實 runtime 證據；缺少證據保持 BLOCKED。不移除 Google 登入功能與安全限制。
 
-**未解決問題不豁免。** 2026-10-11 Owner A 人工觀察與 PostgreSQL 0/3、無新對話回合的證據不一致，依實際 runtime 持續追查，不得因此結案。
+**歷史事件不誤判。** 2026-10-11 Codex Owner A 回報與 PostgreSQL 0/3 並無當次同回合證據；此舊事件仍不應編造根因。2026-10-13 Gemini 單 Owner Preview 新回覆及 PostgreSQL durable turn 已另案 PASS（#38381669212），但不追溯證明早前 Codex 事件，也不取代兩 Owner 驗收。
 
 適用範圍：doc/spec.md、doc/acceptance.md、doc/todo.md、docs/cicd-ghcr-actions-runbook.md、docs/p0-owner-chat-runbook.md。Workflow 應分開顯示 manual_oauth_gate=NOT_REQUIRED 與 automated_oauth_* 真實 PASS/FAIL/NOT_VERIFIED。
