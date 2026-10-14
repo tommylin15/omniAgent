@@ -29,7 +29,7 @@ The current target is:
 - BYOK + entitled platform credentials = independent credential plane;
 - `owner_id` = memory/data isolation boundary regardless of which provider key pays/authenticates the request;
 - Codex execution context = owner-isolated even when platform authorization is reused;
-- Agent Gateway provider target = Gemini, OpenRouter, Codex, plus planned direct Groq support;
+- Agent Gateway provider target = Gemini, OpenRouter, Codex, plus Groq provider adapter already in source (Chat wiring/live acceptance pending);
 - external domain systems = bounded API/MCP providers only, never omniAgent's internal storage or deployment source.
 
 These are architecture requirements. Current implementation status is recorded in SPEC/WBS/TODO/acceptance and must not be upgraded merely because the design is approved.
@@ -62,4 +62,4 @@ Supporting architecture/migration records remain under `docs/`, especially `docs
 
 ## Current headline status
 
-Phase 6B remains partial at the reviewed GitHub baseline. The new credential/data-lifecycle design is `TARGET-DESIGN`: no direct Groq adapter, generalized Credential Resolver, omniAgent GCS artifact tier, Iceberg archive pipeline, or BigLake/BigQuery analytics path is claimed as implemented by this documentation revision.
+Phase 6B/full product remains PARTIAL. The Gateway formal Gemini release and ten-revision cleanup passed independently on 2026-10-14; Chat production dispatch remains OFF. Groq provider source exists but is not wired into accepted Chat E2E. The generalized Credential Resolver, GCS artifact tier, Iceberg archive and BigLake/BigQuery analytics remain OPEN or TARGET-DESIGN. See Actions #38559065522, #38574373341, and #38498845455 attempt 3.
