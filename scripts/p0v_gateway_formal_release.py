@@ -109,7 +109,11 @@ def assert_flags(doc: dict, is_service: bool, audience: str) -> None:
         raise Blocked("gemini_config_mismatch")
     if (env.get("GEMINI_PAID_ENABLED") or {}).get("value") == "true":
         raise Blocked("paid_tier_forbidden")
-    if "GEMINI_API_KEY" not in env:
+    # Gateway startup loads the Gemini key from the existing provider bundle
+    # (server.ts loadAgentBundle); do not read Secret Manager payloads.
+    direct = (env.get("GEMINI_API_KEY") or {}).get("valueFrom", {}).get("secretKeyRef")
+    bundle = (env.get("OMNIAGENT_PROVIDER_BUNDLE") or {}).get("valueFrom", {}).get("secretKeyRef")
+    if not (direct or bundle):
         raise Blocked("provider_secret_reference_missing")
 
 def protected_same(before: dict, after: dict, audience: str) -> None:
