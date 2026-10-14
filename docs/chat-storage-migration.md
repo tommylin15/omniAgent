@@ -27,7 +27,7 @@ Missing live database values must be reported, not inferred.
 
 ## Dev bootstrap contract
 
-The dev Chat database is an omniAgent-owned database boundary even when its PostgreSQL host is an approved shared dev compute host.
+This dev bootstrap section is a **historical 2026-10-07 source/initial migration checkpoint**, not the currently serving Secret wiring. On 2026-10-14 formal Chat serves from the approved unified omniAgent bundle path. Preserve this procedure for disaster recovery; validate actual active Secret refs before changing production.
 
 - Database: `omniagent_chat`.
 - Login role: `omniagent_chat_app`; no superuser, createdb, createrole, or replication privilege.
@@ -39,7 +39,7 @@ The dev Chat database is an omniAgent-owned database boundary even when its Post
 - The Chat candidate uses Direct VPC egress with `private-ranges-only`. `GET /ready` must prove a live DB connection before the no-traffic revision can pass acceptance.
 - Bootstrap CI access is temporary and must be revoked after DB creation/candidate deployment; runtime DB Secret access and the bounded DB firewall/HBA rules remain.
 
-The historical `omniagent-bundle` reference on the current live Chat revision is not the target DB Secret. Do not mutate its `latest` value to stage this migration.
+The **current accepted service wiring** uses the approved unified `OMNIAGENT_BUNDLE` (database DSN and signing material). Earlier standalone `omniagent-chat-db` is a historical migration and rollback reference, not permission to replace the active bundle. Verify pinned Secret versions by read-only Cloud Run inventory and never mutate `latest` as an implicit release.
 
 ## Optional legacy history import
 
