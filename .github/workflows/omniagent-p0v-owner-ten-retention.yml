@@ -30,8 +30,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 46
     env:
-      MODE: ${{ inputs.operation || 'plan' }}
-      CONFIRM: ${{ inputs.confirmation || '' }}
+      MODE: ${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[p0v-retain-ten-once]') && 'apply' || (inputs.operation || 'plan') }}
+      CONFIRM: ${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[p0v-retain-ten-once]') && 'RETIRE_LEGACY_TAGS_KEEP_TEN' || (inputs.confirmation || '') }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -43,7 +43,12 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_p0v_owner_legacy_retention.py' -v
           python3 -m unittest discover -s tests -p 'test_p0v_safe_revision_cleanup.py' -v
           if test "$MODE" = "apply"; then
-            test "$GITHUB_EVENT_NAME" = "workflow_dispatch"
+            if test "$GITHUB_EVENT_NAME" = "push"; then
+              git log -1 --format=%B | grep -Fq '[p0v-retain-ten-once]'
+              ! git log -1 --format=%B | grep -Fq '[release-once]'
+            else
+              test "$GITHUB_EVENT_NAME" = "workflow_dispatch"
+            fi
             test "$CONFIRM" = "RETIRE_LEGACY_TAGS_KEEP_TEN"
             test "$(git ls-remote https://github.com/tommylin15/omniAgent.git refs/heads/main | cut -f1)" = "$GITHUB_SHA"
             echo 'legacy_tag_retirement_owner_authorized=YES' >> "$GITHUB_STEP_SUMMARY"
