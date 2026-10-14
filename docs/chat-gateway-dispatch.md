@@ -1,4 +1,6 @@
-# Chat → Gateway one-shot dispatch: bounded integration
+# Chat → Gateway dispatch: historical implementation and current acceptance boundary
+
+> **Current status 2026-10-14:** private Gemini Gateway production PASS, but formal Chat `CHAT_DISPATCH_ENABLED=false`. Single Owner Preview Gemini persistence PASS; full multi-Owner/approval/reconnect production Chat remains OPEN. See [current TODO](../doc/todo.md) and [P0-V contract](shared-gemini-vertical-slice.md). Dated source-only notes below are checkpoints, not current flags.
 
 ### 2026-10-10 Safe running-turn inspection
 
