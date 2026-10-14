@@ -76,7 +76,8 @@ class GatewayReleaseTests(unittest.TestCase):
     def test_signed_positive_failure_emergency_restores_prior_traffic(self):
         sha="a"*40
         baseline={"before":"omniagent-agent-gateway-00060-vup","pilot":"old",
-                  "others":{},"snapshot":{},"audience":"https://omniagent-agent-gateway-x.a.run.app"}
+                  "others":{},"snapshot":{},"formal_enabled":False,
+                  "audience":"https://omniagent-agent-gateway-x.a.run.app"}
         tag="p0v-formal-"+sha[:8]
         state={"revision":baseline["before"]}
         def snap():
