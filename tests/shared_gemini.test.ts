@@ -149,24 +149,77 @@ describe("Shared Gateway Gemini vertical slice",()=>{
       Object.assign(new Error("secret timeout"),{name:"TimeoutError"}),
     ];
     const expected=[
-      "output_limit","safety_blocked","safety_blocked","model_stopped",
-      "response_too_large","provider_rejected","provider_unavailable","provider_timeout",
-    ];
+      ["output_limit",502,undefined,false],
+      ["safety_blocked",502,undefined,false],
+      ["safety_blocked",502,undefined,false],
+      ["model_stopped",502,undefined,false],
+      ["response_too_large",502,undefined,false],
+      ["provider_rejected",502,400,false],
+      ["provider_unavailable",503,503,true],
+      ["provider_timeout",504,undefined,true],
+    ] as const;
     const generate=vi.fn(async()=>{
       const value=causes.shift();
       if(value instanceof Error)throw value;
       return value!;
     });
     const url=await serve(makeSharedGeminiHandler({env,verify:async()=>sa.omniagent,generate}));
-    for(const reason of expected){
+    for(const [reason,status,upstreamStatus,transient] of expected){
       const res=await post(url,base);
-      expect(res.status).toBe(502);
+      expect(res.status).toBe(status);
       const result=await res.json();
       expect(result).toEqual({status:"failed",requestId:base.requestId,
-        error:"gemini_execution_failed",reason});
+        error:"gemini_execution_failed",reason,
+        ...(upstreamStatus?{upstreamStatus}:{}),
+        ...(transient?{transient:true}:{})});
       expect(JSON.stringify(result)).not.toContain("secret");
     }
     expect(generate).toHaveBeenCalledTimes(expected.length);
+  });
+  it("separates upstream 503 from 429 quota and 502/504, without implicit retry",async()=>{
+    const errors=[
+      new GeminiProviderError("provider_unavailable",503),
+      new GeminiProviderError("provider_unavailable",500),
+      new GeminiProviderError("provider_unavailable",502),
+      new GeminiProviderError("provider_unavailable",504),
+      new GeminiProviderError("provider_error",408),
+      new GeminiProviderError("provider_error",401),
+      new TypeError("provider transport problem"),
+      new SyntaxError("invalid provider JSON"),
+    ];
+    const expectations=[
+      [503,"provider_unavailable",503,true],
+      [502,"provider_unavailable",500,true],
+      [502,"provider_unavailable",502,true],
+      [504,"provider_timeout",504,true],
+      [504,"provider_timeout",408,true],
+      [502,"provider_rejected",401,false],
+      [502,"provider_network_error",undefined,true],
+      [502,"provider_invalid_response",undefined,false],
+    ] as const;
+    const generate=vi.fn(async()=>{
+      const failure=errors.shift();
+      if(failure)throw failure;
+      return answer;
+    });
+    const url=await serve(makeSharedGeminiHandler({env,verify:async()=>sa["market-mart"],generate}));
+    for(const [http,reason,upstreamStatus,transient] of expectations){
+      const res=await post(url,{...base,project:"market-mart"});
+      expect(res.status).toBe(http);
+      expect(await res.json()).toEqual({
+        status:"failed",requestId:base.requestId,
+        error:"gemini_execution_failed",reason,
+        ...(upstreamStatus?{upstreamStatus}:{}),
+        ...(transient?{transient:true}:{})
+      });
+    }
+    expect(generate).toHaveBeenCalledTimes(expectations.length);
+    // An explicit new request can recover; the failed call is never replayed.
+    const recovered=await post(url,{...base,project:"market-mart",
+      requestId:"00000000-0000-4000-8000-000000000003"});
+    expect(recovered.status).toBe(200);
+    expect(generate).toHaveBeenCalledTimes(expectations.length+1);
+    expect(generate).toHaveBeenLastCalledWith("Reply with OK","gemini-3.5-flash-lite",2048);
   });
   it("fails closed without exposing private output/provider exceptions",async()=>{
     const verify=vi.fn(async()=>sa.omniagent);
