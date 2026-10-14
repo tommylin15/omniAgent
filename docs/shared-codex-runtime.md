@@ -1,6 +1,8 @@
 # Shared Codex runtime — integration and acceptance
 
-Status (2026-10-08, latest checkpoint): **GHCR zero-traffic Shared Codex candidate three-caller live inference PASS** (Actions 37791333261, revision omniagent-shared-codex-00010-vih). The existing serving AR revision had a more recent HTTP 502 regression (Actions 37774120512); this new candidate is **not yet production-promoted**. The earlier independent three-caller AR service validation (37712312136) remains historical evidence, not a guarantee of current serving health. **Legacy credential retirement was NOT executed by the user; resource deletion remains unverified.** External consumer adapters, Chat OAuth/two-owner E2E, promotion, rollback and cleanup remain OPEN.
+**CURRENT UPDATE (2026-10-14):** Formal Shared Codex revision `omniagent-shared-codex-00046-naj` is Ready at 100%, private IAM, with exactly 10 revisions after approved cleanup. See [independent GCP readback](https://github.com/tommylin15/omniAgent/actions/runs/38498845455/attempts/3). The later formal baseline supersedes the 2026-10-08 candidate-vs-serving comparison below. Consumer-specific Codex and Chat Owner integration remains a separate gate.
+
+Historical checkpoint (2026-10-08): **GHCR zero-traffic Shared Codex candidate three-caller live inference PASS** (Actions 37791333261, revision omniagent-shared-codex-00010-vih). The existing serving AR revision had a more recent HTTP 502 regression (Actions 37774120512); this new candidate is **not yet production-promoted**. The earlier independent three-caller AR service validation (37712312136) remains historical evidence, not a guarantee of current serving health. **Legacy credential retirement was NOT executed by the user; resource deletion remains unverified.** External consumer adapters, Chat OAuth/two-owner E2E, promotion, rollback and cleanup remain OPEN.
 
 ## Boundary
 
