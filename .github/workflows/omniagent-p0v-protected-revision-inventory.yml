@@ -55,6 +55,15 @@ jobs:
                   out.write(f'| {r["service"]} | {r["revisions_before"]} | {r["tag_count"]} | {r["protected_revisions"]} | {len(r["proposed_delete"])} | {r["revisions_after_if_applied"]} | {r["ten_policy_possible_without_tag_retirement"]} |\n')
               out.write("\nZero revisions, tags, traffic, IAM, Secrets or model calls modified.\n")
           PY
+      - name: Verify approved Ready rollback and live Secret metadata before any deletion
+        shell: bash
+        run: |
+          set -euo pipefail
+          for svc in omniagent-chat omniagent-agent-gateway omniagent-shared-codex; do
+            python3 scripts/p0v_safe_revision_cleanup.py --mode verify --service "$svc" \
+              --receipt "retention-receipts/$svc-verified.json"
+          done
+          echo 'approved_rollback_and_secret_metadata=PASS_NO_DELETION' >> "$GITHUB_STEP_SUMMARY"
       - if: always()
         uses: actions/upload-artifact@v4
         with:
