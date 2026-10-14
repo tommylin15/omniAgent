@@ -198,16 +198,18 @@ def receipt(p: Plan) -> dict:
             "ten_policy_possible_without_tag_retirement":len(p.keep)<=COUNT,
             "tags_retired":[],"deleted":[]}
 
-def process(svc: str, apply: bool):
+def process(svc: str, apply: bool, verify: bool = False):
     before, revs = snapshot(svc)
     p=plan(svc,before,revs)
     report=receipt(p)
     report["status"]="DRY_RUN" if not apply else "BLOCKED"
+    if not p.delete:
+        report["status"]="PASS_NO_DELETION_NEEDED" if apply else "DRY_RUN"
+        return report
+    if verify or apply:
+        report["verified_fallback"] = check_backup(svc,p)
     if not apply:
         return report
-    # Explicit previous-formal fallback is presently verified only for Gateway.
-    # Do not perform destructive Chat/Shared cleanup without an approved rollback.
-    report["verified_fallback"] = check_backup(svc,p)
     stable = signature(svc,before,revs)
     for deletion in p.delete:
         live, fresh_revs = snapshot(svc)
@@ -240,12 +242,12 @@ def process(svc: str, apply: bool):
 
 def main() -> int:
     parser=argparse.ArgumentParser()
-    parser.add_argument("--mode",choices=("inventory","apply"),default="inventory")
+    parser.add_argument("--mode",choices=("inventory","verify","apply"),default="inventory")
     parser.add_argument("--service",choices=SERVICES,required=True)
     parser.add_argument("--receipt",required=True)
     args=parser.parse_args()
     try:
-        report=process(args.service,args.mode=="apply")
+        report=process(args.service,args.mode=="apply",args.mode=="verify")
         Path(args.receipt).write_text(json.dumps(report,sort_keys=True,indent=2)+"\n")
         print("service="+args.service+" status="+report["status"]+
               " revisions_before="+str(report["revisions_before"])+
