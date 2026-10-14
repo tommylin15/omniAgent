@@ -119,9 +119,13 @@ def assert_flags(doc: dict, is_service: bool, audience: str) -> None:
 def protected_same(before: dict, after: dict, audience: str) -> None:
     # Compare existing identity, networking, all non-P0V env and secret references.
     b, a = specs(before, True), specs(after, True)
-    for field in ("serviceAccountName", "vpcAccess", "volumes"):
-        if b.get(field) != a.get(field):
-            raise Blocked("identity_network_or_secret_drift")
+    if {k:v for k,v in b.items() if k != "containers"} != {
+            k:v for k,v in a.items() if k != "containers"}:
+        raise Blocked("runtime_template_drift")
+    bc, ac = container(before, True), container(after, True)
+    if {k:v for k,v in bc.items() if k not in ("image", "env")} != {
+            k:v for k,v in ac.items() if k not in ("image", "env")}:
+        raise Blocked("container_limits_or_probe_drift")
     be, ae = environment(before, True), environment(after, True)
     if {k: v for k, v in be.items() if k not in FLAGS} != {
             k: v for k, v in ae.items() if k not in FLAGS}:
