@@ -1,7 +1,7 @@
 # Architecture — current target and implementation boundary
 
-> Architecture revision: 2026-10-07.
-> Executable baseline validated through `main@d1769491ba41670e86222536ee129b94bbfba04f`; Node Core run `37628904846` PASS. UI source baseline `12a94018debd11f5b389aa2fdf325339782bb9d8`; Flutter run `37625912746` PASS.
+ > Architecture contract originally revised 2026-10-07; live status updated 2026-10-14.
+ > Production Gateway Gemini and three-service ten-revision readback PASS on 2026-10-14. See current TODO and acceptance; historical SHA checkpoints do not prove current full product acceptance.
 > This document distinguishes **target architecture** from **implemented/live evidence**.
 
 ## 1. Architecture decision
@@ -26,7 +26,7 @@ Chat API
              |
              +--> Gemini
              +--> OpenRouter
-             +--> Groq          [target; not implemented]
+             +--> Groq          [provider adapter source; Chat integration OPEN]
              +--> Codex
              +--> MCP / external domain tools
              |
@@ -146,14 +146,14 @@ Target provider contract:
 
 - Gemini — current source; previous real provider dev probe passed.
 - OpenRouter — current source; previous real provider dev probe passed.
-- Codex — current source; owner-auth/live acceptance remains open.
+- Codex — shared service signed-caller runtime PASS; full multi-Owner Chat session/DB integration acceptance remains OPEN.
 - Groq — approved target for experimentation; direct adapter/dispatch is currently absent.
 
 All providers must emit the generic Agent event contract and must not expose provider credentials to Chat content or the UI.
 
 ## 8. Durable dispatch and event delivery
 
-The current Chat API can persist queued turns and stored events, but the durable Chat→Gateway execution path is still open.
+A bounded one-Owner Gemini Chat Preview execution, PostgreSQL terminal readback and UI reload passed on 2026-10-13. The formal Chat Dispatch remains OFF; multi-Owner durable execution, SSE reconnect and cancellation remain OPEN.
 
 The target dispatcher must:
 
