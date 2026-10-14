@@ -1,6 +1,6 @@
 # Phase 6B — omniAgent dev evidence
 
-Status: **PARTIAL**. This file records only omniAgent evidence. Historical cross-project facts are not a current-state source.
+**HISTORICAL dev evidence (pre-2026-10-14):** this file records older omniAgent checkpoints. The later Gateway-only production and 10/10/10 revision acceptance have separate records in [current TODO](../doc/todo.md). Do not infer current Cloud Run revision names from this historic table. Historical cross-project facts are not a current-state source.
 
 ## Proven checkpoints
 
