@@ -1,0 +1,126 @@
+# Only existing production service endpoints and Google IAM negative paths.
+# No valid model invocation, no real OAuth login, no mutations.
+name: omniAgent P0-V production auth boundaries smoke
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/omniagent-p0v-formal-auth-smoke.yml']
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  smoke:
+    if: github.repository == 'tommylin15/omniAgent' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 11
+    env:
+      PROJECT: gen-lang-client-0593591102
+      REGION: us-central1
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+          service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Snapshot exact formal routing and disabled model path without inspecting secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          for svc in omniagent-chat omniagent-agent-gateway omniagent-shared-codex; do
+            gcloud run services describe "$svc" --project="$PROJECT" --region="$REGION" --format=json > "$RUNNER_TEMP/$svc.json"
+          done
+          python3 - "$RUNNER_TEMP" "$GITHUB_ENV" <<'PY'
+          import json,os,re,sys
+          from pathlib import Path
+          root=Path(sys.argv[1])
+          urls={}
+          for name in ("omniagent-chat","omniagent-agent-gateway","omniagent-shared-codex"):
+              svc=json.loads((root/(name+".json")).read_text())
+              url=(svc.get("status") or {}).get("url","").rstrip("/")
+              if not re.fullmatch(r"https://"+name+r"-[a-z0-9-]+\.a\.run\.app",url):
+                  raise SystemExit("BLOCKED: canonical Cloud Run URL mismatch")
+              active=[x for x in (svc.get("status") or {}).get("traffic") or [] if x.get("percent",0)>0]
+              if len(active)!=1 or active[0].get("percent")!=100:
+                  raise SystemExit("BLOCKED: formal serving allocation changed")
+              urls[name]=url
+          with open(sys.argv[2],"a") as f:
+              f.write("CHAT_URL="+urls["omniagent-chat"]+"\n")
+              f.write("GATEWAY_URL="+urls["omniagent-agent-gateway"]+"\n")
+              f.write("SHARED_URL="+urls["omniagent-shared-codex"]+"\n")
+          print("formal_urls_and_traffic=PASS")
+          PY
+      - name: Probe anonymous 401/403 and market-mart signed disabled Gateway route
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          export CI_ACCESS_TOKEN="$(gcloud auth print-access-token)"
+          python3 - <<'PY'
+          import json,os,urllib.request,urllib.error
+          from urllib.parse import quote
+          def code(url,method="GET",data=None,headers=None):
+              req=urllib.request.Request(url,method=method,data=data,headers=headers or {})
+              try:
+                  with urllib.request.urlopen(req,timeout=30) as res:
+                      return res.status
+              except urllib.error.HTTPError as exc:
+                  return exc.code
+          chat=os.environ["CHAT_URL"];gateway=os.environ["GATEWAY_URL"]
+          if code(chat+"/health")!=200 or code(chat+"/ready")!=200:
+              raise SystemExit("BLOCKED: formal Chat HTTP health/ready")
+          for endpoint in ("/v1/models","/v1/threads"):
+              if code(chat+endpoint)!=401:
+                  raise SystemExit("BLOCKED: anonymous Chat API not denied")
+          for endpoint in (gateway+"/health",os.environ["SHARED_URL"]+"/health"):
+              if code(endpoint)!=403:
+                  raise SystemExit("BLOCKED: private backend anonymous IAM access")
+          print("formal_chat_health_and_unauthorized_denials=PASS")
+          print("private_gateway_and_shared_anonymous_IAM_denials=PASS")
+          client="omniagent-codex-market-client@"+os.environ["PROJECT"]+".iam.gserviceaccount.com"
+          api="https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/"+quote(client,safe="")+":generateIdToken"
+          req=urllib.request.Request(api,method="POST",
+            data=json.dumps({"audience":gateway,"includeEmail":True}).encode(),
+            headers={"Authorization":"Bearer "+os.environ["CI_ACCESS_TOKEN"],
+                     "Content-Type":"application/json"})
+          with urllib.request.urlopen(req,timeout=25) as response:
+              token=json.load(response).get("token")
+          if not isinstance(token,str) or not token:
+              raise SystemExit("BLOCKED: signed dedicated market identity token missing")
+          headers={"Authorization":"Bearer "+token,"Content-Type":"application/json"}
+          if code(gateway+"/health",headers=headers)!=200:
+              raise SystemExit("BLOCKED: dedicated market client cannot reach formal Gateway IAM")
+          # Must NEVER send valid model input. Both 404 (disabled) and 400 (invalid)
+          # are fail-closed and require no inference / database writes.
+          malformed=b'{"project":"market-mart","ownerId":"INVALID","prompt":""}'
+          status=code(gateway+"/v1/gemini/execute",method="POST",data=malformed,headers=headers)
+          if status not in (400,404):
+              raise SystemExit("BLOCKED: invalid signed market request not rejected")
+          print("dedicated_market_mart_gateway_IAM=PASS")
+          print("malformed_gateway_model_request_denied_http="+str(status))
+          print("provider_inference_calls=ZERO")
+          print("db_writes=ZERO")
+          PY
+      - name: Confirm formal traffic unchanged
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f "$RUNNER_TEMP/omniagent-chat.json" || { echo "readback=NO_BASELINE"; exit 0; }
+          for svc in omniagent-chat omniagent-agent-gateway omniagent-shared-codex; do
+            gcloud run services describe "$svc" --project="$PROJECT" --region="$REGION" --format=json > "$RUNNER_TEMP/$svc.after.json"
+          done
+          python3 - "$RUNNER_TEMP" <<'PY'
+          import json,sys
+          from pathlib import Path
+          root=Path(sys.argv[1])
+          formal=lambda d:{x.get("revisionName"):x.get("percent") for x in (d.get("status") or {}).get("traffic") or [] if x.get("percent",0)>0}
+          for name in ("omniagent-chat","omniagent-agent-gateway","omniagent-shared-codex"):
+              old=json.loads((root/(name+".json")).read_text())
+              new=json.loads((root/(name+".after.json")).read_text())
+              if formal(old)!=formal(new):raise SystemExit("BLOCKED: formal traffic changed")
+          print("three_service_formal_traffic_unchanged=PASS")
+          PY
