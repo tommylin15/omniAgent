@@ -166,8 +166,10 @@ def preflight() -> dict:
         raise Blocked("pilot_not_immutable_ghcr")
     iam_check()
     others = {name: live(snapshots[name]) for name in OTHER_SERVICES}
+    formal_enabled = (environment(formal, False).get("GEMINI_SHARED_EXECUTION_ENABLED") or {}).get("value") == "true"
     return {"before": active, "pilot": pilot, "image": matched.group(1),
-            "audience": canonical, "others": others, "snapshot": gate}
+            "audience": canonical, "others": others,
+            "formal_enabled": formal_enabled, "snapshot": gate}
 
 def check_others(expected: dict) -> None:
     for name, rev in expected.items():
@@ -193,9 +195,9 @@ def check_new(baseline: dict, candidate: str, tag: str) -> None:
     check_others(baseline["others"])
     iam_check()
 
-def id_token(audience: str) -> str:
+def id_token(audience: str, project: str) -> str:
     bearer = safe_run("gcloud", "auth", "print-access-token").strip()
-    principal = EXPECTED["market-mart"]
+    principal = EXPECTED[project]
     endpoint = ("https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/"
                 + urllib.parse.quote(principal, safe="") + ":generateIdToken")
     req = urllib.request.Request(endpoint, method="POST",
@@ -229,21 +231,24 @@ def http_code(url: str, payload: dict | None, token: str | None) -> tuple[int, d
         raise Blocked("gateway_json_unavailable") from None
 
 def smoke(url: str, audience: str) -> None:
-    # Exactly one very short billable inference per smoke, never auto-retry.
-    token = id_token(audience)
-    reqid = str(uuid.uuid4())
-    payload = {"project": "market-mart",
-               "ownerId": "00000000-0000-4000-8000-000000000001",
-               "requestId": reqid, "prompt": "Reply exactly OK.", "model": MODEL}
-    code, body = http_code(url + "/v1/gemini/execute", payload, token)
-    if code != 200 or body.get("status") != "completed" or body.get("requestId") != reqid or (
-            body.get("model") != MODEL or not isinstance(body.get("result", {}).get("text"), str)
-            or not body["result"]["text"].strip()):
-        raise Blocked("positive_gemini_smoke_failed")
-    payload["project"] = "life-assistant"
-    code, body = http_code(url + "/v1/gemini/execute", payload, token)
-    if code != 403 or body.get("error") != "caller_project_mismatch":
-        raise Blocked("cross_project_denial_failed")
+    # Three dedicated project principals; exactly one tiny inference per
+    # principal, twice total (tagged candidate + formal). NO automatic retries.
+    for project in EXPECTED:
+        token = id_token(audience, project)
+        reqid = str(uuid.uuid4())
+        payload = {"project": project,
+                   "ownerId": "00000000-0000-4000-8000-000000000001",
+                   "requestId": reqid, "prompt": "Reply exactly OK.", "model": MODEL}
+        code, body = http_code(url + "/v1/gemini/execute", payload, token)
+        if code != 200 or body.get("status") != "completed" or body.get("requestId") != reqid or (
+                body.get("project") != project or body.get("model") != MODEL
+                or not isinstance(body.get("result", {}).get("text"), str)
+                or not body["result"]["text"].strip()):
+            raise Blocked("positive_gemini_smoke_failed")
+        payload["project"] = "life-assistant" if project != "life-assistant" else "omniagent"
+        code, body = http_code(url + "/v1/gemini/execute", payload, token)
+        if code != 403 or body.get("error") != "caller_project_mismatch":
+            raise Blocked("cross_project_denial_failed")
     status, _ = http_code(url + "/health", None, None)
     if status != 403:
         raise Blocked("anonymous_gateway_not_denied")
@@ -293,11 +298,13 @@ def execute(mode: str, confirm: str, source_sha: str, receipt_path: str) -> int:
             report["status"] = "PREFLIGHT_PASS_NO_MUTATIONS"
             print("gateway_only_preflight=PASS_NO_MUTATIONS")
             return 0
+        if baseline["formal_enabled"]:
+            raise Blocked("formal_gateway_already_gemini_enabled")
         candidate = publish(baseline, source_sha)
         report["new_candidate_revision"] = candidate
         tag = "p0v-formal-" + source_sha[:8]
         route = tagged(service(GATEWAY), tag)
-        report["model_calls_attempted_max"] = 1
+        report["model_calls_attempted_max"] = 3
         smoke(route["url"].rstrip("/"), baseline["audience"])
         check_new(baseline, candidate, tag)
         report["traffic_mutation_attempted"] = True
@@ -308,7 +315,7 @@ def execute(mode: str, confirm: str, source_sha: str, receipt_path: str) -> int:
             raise Blocked("formal_gateway_promotion_readback_failed")
         check_others(baseline["others"])
         iam_check()
-        report["model_calls_attempted_max"] = 2
+        report["model_calls_attempted_max"] = 6
         smoke(baseline["audience"], baseline["audience"])
         if live(service(GATEWAY)) != candidate:
             raise Blocked("post_smoke_traffic_drift")
