@@ -7,6 +7,7 @@ class R01OneRealAttempt(unittest.TestCase):
   self.assertEqual(p.count('"/internal/v1/chat/dispatch:once"'),1)
   self.assertIn("candidate_allowed != (allowed | set(approved))",p)
   self.assertIn("choose_approved_token(callers,audience)",p)
+  self.assertIn('result["provider_usage_readback"]=="PRESENT" and',p)
   for t in ['"chat_dispatch_http_attempts"','"UNKNOWN_NO_RETRY"','"db_receipt"','"source_sha"','"PARTIAL_UNVERIFIED"']:
    self.assertIn(t,p)
   remote=Path('infra/gcp/r01-live-once-db.sh').read_text()

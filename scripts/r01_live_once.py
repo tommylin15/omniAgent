@@ -177,6 +177,7 @@ def main():
             "error_events","closed_at_present","daily_owner_budget_count","owner_scope_match","provider_usage_total_tokens")}
         result["provider_usage_readback"]=("PRESENT" if isinstance(counts.get("provider_usage_total_tokens"),int) and counts["provider_usage_total_tokens"]>0 else "NOT_VERIFIED")
         result["status"]="PASS" if (result["http_result"]=="COMPLETED" and
+            result["provider_usage_readback"]=="PRESENT" and
             counts.get("status")=="COMPLETED" and counts.get("text_events",0)==1 and
             counts.get("completed_events",0)==1 and counts.get("error_events",0)==0 and
             counts.get("closed_at_present") is True and
