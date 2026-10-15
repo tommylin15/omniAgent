@@ -247,7 +247,8 @@ export function makeSharedCodexServer(options: {
     }
     if (options.callers.get(body.project) !== identity) return json(reply, 403, { error: "caller_project_mismatch" });
     if (options.ownerAuthorizationKeys && !verifyOwnerAuthorization(request.headers,{
-      project:body.project,ownerId:body.ownerId,requestId:body.requestId,audience:options.audience
+      project:body.project,ownerId:body.ownerId,requestId:body.requestId,audience:options.audience,
+      model:body.model||"",prompt:body.prompt
     },options.ownerAuthorizationKeys))
       return json(reply, 403, { error: "owner_authorization_required" });
     busy = true;

@@ -37,8 +37,9 @@ describe("shared Codex authenticated execution contract", () => {
     try{
       expect((await invoke(valid)).status).toBe(403);
       expect(execute).not.toHaveBeenCalled();
-      const signature=signOwnerAuthorization({...valid,audience},key,Date.now());
+      const signature=signOwnerAuthorization({...valid,audience,model:""},key,Date.now());
       expect((await invoke({...valid,ownerId:"00000000-0000-4000-8000-000000000003"},signature)).status).toBe(403);
+      expect((await invoke({...valid,prompt:"changed"},signature)).status).toBe(403);
       expect((await invoke(valid,signature)).status).toBe(200);
       expect(execute).toHaveBeenCalledOnce();
     }finally{

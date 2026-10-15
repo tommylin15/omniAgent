@@ -1,12 +1,13 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import type { IncomingHttpHeaders } from "node:http";
 
 // The consumer must derive ownerId from an independently authenticated user
 // and its own database authorization. The signed proof authenticates that
 // assertion; it is not a substitute for the consumer's owner-policy checks.
-type Binding = Readonly<{ project:string; ownerId:string; requestId:string; audience:string }>;
+type Binding = Readonly<{ project:string; ownerId:string; requestId:string;
+  audience:string;model:string;prompt:string }>;
 const HEX = /^[a-f0-9]{64,128}$/i;
-const PROOF = /^v1=([a-f0-9]{64})$/;
+const PROOF = /^v2=([a-f0-9]{64})$/;
 const MAX_DRIFT_MS = 60_000;
 
 export function parseOwnerAuthorizationKeys(raw:string, projects:readonly string[]):Map<string,string> {
@@ -22,15 +23,16 @@ export function parseOwnerAuthorizationKeys(raw:string, projects:readonly string
   return new Map(entries.map(([project,key])=>[project,key as string]));
 }
 function digest(key:string,binding:Binding,timestamp:string):Buffer {
-  const message=[binding.project,binding.ownerId.toLowerCase(),binding.requestId.toLowerCase(),
-    binding.audience,timestamp].join("\n");
+  const promptHash=createHash("sha256").update(binding.prompt,"utf8").digest("hex");
+  const message=["owner-v2",binding.project,binding.ownerId.toLowerCase(),
+    binding.requestId.toLowerCase(),binding.audience,binding.model,promptHash,timestamp].join("\n");
   return createHmac("sha256",Buffer.from(key,"hex")).update(message).digest();
 }
 export function signOwnerAuthorization(binding:Binding,key:string,timestamp:number):Record<string,string> {
   if (!HEX.test(key) || !Number.isSafeInteger(timestamp)) throw new Error("invalid_owner_signing_input");
   const value=String(timestamp);
   return {"x-omniagent-owner-timestamp":value,
-    "x-omniagent-owner-authorization":"v1="+digest(key,binding,value).toString("hex")};
+    "x-omniagent-owner-authorization":"v2="+digest(key,binding,value).toString("hex")};
 }
 export function verifyOwnerAuthorization(headers:IncomingHttpHeaders,binding:Binding,
   keys:ReadonlyMap<string,string>,now=Date.now()):boolean {

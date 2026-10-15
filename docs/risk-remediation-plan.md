@@ -52,3 +52,10 @@
 - R01／R04／R05：模型全域配額、跨 Owner live E2E、Cost receipt 與正式 Chat Dispatch 均未達退出條件，**維持 OPEN／OFF**。
 
 上述權限證明使用的簽章 key 必須從 Secret Manager 或同等安全儲存提供，不得 commit 真實 key，也不可記錄 token／prompt。消費端應先驗證真正的登入者與其 DB Owner mapping 再簽章；單純簽章不能取代該消費端的終端使用者授權。
+
+## 第二批 P0 實作（持久化配額及簽章綁定）
+
+- R04：新增 `infra/postgres/migrations/006_gateway_model_quota.sql` 與 `model_quota_ledger.ts`，將 requestId 永久冪等收據、project/owner/global 每日呼叫數與保守 token 預留、全域同時執行數放在**獨立 Gateway PostgreSQL 資料庫**。PostgreSQL transaction advisory lock 保證不同 Cloud Run instance 同時請求只能按順序預留；完成／失敗／不確定結果均不退還計量、相同 requestId 不重送 Provider。帳本只存 prompt SHA256，不存 prompt 文字。
+- R02：Owner HMAC v2 額外綁定 model 與 prompt SHA256；Gateway 的 `GEMINI_SHARED_QUOTA_ENABLED=true` 必須同時啟用 `GEMINI_SHARED_REQUIRE_OWNER_AUTHORIZATION=true`，反之亦然，避免只開簽章而未設資料庫重放防護。獨立 Shared Codex 尚未完成持久化防重放，因此仍維持 R02 OPEN。
+- 正式啟用的必要配置：專用 Ledger PostgreSQL 執行 migration 006，使用有憑證驗證的 `GEMINI_SHARED_LEDGER_DATABASE_URL`、`GEMINI_SHARED_LEDGER_CA_PEM`、必要時 `GEMINI_SHARED_LEDGER_TLS_SERVERNAME`；`GEMINI_SHARED_QUOTA_LIMITS_JSON` 必須包括七項嚴格正整數額度。**本次未核准建 DB、IAM、Secret 或啟用 Gateway flag**；在這些 runtime readback 缺席前不得宣告 R04 DONE。
+- 這些 token 預留使用 prompt UTF-8 byte 數加 maxOutputTokens，屬**保守容量上限**，不應宣稱等同供應商實際費用／美元預算。真正費用上限還需要 Billing/Monitoring 與實際 usage 對帳。

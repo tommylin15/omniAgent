@@ -4,7 +4,8 @@ import { parseOwnerAuthorizationKeys, signOwnerAuthorization, verifyOwnerAuthori
 const key="b".repeat(64);
 const key2="c".repeat(64);
 const binding={project:"omniagent",ownerId:"00000000-0000-4000-8000-000000000001",
-  requestId:"00000000-0000-4000-8000-000000000002",audience:"https://gateway.example.test"};
+  requestId:"00000000-0000-4000-8000-000000000002",audience:"https://gateway.example.test",
+  prompt:"text to bind",model:"gemini-3.5-flash-lite"};
 function toHeaders(p:Record<string,string>) {return {...p};}
 describe("owner authorization assertion",()=>{
   it("accepts only distinct exact caller keys",()=>{
@@ -21,10 +22,11 @@ describe("owner authorization assertion",()=>{
     expect(verifyOwnerAuthorization(headers,binding,keys,now)).toBe(true);
     for(const patch of [{ownerId:"00000000-0000-4000-8000-000000000003"},
       {requestId:"00000000-0000-4000-8000-000000000004"},
-      {project:"other"},{audience:"https://other.example.test"}])
+      {project:"other"},{audience:"https://other.example.test"},
+      {prompt:"different input"},{model:"different-model"}])
       expect(verifyOwnerAuthorization(headers,{...binding,...patch},keys,now)).toBe(false);
     expect(verifyOwnerAuthorization(headers,binding,keys,now+60_001)).toBe(false);
-    expect(verifyOwnerAuthorization({...headers,"x-omniagent-owner-authorization":"v1="+"0".repeat(64)},
+    expect(verifyOwnerAuthorization({...headers,"x-omniagent-owner-authorization":"v2="+"0".repeat(64)},
       binding,keys,now)).toBe(false);
     expect(verifyOwnerAuthorization(headers,binding,new Map([[binding.project,key2]]),now)).toBe(false);
   });

@@ -12,6 +12,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { GeminiProvider, GeminiProviderError, type GeminiResult } from "./gemini_provider.js";
 import { isAllowedGeminiModel } from "./gemini_model_policy.js";
 import { parseOwnerAuthorizationKeys, verifyOwnerAuthorization } from "./owner_authorization.js";
+import { PgModelQuotaLedger,createQuotaPool,parseQuotaLimits,ModelQuotaDenied,type ModelQuotaLedger } from "./model_quota_ledger.js";
 
 const PROJECTS = ["omniagent", "market-mart", "life-assistant"] as const;
 type Project = typeof PROJECTS[number];
@@ -38,6 +39,7 @@ type Configuration = {
   env?: NodeJS.ProcessEnv;
   verify?: Verify;
   generate?: Generate;
+  quota?: ModelQuotaLedger;
 };
 
 // Stable, deliberately coarse diagnostic categories; never serialize raw Gemini
@@ -168,9 +170,16 @@ export function makeSharedGeminiHandler(options: Configuration = {}) {
     throw new Error("shared_gemini_configuration_unavailable");
   const callers = enabled ? parseGeminiCallers(env.GEMINI_SHARED_CALLERS_JSON || "") : new Map<Project,string>();
   const ownerAuthorizationRequired = env.GEMINI_SHARED_REQUIRE_OWNER_AUTHORIZATION === "true";
+  const quotaEnabled=env.GEMINI_SHARED_QUOTA_ENABLED==="true";
+  if(quotaEnabled&&!ownerAuthorizationRequired)throw Error("quota_requires_owner_authorization");
+  // Fresh HMAC without a shared replay ledger can be reused on another node.
+  if(ownerAuthorizationRequired&&!quotaEnabled)throw Error("owner_authorization_requires_quota");
   const ownerKeys = ownerAuthorizationRequired
     ? parseOwnerAuthorizationKeys(env.GEMINI_SHARED_OWNER_AUTHORIZATION_KEYS_JSON || "",PROJECTS)
     : new Map<string,string>();
+  const quota:ModelQuotaLedger|undefined=quotaEnabled
+    ? options.quota ?? new PgModelQuotaLedger(createQuotaPool(env),
+       parseQuotaLimits(env.GEMINI_SHARED_QUOTA_LIMITS_JSON||"")) : undefined;
   const verify = options.verify ?? verifyGeminiCaller;
   const generate: Generate = options.generate ?? ((prompt,model,maxOutputTokens) =>
     new GeminiProvider(env.GEMINI_API_KEY || "",model).generate(prompt,{
@@ -190,16 +199,29 @@ export function makeSharedGeminiHandler(options: Configuration = {}) {
     catch { return send(reply,400,{error:"invalid_request"}); }
     if (caller !== callers.get(body.project)) return send(reply,403,{error:"caller_project_mismatch"});
     if (ownerAuthorizationRequired && !verifyOwnerAuthorization(request.headers,{
-      project:body.project,ownerId:body.ownerId,requestId:body.requestId,audience
+      project:body.project,ownerId:body.ownerId,requestId:body.requestId,audience,
+      prompt:body.prompt,model:body.model
     },ownerKeys)) return send(reply,403,{error:"owner_authorization_required"});
     if (running >= MAX_RUNNING) return send(reply,429,{error:"gateway_busy",requestId:body.requestId});
+    const maxOutputTokens=body.project==="market-mart"
+      ? MARKET_MART_OUTPUT_TOKENS:DEFAULT_OUTPUT_TOKENS;
+    if(quota){
+      try{await quota.reserve({...body,maxOutputTokens});}
+      catch(error){
+        if(error instanceof ModelQuotaDenied)return send(reply,
+          error.code==="duplicate_request"?409:429,{error:error.code,requestId:body.requestId});
+        return send(reply,503,{error:"quota_ledger_unavailable",requestId:body.requestId});
+      }
+    }
     running++;
     const started = Date.now();
     try {
-      const maxOutputTokens = body.project === "market-mart"
-        ? MARKET_MART_OUTPUT_TOKENS : DEFAULT_OUTPUT_TOKENS;
       const answer = await generate(body.prompt,body.model,maxOutputTokens);
       assertSafeGeminiAnswer(answer,body.model);
+      if(quota){
+        try{await quota.settle(body,"completed",answer.usage);}
+        catch{return send(reply,503,{error:"quota_settlement_uncertain",requestId:body.requestId});}
+      }
       console.info(JSON.stringify({kind:"shared_gemini_call",project:body.project,requestId:body.requestId,
         status:"completed",model:answer.model,durationMs:Date.now()-started}));
       return send(reply,200,{status:"completed",project:body.project,ownerId:body.ownerId,
@@ -207,6 +229,10 @@ export function makeSharedGeminiHandler(options: Configuration = {}) {
         ...(answer.usage?{usage:answer.usage}:{})});
     } catch (error) {
       const failure=classifyExecutionFailure(error);
+      if(quota){
+        try{await quota.settle(body,"failed");}
+        catch{return send(reply,503,{error:"quota_settlement_uncertain",requestId:body.requestId});}
+      }
       const code=failure.httpStatus===429 ? "gemini_quota" : "gemini_execution_failed";
       console.info(JSON.stringify({kind:"shared_gemini_call",project:body.project,requestId:body.requestId,
         status:"failed",failureCode:code,reason:failure.reason,
