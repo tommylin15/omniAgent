@@ -43,8 +43,10 @@ describe.runIf(Boolean(dsn))("isolated gateway cross-instance quota ledger",()=>
       await expect(ledgerA.reserve(req(b,103))).rejects.toMatchObject({code:"global_busy"});
       await ledgerA.settle(first,"completed",{promptTokens:10,candidateTokens:1,totalTokens:11});
       await ledgerB.reserve(req(a,104));
-      await expect(ledgerA.reserve(req(a,105))).rejects.toMatchObject({code:"quota_exhausted"});
+      // Release the other Owner's active lease; now only daily Owner limits
+      // can reject the third request. Distinct denial gates stay testable.
       await ledgerB.settle(second,"failed");
+      await expect(ledgerA.reserve(req(a,105))).rejects.toMatchObject({code:"quota_exhausted"});
       await ledgerA.settle(req(a,104),"completed");
       await expect(ledgerB.reserve(req(a,101))).rejects.toMatchObject({code:"duplicate_request"});
       const records=await poolA.query(
