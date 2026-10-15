@@ -57,7 +57,7 @@ jobs:
           import json,sys
           d=json.load(open(sys.argv[1]))
           print("r01_real_backend_inference="+d["status"])
-          print("provider_post_count="+str(d["provider_post_count"]))
+          print("chat_dispatch_http_attempts="+str(d["chat_dispatch_http_attempts"]))
           print("db_terminal_status="+d["db_receipt"]["status"])
           print("db_text_events="+str(d["db_receipt"]["text_events"]))
           print("formal_traffic_mutated="+d["traffic_mutated"])

@@ -121,8 +121,8 @@ def main():
     sha=sys.argv[1]
     if not re.fullmatch("[a-f0-9]{40}",sha):
         raise SystemExit("invalid SHA")
-    result={"source_sha":sha,"intent":"ONE_BOUNDED_PROVIDER_CALL","status":"BLOCKED",
-            "provider_post_count":0,"traffic_mutated":"NO","manual_oauth_gate":"NOT_REQUIRED",
+    result={"source_sha":sha,"intent":"ONE_BOUNDED_CHAT_DISPATCH_ATTEMPT","status":"BLOCKED",
+            "chat_dispatch_http_attempts":0,"traffic_mutated":"NO","manual_oauth_gate":"NOT_REQUIRED",
             "user_google_oauth_end_to_end":"NOT_TESTED",
             "db_attempt_auto_retry":"NEVER"}
     receipt=Path(sys.argv[2])
@@ -139,7 +139,7 @@ def main():
         result["synthetic_fixture"]="CREATED_ONCE"
         # This is the ONLY authorized POST, through the real Chat dispatcher.
         # Never retry, even if HTTP times out after charging tokens.
-        result["provider_post_count"]=1
+        result["chat_dispatch_http_attempts"]=1
         req=urllib.request.Request(url.rstrip("/")+"/internal/v1/chat/dispatch:once",
             method="POST",headers={"Authorization":"Bearer "+token,
                 "Content-Type":"application/json"},data=b"{}")
@@ -156,7 +156,8 @@ def main():
         if len(read)!=1: raise RuntimeError("DB readback missing or ambiguous")
         counts=json.loads(read[0])
         result["db_receipt"]={k:counts[k] for k in ("status","text_events","completed_events",
-            "error_events","closed_at_present","daily_owner_budget_count","owner_scope_match")}
+            "error_events","closed_at_present","daily_owner_budget_count","owner_scope_match","provider_usage_total_tokens")}
+        result["provider_usage_readback"]=("PRESENT" if isinstance(counts.get("provider_usage_total_tokens"),int) and counts["provider_usage_total_tokens"]>0 else "NOT_VERIFIED")
         result["status"]="PASS" if (result["http_result"]=="COMPLETED" and
             counts.get("status")=="COMPLETED" and counts.get("text_events",0)==1 and
             counts.get("completed_events",0)==1 and counts.get("error_events",0)==0 and
@@ -168,7 +169,7 @@ def main():
             result["traffic_mutated"]="UNEXPECTED_DRIFT"
             result["status"]="BLOCKED_TRAFFIC_DRIFT"
         print("r01_real_backend_inference="+result["status"])
-        print("r01_one_provider_attempt="+str(result["provider_post_count"]))
+        print("r01_one_provider_attempt="+str(result["chat_dispatch_http_attempts"]))
         if result["status"]!="PASS":
             raise RuntimeError("live inference or DB terminal readback did not pass")
     except Exception as exc:

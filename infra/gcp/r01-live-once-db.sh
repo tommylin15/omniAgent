@@ -53,7 +53,8 @@ else
       'error_events',(SELECT count(*) FROM omni_chat.events e WHERE e.owner_id=t.owner_id AND e.thread_id=t.thread_id AND e.turn_id=t.turn_id AND e.event_type='turn_error'),
       'closed_at_present',(t.completed_at IS NOT NULL),
       'daily_owner_budget_count',(SELECT coalesce(sum(attempts),0) FROM omni_chat.model_daily_budgets b WHERE b.scope='owner' AND b.owner_id=t.owner_id AND b.utc_day=(now() AT TIME ZONE 'UTC')::date),
-      'owner_scope_match',(t.owner_id='$owner'::uuid)
+      'owner_scope_match',(t.owner_id='$owner'::uuid),
+      'provider_usage_total_tokens',(SELECT (e.payload->'usage'->>'totalTokens')::bigint FROM omni_chat.events e WHERE e.owner_id=t.owner_id AND e.thread_id=t.thread_id AND e.turn_id=t.turn_id AND e.event_type='turn_completed' ORDER BY e.seq DESC LIMIT 1)
     ) FROM omni_chat.turns t WHERE t.owner_id='$owner'::uuid AND t.thread_id='$thread' AND t.turn_id='$turn';
   "
 fi
