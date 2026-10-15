@@ -39,3 +39,7 @@ This is a static evidence review, not a live security incident or penetration-te
 
 - **R15 / P0 conditional:** Historical `infra/gcp/bootstrap-omniagent-ci.sh` grants project-level `roles/run.admin` and `roles/cloudbuild.builds.editor`; `infra/gcp/bootstrap-omniagent-postgres-access.sh` may grant project-level `roles/compute.osAdminLogin` and IAP rights to the CI identity. These are confirmed script instructions, **not a verified statement of current live IAM bindings**. Before any re-run, inventory actual bindings, split bootstrap from daily deploy identity, and limit scopes to the minimum necessary.
 - **R16 / P1:** `infra/gcp/retire-legacy-codex-auth.sh` contains a destructive Secret deletion operation. It should be regarded as a historical, separate owner-controlled retirement action, not ordinary delivery. Confirm no downstream dependency, approved exact target and recoverability before use; no Secret deletion was performed in this documentation audit.
+
+## 修復工單入口（2026-10-15）
+
+[R01–R16 逐項工程修復與驗收計畫](risk-remediation-plan.md) 已建立，含程式入口、前置安全閘門、可重跑測試、CI、候選部署和 runtime 退出條件。**計畫完成不等於風險已修復**；除 R12 文件收斂待回歸驗證外，其他項目均保持 OPEN／需實測。
