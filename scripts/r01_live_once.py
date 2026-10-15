@@ -63,7 +63,7 @@ def mint_token(service_email,audience):
         with urllib.request.urlopen(req,timeout=30) as r:
             token=json.load(r).get("token")
     except (urllib.error.HTTPError,urllib.error.URLError,TimeoutError):
-        raise RuntimeError("narrow service token permission unavailable")
+        raise RuntimeError("narrow service token permission unavailable") from None
     if not isinstance(token,str) or token.count(".")!=2:
         raise RuntimeError("invalid service identity token")
     return token
@@ -101,13 +101,16 @@ def inspect_canary(sha):
     service_audience=(live.get("CHAT_INTERNAL_AUDIENCE") or {}).get("value")
     allowed=(live.get("CHAT_INTERNAL_ALLOWED_EMAILS") or {}).get("value","")
     allowed={x.strip().lower() for x in allowed.split(",") if x.strip()}
+    # Signed GHCR smoke has already demonstrated narrow getOpenIdToken
+    # permissions for Codex Chat client and Chat. Do not assume the gateway
+    # runtime identity itself is token-mintable by this CI principal.
     authorized=[email for email in (
-        "omniagent-gateway@"+PROJECT+".iam.gserviceaccount.com",
         "omniagent-codex-chat-client@"+PROJECT+".iam.gserviceaccount.com",
-        "omniagent-chat@"+PROJECT+".iam.gserviceaccount.com") if email in allowed]
+        "omniagent-chat@"+PROJECT+".iam.gserviceaccount.com",
+        "omniagent-gateway@"+PROJECT+".iam.gserviceaccount.com") if email in allowed]
     if not authorized:
         raise RuntimeError("no pre-approved internal automated Chat caller")
-    return chat_tag["url"],service_audience,authorized[0],serving(chat),serving(gate)
+    return chat_tag["url"],service_audience,authorized,serving(chat),serving(gate)
 
 def must_http(url,path,code):
     try:
@@ -128,10 +131,21 @@ def main():
     receipt=Path(sys.argv[2])
     installed=False
     try:
-        url,audience,caller,serving_chat,serving_gate=inspect_canary(sha)
+        url,audience,callers,serving_chat,serving_gate=inspect_canary(sha)
         must_http(url,"/ready",200)
         must_http(url,"/internal/v1/chat/reconciliation:candidates",401)
-        token=mint_token(caller,audience)
+        token=None
+        for caller in callers:
+            try:
+                token=mint_token(caller,audience)
+                break
+            except RuntimeError:
+                # Token issuance has no model side effects and is safe to
+                # test for the other explicitly configured caller identities.
+                continue
+        if token is None:
+            raise RuntimeError("no authorized service identity could mint a narrow ID token")
+        result["machine_service_identity"]="APPROVED_CALLER_TOKEN"
         remote_install();installed=True
         response=remote("prepare",sha)
         if "r01_fixture=CREATED_ONCE" not in response:
