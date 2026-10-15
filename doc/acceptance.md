@@ -1,4 +1,4 @@
-# omniAgent Current Acceptance (2026-10-14)
+# omniAgent Current Acceptance (2026-10-15)
 
 **Overall: PARTIAL.** Current runtime receipts override dated checkpoints. Historic work stays available in Git history and Actions.
 
@@ -9,7 +9,8 @@
 | Three services, 10 revisions each | PASS at snapshot | https://github.com/tommylin15/omniAgent/actions/runs/38574373341 |
 | Owner Gemini single-turn Preview | PASS, Preview only | https://github.com/tommylin15/omniAgent/actions/runs/38381669212 |
 | Life / market-mart consumer integrations | CONSUMER_REPORTED_PASS | Consumer-owned artifacts not independently reviewed here |
-| Production Chat model dispatch | OPEN / OFF | CHAT_DISPATCH_ENABLED=false |
+| R01 verified-TLS single-Owner Chat→Gateway→Gemini→PostgreSQL backend | **PASS for 0%-traffic canary only** | https://github.com/tommylin15/omniAgent/actions/runs/38742807230 ; source `67cabc2dec6474453c9d9000fcc29290c75e4bd5`; one provider attempt; terminal events and provider usage readback validated |
+| Production Chat model dispatch | OPEN / OFF | No formal enablement; 0%-traffic canary does not promote production |
 | Two-Owner runtime isolation | PARTIAL | Automated, legitimate-user E2E not verified |
 | Codex Owner session and approval/reconnect | PARTIAL | Final multi-owner acceptance missing |
 | Credential Resolver / BYOK | SOURCE_ONLY | Management OFF by default |

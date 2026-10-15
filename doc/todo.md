@@ -11,6 +11,12 @@
 - [x] **Life、market-mart P0-V 技術交接**：各消費端回報串接通路成功（`CONSUMER_REPORTED_PASS`）；不是 omniAgent 獨立讀取其 production DB/schema receipt。
 - [x] **Gateway 限額與失敗分類**：market-mart 32 KiB Prompt／2,048 輸出 tokens；Chat／Life 8 KiB／512；上游 429／503／504 分類，不自動付費重試。
 
+## 2026-10-15 R01 受控實測（僅限候選後端）
+
+- **R01 真實 Gemini backend inference PASS（單 Owner／0% traffic）**：[驗收 #38742807230](https://github.com/tommylin15/omniAgent/actions/runs/38742807230)；source SHA `67cabc2dec6474453c9d9000fcc29290c75e4bd5`。verified PostgreSQL TLS、Owner 身分、候選限定 signed caller、匿名拒絕與正式 template 還原 PASS；僅一筆 Chat dispatch→Gateway→Gemini 推論，SQL terminal／文字事件／非零 provider usage 驗收 gate PASS。
+- **正式 Chat Dispatch 仍 OFF，整體產品仍 PARTIAL**。這次測試未切正式流量，亦不代表兩 Owner 授權負例、UI 真實操作及重整、SSE／復原或正式模型發布已完成。
+- R01 未使用付費失敗自動重試；除已封存的一次性核准候選外，不應再次消耗此 source SHA 的 fixture。
+
 ## P0 — 最優先待辦
 
 **R01–R16 風險已逐項轉為工程包與驗收退出條件**：[風險修復計畫](../docs/risk-remediation-plan.md)。規劃已完成 ≠ 修復已完成；P0 工作必須依安全、成本、兩 Owner E2E 及正式發布 gate 分批執行。
@@ -18,7 +24,7 @@
 | ID | 工作 | 現況 | 完成條件 |
 | --- | --- | --- | --- |
 | 01 | 正式 Chat Gemini Dispatch 受控開啟 | **OFF／OPEN** | Owner entitlement、cost cap、Secret、signed Gateway、正式安全正負例、fallback 與配置讀回 |
-| 02 | Chat→Gateway→PostgreSQL→UI 正式模型回覆 | **PARTIAL** | 同 requestId 的真實 reply、持久化 terminal 事件、重新整理及可追蹤 readback |
+| 02 | Chat→Gateway→PostgreSQL→UI 正式模型回覆 | **PARTIAL；R01 0%-traffic 單 Owner 真實 Gemini 後端 PASS** | 後端已取得單次實際推論與 PostgreSQL terminal／Token usage 收據；仍需正式 Dispatch 啟用、多 Owner、UI 重整與同 requestId 讀回 |
 | 03 | 兩個 Owner 的權限隔離 | **NOT_VERIFIED** | 合法身分的正向與跨 Owner thread/event/credential/SSE 負向測試 |
 | 04 | SSE、Approval、Cancel、重連、冪等及崩潰恢復 | **PARTIAL** | 具故障注入、同 SHA source/test/live E2E |
 | 05 | Codex Owner 專屬 session/workspace/authorization/terminal | **PARTIAL** | 真實 Owner 隔離與 provider→DB 回路，預算內受控驗收 |
