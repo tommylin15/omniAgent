@@ -116,7 +116,7 @@ describe("Shared Gateway Gemini vertical slice",()=>{
     expect(generate).not.toHaveBeenCalled();
     const signed=signOwnerAuthorization({...base,audience},signingKeys.omniagent,Date.now());
     const invoke=async(body:unknown,headers:Record<string,string>)=>
-      fetch(endpoint,{method:"POST",headers:{Authorization:"Bearer ok",
+      fetch(endpoint,{method:"POST",headers:{Authorization:"Bearer signed-token",
         "Content-Type":"application/json",...headers},body:JSON.stringify(body)});
     const forged=await invoke({...base,ownerId:"00000000-0000-4000-8000-000000000003"},signed);
     expect(forged.status).toBe(403);
