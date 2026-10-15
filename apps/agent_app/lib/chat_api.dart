@@ -60,9 +60,6 @@ class ChatApi {
     if (wireBody != null) request.body = wireBody;
     // Timeouts or unknown HTTP errors must not silently create a new turn.
     final response = await http.Response.fromStream(await client.send(request));
-    if (intent != null && response.statusCode >= 200 && response.statusCode < 300) {
-      _unconfirmedPosts.remove(intent);
-    }
     final candidate = response.headers['x-omniagent-request-id'];
     lastRequestId = candidate != null &&
         RegExp(r'^[0-9a-fA-F-]{36}$').hasMatch(candidate)
@@ -75,13 +72,19 @@ class ChatApi {
       }
       throw StateError('omniAgent API ${response.statusCode}$suffix');
     }
-    return response.bodyBytes.isEmpty ? null : jsonDecode(utf8.decode(response.bodyBytes));
+    // Decode first: a truncated 2xx body still has an uncertain outcome.
+    // Reusing the original key is essential if the client retries it.
+    final decoded = response.bodyBytes.isEmpty
+        ? null : jsonDecode(utf8.decode(response.bodyBytes));
+    if (intent != null) _unconfirmedPosts.remove(intent);
+    return decoded;
   }
 
   Future<List<Map<String, dynamic>>> events(String threadId, int cursor) async {
-    if (base.isEmpty || token.isEmpty) throw StateError('omniAgent API 未設定');
+    final origin = _baseOverride ?? base;
+    if (origin.isEmpty || token.isEmpty) throw StateError('omniAgent API 未設定');
     final request = http.Request('GET',
-        Uri.parse('$base/v1/threads/$threadId/events?cursor=$cursor&limit=200'))
+        Uri.parse('$origin/v1/threads/$threadId/events?cursor=$cursor&limit=200'))
       ..headers['Authorization'] = 'Bearer $token';
     final response = await http.Response.fromStream(await client.send(request));
     if (response.statusCode != 200) throw Exception('事件串流暫時無法使用');

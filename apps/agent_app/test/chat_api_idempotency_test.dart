@@ -27,6 +27,22 @@ void main() {
       r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')));
     api.close();
   });
+  test('malformed HTTP 2xx response retains the original POST intent',() async {
+    final keys=<String>[];
+    var n=0;
+    final client=MockClient((req) async {
+      keys.add(req.headers['idempotency-key']??'');
+      return http.Response(++n == 1 ? '{broken' : '{}',202);
+    });
+    final api=ChatApi('owner-a',client:client,baseUrl:'https://example.test');
+    const path='/v1/threads/t/messages', payload={'content':'verify receipt'};
+    await expectLater(api.post(path,payload),throwsFormatException);
+    await api.post(path,payload);
+    expect(keys,hasLength(2));
+    expect(keys[0],keys[1]);
+    api.close();
+  });
+
   test('different bodies use different IDs; GET has no POST key',() async {
     final keys=<String?>[];
     final client=MockClient((req) async {
