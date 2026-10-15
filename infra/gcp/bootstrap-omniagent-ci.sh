@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Historical one-time bootstrap; never grant project-wide IAM in ordinary CI.
+if [[ "${OMNIAGENT_APPROVE_LEGACY_PROJECT_WIDE_IAM:-}" != "yes" ]]; then
+  echo "BLOCKED: set OMNIAGENT_APPROVE_LEGACY_PROJECT_WIDE_IAM=yes for a separately approved bootstrap" >&2
+  exit 2
+fi
+
 PROJECT_ID="${OMNIAGENT_GCP_PROJECT_ID:-gen-lang-client-0593591102}"
 REGION="${OMNIAGENT_GCP_REGION:-us-central1}"
 EXPECTED_PROJECT_NUMBER="131494961796"

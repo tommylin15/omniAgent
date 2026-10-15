@@ -44,6 +44,19 @@ describe("chatDatabasePoolConfig", () => {
     )).toThrow(/sslmode=require/);
   });
 
+  it("requires a trust anchor and verified server name in CA mode", () => {
+    const dsn = "postgresql://app:secret@10.0.0.5:5432/chat?sslmode=require";
+    expect(() => chatDatabasePoolConfig(dsn, "verified-ca")).toThrow(/verified CA/);
+    const ca = "-----BEGIN CERTIFICATE-----\nTEST-CA-CONTENTS\n-----END CERTIFICATE-----";
+    expect(() => chatDatabasePoolConfig(dsn, "verified-ca", ca)).toThrow(/hostname/);
+    const result = chatDatabasePoolConfig(dsn, "verified-ca", ca, "postgres.internal.example");
+    expect(result.connectionString).toBe("postgresql://app:secret@10.0.0.5:5432/chat");
+    expect(result.ssl).toEqual({ rejectUnauthorized: true,
+      ca, servername: "postgres.internal.example" });
+    expect(() => chatDatabasePoolConfig(dsn.replace("sslmode=require","sslmode=disable"),
+      "verified-ca",ca,"postgres.internal.example")).toThrow(/sslmode=require/);
+  });
+
   it("fails closed for an unknown TLS mode", () => {
     expect(() => chatDatabasePoolConfig(
       "postgresql://app:secret@10.0.0.5:5432/chat?sslmode=require",

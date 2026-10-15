@@ -4,6 +4,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { OAuth2Client } from "google-auth-library";
+import { parseOwnerAuthorizationKeys, verifyOwnerAuthorization } from "../agent-gateway/owner_authorization.js";
 import { AppServerClient, ManagedAuthStore } from "../agent-gateway/server.js";
 import { CodexBridge } from "../agent-gateway/codex_bridge.js";
 import { McpHost } from "../agent-gateway/mcp_host.js";
@@ -212,6 +213,7 @@ export function makeSharedCodexServer(options: {
   audience: string;
   execute?: Execute;
   verify?: Verify;
+  ownerAuthorizationKeys?: ReadonlyMap<string,string>;
 }) {
   const execute = options.execute || executeCodex;
   const verify = options.verify || verifyGoogleIdentity;
@@ -244,6 +246,10 @@ export function makeSharedCodexServer(options: {
       return json(reply, 400, { error: "invalid_request" });
     }
     if (options.callers.get(body.project) !== identity) return json(reply, 403, { error: "caller_project_mismatch" });
+    if (options.ownerAuthorizationKeys && !verifyOwnerAuthorization(request.headers,{
+      project:body.project,ownerId:body.ownerId,requestId:body.requestId,audience:options.audience
+    },options.ownerAuthorizationKeys))
+      return json(reply, 403, { error: "owner_authorization_required" });
     busy = true;
     const start = Date.now();
     try {
@@ -273,7 +279,10 @@ if (process.env.NODE_ENV !== "test") {
   const audience = process.env.SHARED_CODEX_AUDIENCE || "";
   if (!audience.startsWith("https://") || audience.includes("?")) throw new Error("invalid_audience");
   const port = Number(process.env.PORT || "8080");
-  const server = makeSharedCodexServer({ callers, audience }).listen(port, "0.0.0.0",
+  const ownerAuthorizationKeys = process.env.SHARED_CODEX_REQUIRE_OWNER_AUTHORIZATION === "true"
+    ? parseOwnerAuthorizationKeys(process.env.SHARED_CODEX_OWNER_AUTHORIZATION_KEYS_JSON || "",[...callers.keys()])
+    : undefined;
+  const server = makeSharedCodexServer({ callers, audience, ownerAuthorizationKeys }).listen(port, "0.0.0.0",
     () => console.log("shared_codex_listening"));
   process.once("SIGTERM", () => server.close());
 }

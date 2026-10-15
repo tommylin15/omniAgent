@@ -34,6 +34,10 @@ print(sa,network,subnet)
 PY
 )
 if [[ "$action" == "grant" ]]; then
+  if [[ "${OMNIAGENT_APPROVE_LEGACY_PROJECT_WIDE_IAM:-}" != "yes" ]]; then
+    echo "BLOCKED: project-wide PostgreSQL bootstrap IAM requires separate approval" >&2
+    exit 2
+  fi
   if ! gcloud secrets describe "$DB_SECRET" --project="$PROJECT_ID" >/dev/null 2>&1; then
     gcloud secrets create "$DB_SECRET"       --replication-policy=user-managed       --locations="$REGION"       --project="$PROJECT_ID"
   fi

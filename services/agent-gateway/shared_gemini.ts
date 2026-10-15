@@ -11,6 +11,7 @@ import { OAuth2Client } from "google-auth-library";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { GeminiProvider, GeminiProviderError, type GeminiResult } from "./gemini_provider.js";
 import { isAllowedGeminiModel } from "./gemini_model_policy.js";
+import { parseOwnerAuthorizationKeys, verifyOwnerAuthorization } from "./owner_authorization.js";
 
 const PROJECTS = ["omniagent", "market-mart", "life-assistant"] as const;
 type Project = typeof PROJECTS[number];
@@ -166,6 +167,10 @@ export function makeSharedGeminiHandler(options: Configuration = {}) {
       env.GEMINI_PAID_ENABLED === "true"))
     throw new Error("shared_gemini_configuration_unavailable");
   const callers = enabled ? parseGeminiCallers(env.GEMINI_SHARED_CALLERS_JSON || "") : new Map<Project,string>();
+  const ownerAuthorizationRequired = env.GEMINI_SHARED_REQUIRE_OWNER_AUTHORIZATION === "true";
+  const ownerKeys = ownerAuthorizationRequired
+    ? parseOwnerAuthorizationKeys(env.GEMINI_SHARED_OWNER_AUTHORIZATION_KEYS_JSON || "",PROJECTS)
+    : new Map<string,string>();
   const verify = options.verify ?? verifyGeminiCaller;
   const generate: Generate = options.generate ?? ((prompt,model,maxOutputTokens) =>
     new GeminiProvider(env.GEMINI_API_KEY || "",model).generate(prompt,{
@@ -184,6 +189,9 @@ export function makeSharedGeminiHandler(options: Configuration = {}) {
     try { body = parseSharedGeminiRequest(await readJson(request),defaultModel); }
     catch { return send(reply,400,{error:"invalid_request"}); }
     if (caller !== callers.get(body.project)) return send(reply,403,{error:"caller_project_mismatch"});
+    if (ownerAuthorizationRequired && !verifyOwnerAuthorization(request.headers,{
+      project:body.project,ownerId:body.ownerId,requestId:body.requestId,audience
+    },ownerKeys)) return send(reply,403,{error:"owner_authorization_required"});
     if (running >= MAX_RUNNING) return send(reply,429,{error:"gateway_busy",requestId:body.requestId});
     running++;
     const started = Date.now();

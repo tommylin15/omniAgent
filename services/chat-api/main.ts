@@ -16,7 +16,8 @@ const callers = new Set((process.env.CHAT_INTERNAL_ALLOWED_EMAILS ?? "").split("
 if (!dsn || !userAudience || !serviceAudience || !callers.size) throw new Error("Chat API authentication or storage is not configured");
 
 const google = new OAuth2Client();
-const pool = new Pool(chatDatabasePoolConfig(dsn,process.env.CHAT_DATABASE_TLS_MODE));
+const pool = new Pool(chatDatabasePoolConfig(dsn,process.env.CHAT_DATABASE_TLS_MODE,
+  process.env.CHAT_DATABASE_CA_PEM,process.env.CHAT_DATABASE_TLS_SERVERNAME));
 const verify = async (token: string, audience: string) => {
   const payload = (await google.verifyIdToken({ idToken: token, audience })).getPayload();
   if (!payload?.sub || !["https://accounts.google.com", "accounts.google.com"].includes(payload.iss)) {
