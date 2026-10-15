@@ -72,7 +72,7 @@ class ReleaseReadiness(unittest.TestCase):
 
     def test_bad_image_digests_fail_closed(self):
         services,revisions=fixture()
-        revisions["omniagent-chat-99997-serving"]["spec"]["containers"][0]["image"]="untrusted-unpinned-image"
+        revisions["omniagent-chat-99997-serving"]["spec"]["containers"][0]["image"]="ghcr.io/tommylin15/omniagent-chat@not-a-digest"
         with self.assertRaisesRegex(gate.Blocked,"invalid_image_digest"):
             gate.audit(HEAD,services,revisions,lambda n,v:"ENABLED")
         services,revisions=fixture()
