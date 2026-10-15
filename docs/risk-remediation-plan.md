@@ -59,3 +59,8 @@
 - R02：Owner HMAC v2 額外綁定 model 與 prompt SHA256；Gateway 的 `GEMINI_SHARED_QUOTA_ENABLED=true` 必須同時啟用 `GEMINI_SHARED_REQUIRE_OWNER_AUTHORIZATION=true`，反之亦然，避免只開簽章而未設資料庫重放防護。獨立 Shared Codex 尚未完成持久化防重放，因此仍維持 R02 OPEN。
 - 正式啟用的必要配置：專用 Ledger PostgreSQL 執行 migration 006，使用有憑證驗證的 `GEMINI_SHARED_LEDGER_DATABASE_URL`、`GEMINI_SHARED_LEDGER_CA_PEM`、必要時 `GEMINI_SHARED_LEDGER_TLS_SERVERNAME`；`GEMINI_SHARED_QUOTA_LIMITS_JSON` 必須包括七項嚴格正整數額度。**本次未核准建 DB、IAM、Secret 或啟用 Gateway flag**；在這些 runtime readback 缺席前不得宣告 R04 DONE。
 - 這些 token 預留使用 prompt UTF-8 byte 數加 maxOutputTokens，屬**保守容量上限**，不應宣稱等同供應商實際費用／美元預算。真正費用上限還需要 Billing/Monitoring 與實際 usage 對帳。
+
+## 第三批 R01 Chat 真實路徑配額
+- **重要**：R04 先前共享端點 `/v1/gemini/execute` 的 Ledger 不覆蓋 omniAgent Chat 使用的 `/internal/v1/assistant/turn`。因此新增獨立 `007_chat_model_dispatch_budget.sql` 與 `services/chat-api/dispatch_budget.ts`，直接在 `ChatStore.claimNextQueuedTurn` 的既有 `QUEUED→RUNNING` 交易內，對 Gemini／OpenRouter 的全域併發和每日 global/Owner 呼叫／保守容量額度做不可退還預留。
+- 每個 Chat dispatch **必須**配置 `CHAT_DISPATCH_BUDGET_JSON` 的六項嚴格正整數上限，否則啟用時直接拒絕啟動；現有未啟用的 Chat 與 Codex 三回合保護維持原狀。僅限 Chat 自有 DB 的模型預算資料；不承諾等同真實美元計費。
+- CI 使用兩個獨立 PostgreSQL Pool 同時 claim 不同 Owner，驗證 global 並發門、Owner 限額及不可重試；CI PASS 僅證明 fixture 邏輯，不代表正式 owner OAuth/token、Cloud Run Gateway IAM、實際 quota migration 或 terminal DB readback PASS。

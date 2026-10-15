@@ -9,6 +9,7 @@ import { parseModelEntitlements } from "../services/chat-api/model_entitlements.
 import type { AddressInfo } from "node:net";
 import { CredentialRegistry } from "../services/chat-api/credential_management.js";
 import { CodexSessionStore, parseCodexPhase } from "../services/chat-api/codex_session_store.js";
+import { parseChatDispatchBudget } from "../services/chat-api/dispatch_budget.js";
 
 const dsn = process.env.PG_TEST_URL;
 describe.runIf(Boolean(dsn))("isolated PostgreSQL ChatStore acceptance", () => {
@@ -21,7 +22,7 @@ describe.runIf(Boolean(dsn))("isolated PostgreSQL ChatStore acceptance", () => {
     try {
       expect((await pool.query("SELECT current_database() AS name")).rows[0].name).toBe("omniagent_acceptance");
       expect((await pool.query("SELECT to_regclass('omni_chat.owners') AS present")).rows[0].present).toBeNull();
-      for (const filename of ["001_chat_ownership.sql", "002_skill_storage.sql", "003_credential_metadata.sql", "004_codex_live_turns.sql", "005_codex_trial_3_turn_budget.sql"]) {
+      for (const filename of ["001_chat_ownership.sql", "002_skill_storage.sql", "003_credential_metadata.sql", "004_codex_live_turns.sql", "005_codex_trial_3_turn_budget.sql", "007_chat_model_dispatch_budget.sql"]) {
         const sql = readFileSync("infra/postgres/migrations/" + filename,"utf8");
         await pool.query(sql);
         await pool.query(sql);
@@ -534,4 +535,52 @@ describe.runIf(Boolean(dsn))("isolated PostgreSQL ChatStore acceptance", () => {
         [])).rows[0].count).toBe(1);
     } finally { await pool.end(); }
   },60_000);
+  it("enforces durable cross-instance Chat-model Owner/global cap, without touching other Owners",async()=>{
+    const poolA=new Pool({connectionString:dsn,max:4});
+    const poolB=new Pool({connectionString:dsn,max:4});
+    const budget=parseChatDispatchBudget(JSON.stringify({
+      maxConcurrent:2,maxGlobalDailyCalls:3,maxOwnerDailyCalls:2,
+      maxGlobalDailyTokens:10000,maxOwnerDailyTokens:5000,maxPromptBytes:4000
+    }));
+    const aStore=new ChatStore(poolA,budget),bStore=new ChatStore(poolB,budget);
+    try{
+      const a=await aStore.owner("accounts.google.com","budget-a");
+      const b=await aStore.owner("accounts.google.com","budget-b");
+      const setup=async(store:ChatStore,ownerId:string,threadId:string)=>{
+        await store.createThread(ownerId,{threadId,runtime:"gemini",
+          model:"gemini-3.5-flash-lite",assistantProfile:"default"},"key-"+threadId);
+        const msg=await store.message(ownerId,threadId,"bounded request","msg-"+threadId);
+        return {ownerId,threadId,turnId:String(msg.turn.turn_id)};
+      };
+      const t1=await setup(aStore,a,"budget-01");
+      const t2=await setup(bStore,b,"budget-02");
+      const t3=await setup(aStore,a,"budget-03");
+      const t4=await setup(aStore,a,"budget-04");
+      const t5=await setup(bStore,b,"budget-05");
+      const race=await Promise.allSettled([aStore.claimNextQueuedTurn([a],t1),
+        bStore.claimNextQueuedTurn([b],t2)]);
+      expect(race.every(x=>x.status==="fulfilled")).toBe(true);
+      await expect(aStore.claimNextQueuedTurn([a],t3))
+        .rejects.toThrow(/concurrency exhausted/);
+      await poolA.query("UPDATE omni_chat.turns SET status='COMPLETED' WHERE owner_id=$1 AND thread_id=$2",
+        [a,t1.threadId]);
+      expect(await bStore.claimNextQueuedTurn([a],t3)).toMatchObject({ownerId:a});
+      await expect(aStore.claimNextQueuedTurn([a],t4))
+        .rejects.toThrow(/concurrency exhausted/);
+      await poolB.query("UPDATE omni_chat.turns SET status='COMPLETED' WHERE owner_id=$1 AND thread_id=$2",
+        [b,t2.threadId]);
+      await expect(aStore.claimNextQueuedTurn([a],t4))
+        .rejects.toThrow(/budget exhausted/);
+      expect(await bStore.claimNextQueuedTurn([b],t5)).toMatchObject({ownerId:b});
+      const rows=await poolA.query(
+        "SELECT scope,attempts FROM omni_chat.model_daily_budgets ORDER BY scope,owner_id");
+      expect(rows.rows.filter(row=>row.scope==="global")[0].attempts).toBe(3);
+      expect(rows.rows.filter(row=>row.scope==="owner").map(row=>row.attempts).sort())
+        .toEqual([1,2]);
+      const queued=await poolA.query(
+        "SELECT status FROM omni_chat.turns WHERE owner_id=$1 AND thread_id=$2",
+        [a,t4.threadId]);
+      expect(queued.rows[0].status).toBe("QUEUED");
+    }finally{await Promise.all([poolA.end(),poolB.end()]);}
+  },20_000);
 });

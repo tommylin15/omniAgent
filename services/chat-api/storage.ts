@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import type { Pool } from "pg";
 import { authorizeApproval } from "../agent-gateway/agent_security.js";
 import type { ModelEntitlement } from "./model_entitlements.js";
+import type { ChatDispatchBudget } from "./dispatch_budget.js";
 
 export class ChatConflict extends Error {}
 export class ChatNotFound extends Error {}
@@ -40,7 +41,7 @@ function digest(value: unknown): string {
 }
 
 export class ChatStore {
-  constructor(private readonly pool: Pool) {}
+  constructor(private readonly pool: Pool, private readonly budget?: ChatDispatchBudget) {}
 
   async ready(): Promise<void> {
     await this.pool.query("SELECT 1");
@@ -261,6 +262,45 @@ export class ChatStore {
         ? (payload as Record<string, unknown>).content : undefined;
       if (typeof content !== "string" || !content.trim() || content.length > 50_000) {
         throw new Error("queued message is invalid");
+      }
+      if (selected.runtime !== "codex" && this.budget) {
+        // Serialize all Chat service instances within this database before
+        // reading global RUNNING counts or changing daily caps.
+        await client.query("SELECT pg_advisory_xact_lock(762014, 701)");
+        const bytes=Buffer.byteLength(content,"utf8");
+        const units=bytes+512; // conservative, not currency or provider token usage
+        if(bytes>this.budget.maxPromptBytes || units>this.budget.maxOwnerDailyTokens)
+          throw new ChatConflict("Chat inference request exceeds approved capacity");
+        const active=await client.query<{count:string}>(`
+          SELECT count(*)::text AS count FROM omni_chat.turns t
+          JOIN omni_chat.threads th ON th.owner_id=t.owner_id AND th.thread_id=t.thread_id
+          WHERE t.status='RUNNING' AND th.runtime IN ('gemini','openrouter')`);
+        // Crashed RUNNING claims deliberately retain concurrency reservation
+        // until an audited operator reconciliation. Never infer safe retry.
+        if(Number(active.rows[0].count)>=this.budget.maxConcurrent)
+          throw new ChatConflict("Chat global model concurrency exhausted");
+        const scopes=[
+          ["global","00000000-0000-0000-0000-000000000000",
+            this.budget.maxGlobalDailyCalls,this.budget.maxGlobalDailyTokens],
+          ["owner",selected.owner_id,this.budget.maxOwnerDailyCalls,
+            this.budget.maxOwnerDailyTokens]
+        ] as const;
+        for(const [scope,owner,calls,tokens] of scopes){
+          const written=await client.query(
+            `INSERT INTO omni_chat.model_daily_budgets
+              (scope,owner_id,utc_day,attempts,reserved_tokens)
+              VALUES($1,$2,(now() AT TIME ZONE 'UTC')::date,1,$3)
+              ON CONFLICT(scope,owner_id,utc_day)
+              DO UPDATE SET attempts=omni_chat.model_daily_budgets.attempts+1,
+                reserved_tokens=omni_chat.model_daily_budgets.reserved_tokens+$3
+              WHERE omni_chat.model_daily_budgets.attempts<$4
+                AND omni_chat.model_daily_budgets.reserved_tokens+$3<=$5
+              RETURNING attempts`,
+            [scope,owner,units,calls,tokens]);
+          // INSERT itself also must obey configured ceilings.
+          if(written.rowCount!==1 || units>tokens)
+            throw new ChatConflict("Chat model budget exhausted");
+        }
       }
       if (selected.runtime === "codex") {
         // Owner-scoped hard cap: exactly three attempted native starts, not

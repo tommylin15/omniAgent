@@ -8,6 +8,7 @@ import { CodexSessionStore } from "./codex_session_store.js";
 import { CredentialManager, CredentialRegistry } from "./credential_management.js";
 import { GoogleSecretManagerVault } from "./credential_vault.js";
 import { chatDatabasePoolConfig, chatDatabaseUrl } from "./database.js";
+import { parseChatDispatchBudget } from "./dispatch_budget.js";
 
 const dsn = chatDatabaseUrl(process.env);
 const userAudience = process.env.OMNIAGENT_GOOGLE_CLIENT_ID;
@@ -26,7 +27,9 @@ const verify = async (token: string, audience: string) => {
   return payload;
 };
 
-const store = new ChatStore(pool);
+const dispatchBudget=process.env.CHAT_DISPATCH_ENABLED==="true"
+  ? parseChatDispatchBudget(process.env.CHAT_DISPATCH_BUDGET_JSON??"") : undefined;
+const store = new ChatStore(pool,dispatchBudget);
 let dispatcher: ChatDispatcher | undefined;
 if (process.env.CHAT_DISPATCH_ENABLED === "true") {
   // The existing single bundle is the only signing-key source. Never silently
