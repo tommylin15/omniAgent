@@ -30,6 +30,12 @@
 - **R05 正式 Cloud Run 無效 Token／偽造 Owner 邊界 PASS（負向 only）**：source [`77ce4d02`](https://github.com/tommylin15/omniAgent/commit/77ce4d025ba7c93b08ae4155b2318141a819999d)，[live negative #38749705630](https://github.com/tommylin15/omniAgent/actions/runs/38749705630)。最新 GHCR [#38748853426](https://github.com/tommylin15/omniAgent/actions/runs/38748853426)、0% [#38749298181](https://github.com/tommylin15/omniAgent/actions/runs/38749298181)、Signed Smoke [#38749573831](https://github.com/tommylin15/omniAgent/actions/runs/38749573831) PASS；八種匿名／無效 JWT／Owner header spoof／無效寫入／內部身分拒絕均為 HTTP 401，正式流量保持不變，無模型呼叫。**雙真實 Google 使用者的合法 token/API 正向＋跨 Owner 負向仍 NOT_VERIFIED_NO_DELEGATED_USER_TOKENS**，不應視為 R05 DONE。
 - 無 one-shot marker 的 R01、formal release 等 workflow 雖顯示 SUCCESS，其推論／正式發布動作是 **NOT_RUN**，不能誤報為再次真實推論或正式 Chat Dispatch 上線。
 
+## 2026-10-16 R08 跨工作階段／跨裝置回合恢復
+
+- **R08 Owner-scoped latest-turn API + Flutter 恢復：CI／0%-traffic candidate PASS，正式 user E2E PARTIAL**。實作 [`a6766bff`](https://github.com/tommylin15/omniAgent/commit/a6766bfff467a78a7b78a044ac9ed5f1361eae02)，Flutter lint 修正 [`93f14edb`](https://github.com/tommylin15/omniAgent/commit/93f14edb86425e18986904992089d1386a417cf7)。新增 `GET /v1/threads/{threadId}/turns/latest`，從 `omni_chat.turns` 僅以 verified Owner + thread 讀最新 turnId/status；不外洩 prompt、idempotency key 或 provider native handle。Flutter 跨瀏覽器／裝置開啟既有對話時，透過 read-only API + 原有 receipt endpoint 重新驗證最後已完成回合；不發送 message POST。
+- **同 SHA 完整驗收**：Flutter tests/build [#38821023496](https://github.com/tommylin15/omniAgent/actions/runs/38821023496) PASS、GHCR Quality/3 Images [#38821023533](https://github.com/tommylin15/omniAgent/actions/runs/38821023533) PASS、Cloud Run 0% [#38821656675](https://github.com/tommylin15/omniAgent/actions/runs/38821656675) PASS、Signed Smoke [#38821797192](https://github.com/tommylin15/omniAgent/actions/runs/38821797192) PASS、R05 invalid-user live [#38821885123](https://github.com/tommylin15/omniAgent/actions/runs/38821885123) PASS、Owner runtime readonly [#38821885055](https://github.com/tommylin15/omniAgent/actions/runs/38821885055) PASS、production readiness audit [#38821885173](https://github.com/tommylin15/omniAgent/actions/runs/38821885173) PASS。
+- **未完成**：跨裝置不確定寫入意圖的 durable ID 鍵同步、完整長對話歷史快速讀取、正式合法兩位 Google user OAuth E2E／故障注入；不可宣稱 R08 全部 DONE 或以這次驗收取代 R05。R01 真實單 Owner backend PASS 不需重跑；此批沒有再呼叫 Gemini、切正式流量或開 `CHAT_DISPATCH_ENABLED`。
+
 ## P0 — 最優先待辦
 
 **R01–R16 風險已逐項轉為工程包與驗收退出條件**：[風險修復計畫](../docs/risk-remediation-plan.md)。規劃已完成 ≠ 修復已完成；P0 工作必須依安全、成本、兩 Owner E2E 及正式發布 gate 分批執行。

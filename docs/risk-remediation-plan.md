@@ -47,6 +47,11 @@
 - R05 [`77ce4d02`](https://github.com/tommylin15/omniAgent/commit/77ce4d025ba7c93b08ae4155b2318141a819999d)：新增依賴 exact-SHA Signed Smoke 的獨立 live negative pipeline，[#38749705630](https://github.com/tommylin15/omniAgent/actions/runs/38749705630) 對 0%-traffic 正式 Cloud Run 候選執行八種匿名／無效 JWT／偽造 Owner／錯誤 internal identity HTTP 401。工作流程禁止憑證讀取、provider invocation、DB mutation 與 traffic promotion；正式讀回守住原 100%。**本項僅無效 Token 負向；合法兩人 JWT 各自 Owner 授權正負例仍 NOT_VERIFIED**，R05 維持 OPEN。
 - 此次提交並未受控啟用正式 `CHAT_DISPATCH_ENABLED`、發布正式 Chat model traffic 或重新執行 R01 收費請求；不得把 no-marker workflow SUCCESS 當成正式推論。
 
+## 2026-10-16 R08 跨裝置 read-only turn/recovery 增量收據
+
+- [`93f14edb`](https://github.com/tommylin15/omniAgent/commit/93f14edb86425e18986904992089d1386a417cf7) 為本階段唯一通過 CI／GHCR／Cloud Run 的來源（先前 `a6766bff` Flutter lint FAIL，未拿它宣告發布）。新增 Owner-bound `/v1/threads/:id/turns/latest` 僅回傳 turnId/status、跨 Owner 404，Flutter 重新登入／新裝置只查 latest + DB receipt，**不呼叫 provider**。
+- 驗收：Flutter [#38821023496](https://github.com/tommylin15/omniAgent/actions/runs/38821023496)、GHCR [#38821023533](https://github.com/tommylin15/omniAgent/actions/runs/38821023533)、0% candidate [#38821656675](https://github.com/tommylin15/omniAgent/actions/runs/38821656675)、Signed Smoke [#38821797192](https://github.com/tommylin15/omniAgent/actions/runs/38821797192)、runtime denial [#38821885123](https://github.com/tommylin15/omniAgent/actions/runs/38821885123)、readiness audit [#38821885173](https://github.com/tommylin15/omniAgent/actions/runs/38821885173) 均 PASS。沒有真實雙 user Token、跨裝置 durable idempotency key 同步或完整 E2E；R05/R08 保持 PARTIAL、正式 Dispatch OFF。
+
 ## 推進與關閉規則
 
 1. **所有 16 項均有單獨的 code/API/infra 入口、測試與驗收退出條件**。原始稽核保留證據和風險判定，本表負責工程執行順序，`doc/todo.md` 負責當前優先級。
