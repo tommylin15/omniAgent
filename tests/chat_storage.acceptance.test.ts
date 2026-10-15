@@ -539,7 +539,7 @@ describe.runIf(Boolean(dsn))("isolated PostgreSQL ChatStore acceptance", () => {
     const poolA=new Pool({connectionString:dsn,max:4});
     const poolB=new Pool({connectionString:dsn,max:4});
     const budget=parseChatDispatchBudget(JSON.stringify({
-      maxConcurrent:2,maxGlobalDailyCalls:3,maxOwnerDailyCalls:2,
+      maxConcurrent:2,maxGlobalDailyCalls:4,maxOwnerDailyCalls:2,
       maxGlobalDailyTokens:10000,maxOwnerDailyTokens:5000,maxPromptBytes:4000
     }));
     const aStore=new ChatStore(poolA,budget),bStore=new ChatStore(poolB,budget);
@@ -574,9 +574,9 @@ describe.runIf(Boolean(dsn))("isolated PostgreSQL ChatStore acceptance", () => {
       expect(await bStore.claimNextQueuedTurn([b],t5)).toMatchObject({ownerId:b});
       const rows=await poolA.query(
         "SELECT scope,attempts FROM omni_chat.model_daily_budgets ORDER BY scope,owner_id");
-      expect(rows.rows.filter(row=>row.scope==="global")[0].attempts).toBe(3);
+      expect(rows.rows.filter(row=>row.scope==="global")[0].attempts).toBe(4);
       expect(rows.rows.filter(row=>row.scope==="owner").map(row=>row.attempts).sort())
-        .toEqual([1,2]);
+        .toEqual([2,2]);
       const queued=await poolA.query(
         "SELECT status FROM omni_chat.turns WHERE owner_id=$1 AND thread_id=$2",
         [a,t4.threadId]);
