@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chatDatabasePoolConfig, chatDatabaseUrl } from "../services/chat-api/database.js";
+import { chatDatabasePoolConfig, chatDatabaseUrl, chatDatabaseTrustAnchor } from "../services/chat-api/database.js";
 
 describe("chatDatabaseUrl", () => {
   it("loads only the dedicated database field from the unified JSON bundle", () => {
@@ -18,6 +18,16 @@ describe("chatDatabaseUrl", () => {
   });
 });
 
+describe("chatDatabaseTrustAnchor", () => {
+  it("decodes one strict public CA trust anchor for single-line Cloud Run config", () => {
+    const pem="-----BEGIN CERTIFICATE-----\nAQID\n-----END CERTIFICATE-----";
+    expect(chatDatabaseTrustAnchor({CHAT_DATABASE_CA_BASE64:Buffer.from(pem).toString("base64")})).toBe(pem);
+    expect(chatDatabaseTrustAnchor({})).toBeUndefined();
+    expect(() => chatDatabaseTrustAnchor({CHAT_DATABASE_CA_BASE64:"not@base64"})).toThrow(/trust anchor/);
+    expect(() => chatDatabaseTrustAnchor({CHAT_DATABASE_CA_BASE64:Buffer.from("invalid").toString("base64")})).toThrow(/trust anchor/);
+    expect(() => chatDatabaseTrustAnchor({CHAT_DATABASE_CA_PEM:pem,CHAT_DATABASE_CA_BASE64:Buffer.from(pem).toString("base64")})).toThrow(/conflicting/);
+  });
+});
 describe("chatDatabasePoolConfig", () => {
   it("keeps the default PostgreSQL connection string unchanged", () => {
     const dsn = "postgresql://app:secret@10.0.0.5:5432/chat?sslmode=require";

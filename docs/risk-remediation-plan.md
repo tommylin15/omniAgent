@@ -69,3 +69,8 @@
 - 當 `CHAT_DISPATCH_ENABLED=true` 時，Chat 必須使用 `CHAT_DATABASE_TLS_MODE=verified-ca`，並同時提供受信任 CA 與驗證主機名；否則啟動即失敗。非正式舊自簽 TLS 仍可供 **Dispatch OFF** 既有流量使用，不能據此授權正式推論。
 - `GET /ready` 會檢查 `omni_chat.model_daily_budgets` 在 DB 中可查詢，避免 migration 007 尚未實際部署卻因 `SELECT 1` 成功誤認已可 dispatch。
 - 本次源碼測試與部署都無法取代 CA、專用資料庫權限、模型呼叫 entitlement、合法使用者 token、正式 Chat→Gateway IAM 等端點讀回。
+
+## R01 PostgreSQL TLS 封閉式候選驗收準備
+- 2026-10-15 獨立 GCP 唯讀證據：`omniagent_chat` migration 007 已驗證、原本核准的 OAuth-backed Owner DB 對應 PASS。Gateway service-level invoker 有 Chat runtime SA，並非公開呼叫端；PostgreSQL `ssl=on`，使用有效的自簽伺服器憑證，CN 與私有 VM 主機名稱一致。這些只說明有技術途徑，不代表 TLS 已在 Chat candidate 握手 PASS。
+- 新增 `CHAT_DATABASE_CA_BASE64`（與 `CHAT_DATABASE_CA_PEM` 互斥），允許將**公開憑證**用單行 Cloud Run env 注入，仍經 `verified-ca` 完成憑證鏈及主機名驗證；禁止把 Secret 或私鑰作為這個值。候選來源應從已授權基礎設施取得公開 cert，不能盲信用戶輸入的字串。
+- `R01` 正式推論仍需 0%-traffic TLS/ready、Owner model entitlement、經授權服務身分 Chat→Gateway 呼叫、實際 provider 回應、DB terminal readback；**不得**因 migration 或單次 ready PASS 就宣稱 DONE。

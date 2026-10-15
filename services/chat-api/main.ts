@@ -7,7 +7,7 @@ import { ChatStore } from "./storage.js";
 import { CodexSessionStore } from "./codex_session_store.js";
 import { CredentialManager, CredentialRegistry } from "./credential_management.js";
 import { GoogleSecretManagerVault } from "./credential_vault.js";
-import { chatDatabasePoolConfig, chatDatabaseUrl } from "./database.js";
+import { chatDatabasePoolConfig, chatDatabaseUrl, chatDatabaseTrustAnchor } from "./database.js";
 import { parseChatDispatchBudget } from "./dispatch_budget.js";
 
 const dsn = chatDatabaseUrl(process.env);
@@ -18,7 +18,7 @@ if (!dsn || !userAudience || !serviceAudience || !callers.size) throw new Error(
 
 const google = new OAuth2Client();
 const pool = new Pool(chatDatabasePoolConfig(dsn,process.env.CHAT_DATABASE_TLS_MODE,
-  process.env.CHAT_DATABASE_CA_PEM,process.env.CHAT_DATABASE_TLS_SERVERNAME));
+  chatDatabaseTrustAnchor(process.env),process.env.CHAT_DATABASE_TLS_SERVERNAME));
 const verify = async (token: string, audience: string) => {
   const payload = (await google.verifyIdToken({ idToken: token, audience })).getPayload();
   if (!payload?.sub || !["https://accounts.google.com", "accounts.google.com"].includes(payload.iss)) {

@@ -20,6 +20,30 @@ export function chatDatabaseUrl(env: { OMNIAGENT_BUNDLE?: string; CHAT_DATABASE_
   return env.CHAT_DATABASE_URL ?? "";
 }
 
+/**
+ * A public PostgreSQL trust anchor may be injected as base64 to keep Cloud
+ * Run env values single-line. No cert file or private key is ever committed.
+ * Never fall back to system trust if an operator supplies malformed base64.
+ */
+export function chatDatabaseTrustAnchor(env: { CHAT_DATABASE_CA_PEM?: string;
+  CHAT_DATABASE_CA_BASE64?: string }): string|undefined {
+  const pem=env.CHAT_DATABASE_CA_PEM;
+  const encoded=env.CHAT_DATABASE_CA_BASE64;
+  if(pem!==undefined && encoded!==undefined)
+    throw new Error("conflicting Chat database CA sources");
+  if(encoded===undefined) return pem;
+  if(!encoded || encoded.length>24_000 ||
+     !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(encoded))
+    throw new Error("invalid Chat database trust anchor");
+  const decoded=Buffer.from(encoded,"base64").toString("utf8");
+  if(Buffer.from(decoded,"utf8").toString("base64")!==encoded ||
+     !decoded.includes("-----BEGIN CERTIFICATE-----") ||
+     !decoded.includes("-----END CERTIFICATE-----") ||
+     decoded.length>16_000)
+    throw new Error("invalid Chat database trust anchor");
+  return decoded;
+}
+
 export function chatDatabasePoolConfig(dsn: string, tlsMode?: string,
   caPem?: string, tlsServername?: string): PoolConfig {
   const base: PoolConfig = {
