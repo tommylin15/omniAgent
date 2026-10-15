@@ -137,6 +137,37 @@ class DurabilityReceiptChatApi extends FakeChatApi {
   }
 }
 
+class ReopenedReceiptChatApi extends DurabilityReceiptChatApi {
+  ReopenedReceiptChatApi({super.confirmed});
+
+  @override
+  Future<dynamic> get(String path) async {
+    if (path == '/v1/threads') {
+      return {'items':[
+        {'thread_id':'thread-1','runtime':'gemini','model':'gemini-3.5-flash-lite'}
+      ]};
+    }
+    if (path.endsWith('/turns/active')) return {'active':null};
+    return super.get(path);
+  }
+
+  @override
+  Future<List<Map<String,dynamic>>> events(String threadId,int cursor) async {
+    if (cursor >= 2) return [];
+    return [
+      if (cursor < 0)
+        {'event_id':'stored-user','seq':0,'turn_id':'turn-1',
+          'event_type':'item_upsert','payload':{'role':'user','content':'stored question'}},
+      if (cursor < 1)
+        {'event_id':'stored-reply','seq':1,'turn_id':'turn-1',
+          'event_type':'text_delta','payload':{'text':'stored response'}},
+      if (cursor < 2)
+        {'event_id':'stored-terminal','seq':2,'turn_id':'turn-1',
+          'event_type':'turn_completed','payload':{'status':'completed'}},
+    ];
+  }
+}
+
 class FailedThreadCreationChatApi extends FakeChatApi {
   @override
   Future<dynamic> post(String path, Map<String, dynamic> body) async {
@@ -376,6 +407,27 @@ void main() {
       expect(find.text(confirmed
         ? 'PostgreSQL 已確認回覆持久化'
         : '資料庫持久化尚未驗證'),findsOneWidget);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  }
+
+  for (final confirmed in [true,false]) {
+    testWidgets('reopen from Owner SSE replay must recheck PostgreSQL receipt ($confirmed)',
+        (tester) async {
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.binding.setSurfaceSize(const Size(1000,800));
+      final api=ReopenedReceiptChatApi(confirmed:confirmed);
+      await tester.pumpWidget(MaterialApp(home:ChatPage(api)));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('thread-1'));
+      await tester.pump();
+      await tester.pump();
+      expect(api.receiptReads,1);
+      expect(find.text(confirmed
+          ? 'PostgreSQL 已確認回覆持久化'
+          : '資料庫持久化尚未驗證'),findsOneWidget);
+      expect(api.writes.where((row)=>
+          '${row['path']}'.endsWith('/messages')),isEmpty);
       await tester.pumpWidget(const SizedBox.shrink());
     });
   }

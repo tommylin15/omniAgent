@@ -290,18 +290,30 @@ class _ChatPageState extends State<ChatPage> {
           thread?['thread_id'] != id) {
         return;
       }
-      final verifying = receiptTurnId;
-      final terminalReceived = verifying != null &&
-          rows.any((row) => row['turn_id'] == verifying &&
-              const ['turn_completed', 'turn_cancelled', 'turn_error']
-                  .contains(row['event_type']));
+      final terminalRows = rows.where((row) =>
+          const ['turn_completed', 'turn_cancelled', 'turn_error']
+              .contains(row['event_type']) &&
+          row['turn_id'] is String).toList();
       setState(() {
         for (final row in rows) {
           _merge(row);
         }
+        // After a reload, no in-memory receiptTurnId survives. Recover only
+        // a completed turn identifier from this Owner-scoped SSE replay.
+        // The UI never infers persistence from the response text itself.
+        if (receiptEvidence == 'none' && terminalRows.isNotEmpty) {
+          final latest = terminalRows.last;
+          receiptTurnId = latest['turn_id'] as String;
+          receiptEvidence = latest['event_type'] == 'turn_completed'
+              ? 'pending' : 'not_verified';
+        }
         connection = 'connected';
       });
-      if (terminalReceived && receiptEvidence == 'pending') {
+      final verifying = receiptTurnId;
+      if (verifying != null && receiptEvidence == 'pending' &&
+          terminalRows.any((row) =>
+              row['turn_id'] == verifying &&
+              row['event_type'] == 'turn_completed')) {
         await verifyTurnReceipt('$id', verifying, epoch);
       }
     } catch (_) {

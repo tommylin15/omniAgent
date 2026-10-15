@@ -76,6 +76,19 @@ class ChatApi {
     // Reusing the original key is essential if the client retries it.
     final decoded = response.bodyBytes.isEmpty
         ? null : jsonDecode(utf8.decode(response.bodyBytes));
+    // A successful HTTP status is not a confirmed write if the response
+    // loses its durable identifier. Keep the same POST key for reconciliation.
+    final isThreadMutation = path == '/v1/threads' || path.endsWith('/fork');
+    final isMessageMutation = path.endsWith('/messages');
+    if (method == 'POST' && isThreadMutation &&
+        (decoded is! Map || decoded['thread_id'] is! String)) {
+      throw StateError('對話建立結果不明；請先重新載入對話，勿直接建立第二筆');
+    }
+    if (method == 'POST' && isMessageMutation &&
+        (decoded is! Map || decoded['turn'] is! Map ||
+            decoded['turn']['turn_id'] is! String)) {
+      throw StateError('訊息提交結果不明；請先重新載入事件，勿重新送出新請求');
+    }
     if (intent != null) _unconfirmedPosts.remove(intent);
     return decoded;
   }

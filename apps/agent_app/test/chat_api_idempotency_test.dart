@@ -12,7 +12,7 @@ void main() {
       keys.add(request.headers['idempotency-key'] ?? '');
       attempts++;
       if (attempts == 1) throw StateError('simulated disconnect');
-      return http.Response('{}', 202);
+      return http.Response('{"turn":{"turn_id":"turn-a"}}', 202);
     });
     final api = ChatApi('owner-a',client:client,baseUrl:'https://example.test');
     const path='/v1/threads/owner-a-thread/messages';
@@ -32,7 +32,7 @@ void main() {
     var n=0;
     final client=MockClient((req) async {
       keys.add(req.headers['idempotency-key']??'');
-      return http.Response(++n == 1 ? '{broken' : '{}',202);
+      return http.Response(++n == 1 ? '{broken' : '{"turn":{"turn_id":"turn-a"}}',202);
     });
     final api=ChatApi('owner-a',client:client,baseUrl:'https://example.test');
     const path='/v1/threads/t/messages', payload={'content':'verify receipt'};
@@ -40,6 +40,41 @@ void main() {
     await api.post(path,payload);
     expect(keys,hasLength(2));
     expect(keys[0],keys[1]);
+    api.close();
+  });
+
+  test('2xx with missing durable turn ID keeps the original key', () async {
+    final keys = <String>[];
+    var calls = 0;
+    final client = MockClient((request) async {
+      keys.add(request.headers['idempotency-key'] ?? '');
+      calls++;
+      return http.Response(calls == 1 ? '{}' :
+          '{"turn":{"turn_id":"durable-turn"}}', 202);
+    });
+    final api=ChatApi('owner-a',client:client,baseUrl:'https://example.test');
+    const path='/v1/threads/a/messages',body={'content':'one message'};
+    await expectLater(api.post(path,body),throwsStateError);
+    await api.post(path,body);
+    expect(keys,hasLength(2));
+    expect(keys.first,keys.last);
+    api.close();
+  });
+
+  test('2xx without a thread ID does not confirm new thread creation', () async {
+    final keys=<String>[];
+    var calls=0;
+    final client=MockClient((request) async {
+      keys.add(request.headers['idempotency-key'] ?? '');
+      calls++;
+      return http.Response(calls == 1 ? '{}' :
+          '{"thread_id":"durable-thread"}', 201);
+    });
+    final api=ChatApi('owner-a',client:client,baseUrl:'https://example.test');
+    const body={'runtime':'gemini','model':'gemini-3.5-flash-lite'};
+    await expectLater(api.post('/v1/threads',body),throwsStateError);
+    await api.post('/v1/threads',body);
+    expect(keys.first,keys.last);
     api.close();
   });
 
