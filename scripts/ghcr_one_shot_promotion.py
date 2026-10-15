@@ -15,7 +15,7 @@ import sys
 import time
 
 from ghcr_release_readiness import (
-    Blocked, PROJECT, REGION, SERVICES, SHA, FALLBACK_SHA,
+    Blocked, PROJECT, REGION, SERVICES, SHA,
     audit, current_sha, gcloud, one, live, run, failure_category,
 )
 
@@ -33,6 +33,8 @@ def plan(source_sha: str, services: dict, report: dict) -> dict:
         candidate = one(routes, tag="ghcr-" + source_sha[:12])["revisionName"]
         if before != report["services"][svc]["formal_revision_untouched"]:
             raise Blocked("pre_promotion_serving_revision_changed")
+        if report["services"][svc]["fallback_revision"] != before:
+            raise Blocked("fallback_must_be_verified_current_formal")
         if candidate != report["services"][svc]["candidate_revision"]:
             raise Blocked("pre_promotion_candidate_changed")
         if status.get("latestReadyRevisionName") != candidate:
@@ -86,9 +88,11 @@ def promote(source_sha: str, path: str, apply: bool) -> int:
         services = {svc: gcloud("services", svc) for svc in SERVICES}
         revisions = {}
         for svc, obj in services.items():
-            for tag in ("ghcr-" + source_sha[:12], "ghcr-" + FALLBACK_SHA[:12]):
-                rev = one((obj.get("status") or {}).get("traffic") or [], tag=tag)
-                revisions[rev["revisionName"]] = gcloud("revisions", rev["revisionName"])
+            routes = (obj.get("status") or {}).get("traffic") or []
+            candidate = one(routes, tag="ghcr-" + source_sha[:12])["revisionName"]
+            formal = live(routes)
+            for revision in (candidate, formal):
+                revisions[revision] = gcloud("revisions", revision)
 
         def secret_state(name: str, version: str) -> str:
             return run("gcloud", "secrets", "versions", "describe", version,

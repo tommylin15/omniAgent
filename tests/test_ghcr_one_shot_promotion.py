@@ -27,7 +27,7 @@ def fixture():
         reports[svc] = {
             "formal_revision_untouched": active,
             "candidate_revision": candidate,
-            "fallback_revision": fallback,
+            "fallback_revision": active,
             "source_image_digest": "sha256:" + "0" * 64}
     return services, {"sha": SHA, "technical_preflight": "PASS", "services": reports}
 
@@ -41,6 +41,13 @@ class OneShotReleaseTest(unittest.TestCase):
         self.assertEqual(result["steps"][-1]["service"], "omniagent-chat")
         self.assertEqual(result["rollback_rehearsal"], "WAIVED_BY_OWNER")
         self.assertEqual(result["scope"], "no_paid_provider_or_byok_activation")
+        self.assertEqual(result["steps"][0]["fallback"], result["steps"][0]["before"])
+
+    def test_fallback_must_equal_current_formal_before_release(self):
+        services, report = fixture()
+        report["services"]["omniagent-chat"]["fallback_revision"] = "obsolete-revision"
+        with self.assertRaisesRegex(release.Blocked, "fallback_must_be_verified_current_formal"):
+            release.plan(SHA, services, report)
 
     def test_missing_readiness_or_stale_traffic_blocks(self):
         services, report = fixture()

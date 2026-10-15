@@ -17,22 +17,21 @@ def fixture():
     revisions={}
     for name in gate.SERVICES:
         rev=name+"-99999-candidate"
-        back=name+"-99998-fallback"
+        back=name+"-99997-serving"
         serving=name+"-99997-serving"
         primary="sha256:"+"a"*64
-        fb=gate.FALLBACK_DIGEST[name]
+        fb="sha256:"+"b"*64
         services[name]={
             "status":{"traffic":[
                 {"revisionName":serving,"percent":100},
-                {"revisionName":rev,"tag":"ghcr-"+HEAD[:12],"percent":0},
-                {"revisionName":back,"tag":"ghcr-"+gate.FALLBACK_SHA[:12],"percent":0}]},
+                {"revisionName":rev,"tag":"ghcr-"+HEAD[:12],"percent":0}]},
             "spec":{"template":{"spec":{"containers":[{"image":
                 "ghcr.io/tommylin15/"+name+"@"+primary}]}}}}
         for suffix,digest in ((rev,primary),(back,fb)):
             revisions[suffix]={
                 "status":{"conditions":[{"type":"Ready","status":"True"}]},
                 "spec":{"containers":[{"image":"ghcr.io/tommylin15/"+name+"@"+digest,
-                                       "env":[]}]}}
+                                       "env":[]}],"serviceAccountName":"test-sa@example.iam.gserviceaccount.com"}}
     return services,revisions
 
 class ReleaseReadiness(unittest.TestCase):
@@ -47,14 +46,23 @@ class ReleaseReadiness(unittest.TestCase):
         self.assertNotEqual(result["gateway_provider_dispatch"],"PASS")
         self.assertFalse(result["production_traffic_mutated"])
         self.assertEqual(len(result["services"]),3)
+        for row in result["services"].values():
+            self.assertEqual(row["fallback_revision"], row["formal_revision_untouched"])
+            self.assertFalse(row["fallback_0_percent"])
 
     def test_missing_candidate_or_fallback_is_blocked(self):
-        for tag in ("ghcr-"+HEAD[:12],"ghcr-"+gate.FALLBACK_SHA[:12]):
+        for tag in ("ghcr-"+HEAD[:12],):
             services,revisions=fixture()
             for row in services["omniagent-chat"]["status"]["traffic"]:
                 if row.get("tag")==tag: row["tag"]="changed"
             with self.assertRaises(gate.Blocked):
                 gate.audit(HEAD,services,revisions,lambda n,v:"ENABLED")
+
+    def test_fallback_identity_drift_blocks(self):
+        services, revisions = fixture()
+        revisions["omniagent-chat-99997-serving"]["spec"]["serviceAccountName"] = "other@example.iam.gserviceaccount.com"
+        with self.assertRaisesRegex(gate.Blocked, "fallback_identity_mismatch"):
+            gate.audit(HEAD, services, revisions, lambda n,v: "ENABLED")
 
     def test_changed_production_traffic_blocks(self):
         services,revisions=fixture()
@@ -64,8 +72,8 @@ class ReleaseReadiness(unittest.TestCase):
 
     def test_bad_image_digests_fail_closed(self):
         services,revisions=fixture()
-        revisions["omniagent-chat-99998-fallback"]["spec"]["containers"][0]["image"]="ghcr.io/tommylin15/omniagent-chat@sha256:"+"b"*64
-        with self.assertRaisesRegex(gate.Blocked,"fallback_digest"):
+        revisions["omniagent-chat-99997-serving"]["spec"]["containers"][0]["image"]="untrusted-unpinned-image"
+        with self.assertRaisesRegex(gate.Blocked,"invalid_image_digest"):
             gate.audit(HEAD,services,revisions,lambda n,v:"ENABLED")
         services,revisions=fixture()
         services["omniagent-chat"]["spec"]["template"]["spec"]["containers"][0]["image"]="ghcr.io/tommylin15/omniagent-chat@sha256:"+"b"*64
@@ -74,7 +82,7 @@ class ReleaseReadiness(unittest.TestCase):
 
     def test_not_ready_and_revoked_secret_block(self):
         services,revisions=fixture()
-        revisions["omniagent-chat-99998-fallback"]["status"]["conditions"][0]["status"]="False"
+        revisions["omniagent-chat-99997-serving"]["status"]["conditions"][0]["status"]="False"
         with self.assertRaisesRegex(gate.Blocked,"not_ready"):
             gate.audit(HEAD,services,revisions,lambda n,v:"ENABLED")
         services,revisions=fixture()
@@ -93,7 +101,7 @@ class ReleaseReadiness(unittest.TestCase):
 
     def test_secret_volumes_must_be_enabled_for_candidate_and_fallback(self):
         for target in ("omniagent-chat-99999-candidate",
-                       "omniagent-chat-99998-fallback"):
+                       "omniagent-chat-99997-serving"):
             services, revisions = fixture()
             revisions[target]["spec"]["volumes"] = [{
                 "name": "provider-credentials",

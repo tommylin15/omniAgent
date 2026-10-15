@@ -18,12 +18,8 @@ PROJECT = "gen-lang-client-0593591102"
 REGION = "us-central1"
 SHA = re.compile(r"^[a-f0-9]{40}$")
 DIGEST = re.compile(r"^sha256:[a-f0-9]{64}$")
-FALLBACK_SHA = "eb61d6e49746e73ef014bf3493560dc1fc9e6c16"
-FALLBACK_DIGEST = {
-    "omniagent-chat": "sha256:cde7250dc7cad47fe9caa842247aab853615e3e278d642c1515ee7e55ed2df03",
-    "omniagent-agent-gateway": "sha256:1fbe860fb5f1b9c2d53d2a23891ed3f1bf04a6b145697041e95adf7751d4efe0",
-    "omniagent-shared-codex": "sha256:888fd90c189ef8a960d9ce4d6590294298340c1046a1b66cf6629ecc3454e453",
-}
+# Use the current Ready, 100%-serving revision as the rollback target.
+# Previous hardcoded GHCR fallback tags were intentionally retired.
 
 
 class Blocked(ValueError):
@@ -131,11 +127,9 @@ def audit(source_sha: str, services: dict[str, dict], revisions: dict[str, dict]
         if not formal.startswith(svc + "-"):
             raise Blocked(svc + "_formal_revision_invalid")
         candidate = one(traffic, tag="ghcr-" + source_sha[:12])
-        fallback = one(traffic, tag="ghcr-" + FALLBACK_SHA[:12])
-        current_rev, fallback_rev = candidate.get("revisionName"), fallback.get("revisionName")
+        current_rev, fallback_rev = candidate.get("revisionName"), formal
         if (not isinstance(current_rev, str) or not current_rev.startswith(svc + "-") or
-            not isinstance(fallback_rev, str) or not fallback_rev.startswith(svc + "-") or
-            current_rev in (formal, fallback_rev) or fallback_rev == formal):
+            current_rev == fallback_rev):
             raise Blocked(svc + "_revision_identity_collision")
         c = revisions[current_rev]
         f = revisions[fallback_rev]
@@ -145,8 +139,12 @@ def audit(source_sha: str, services: dict[str, dict], revisions: dict[str, dict]
                 raise Blocked(svc + "_" + role + "_not_ready")
             enabled_secrets(rev, secret_state)
         primary_digest = image_digest(c, svc)
-        if image_digest(f, svc) != FALLBACK_DIGEST[svc]:
-            raise Blocked(svc + "_fallback_digest_mismatch")
+        fallback_digest = image_digest(f, svc)
+        # New candidate and current formal rollback must use the same SA.
+        candidate_sa = (c.get("spec") or {}).get("serviceAccountName")
+        fallback_sa = (f.get("spec") or {}).get("serviceAccountName")
+        if not isinstance(candidate_sa, str) or not candidate_sa or candidate_sa != fallback_sa:
+            raise Blocked(svc + "_fallback_identity_mismatch")
         template = ((doc.get("spec") or {}).get("template") or {}).get("spec") or {}
         images = [r.get("image") for r in template.get("containers", [])]
         if images != ["ghcr.io/tommylin15/" + svc + "@" + primary_digest]:
@@ -159,8 +157,8 @@ def audit(source_sha: str, services: dict[str, dict], revisions: dict[str, dict]
         output[svc] = {
             "candidate_revision":current_rev,"fallback_revision":fallback_rev,
             "formal_revision_untouched":formal,"source_image_digest":primary_digest,
-            "fallback_image_digest":FALLBACK_DIGEST[svc],
-            "candidate_0_percent":True,"fallback_0_percent":True,
+            "fallback_image_digest":fallback_digest,
+            "candidate_0_percent":True,"fallback_0_percent":False,
             "ready":True,"secret_states":"ENABLED"
         }
     return {"sha":source_sha, "technical_preflight":"PASS",
@@ -206,8 +204,9 @@ def main(argv: list[str]) -> int:
     revisions: dict[str,dict] = {}
     for svc, service in services.items():
         traffic = (service.get("status") or {}).get("traffic") or []
-        for tag in ("ghcr-" + sha[:12], "ghcr-" + FALLBACK_SHA[:12]):
-            revision = one(traffic, tag=tag)["revisionName"]
+        candidate = one(traffic, tag="ghcr-" + sha[:12])["revisionName"]
+        formal = live(traffic)
+        for revision in (candidate, formal):
             revisions[revision] = gcloud("revisions", revision)
 
     def secret_state(name: str, version: str) -> str:
