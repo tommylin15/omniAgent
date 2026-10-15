@@ -17,6 +17,13 @@
 - **正式 Chat Dispatch 仍 OFF，整體產品仍 PARTIAL**。這次測試未切正式流量，亦不代表兩 Owner 授權負例、UI 真實操作及重整、SSE／復原或正式模型發布已完成。
 - R01 未使用付費失敗自動重試；除已封存的一次性核准候選外，不應再次消耗此 source SHA 的 fixture。
 
+## 2026-10-15 R05/R08 安全與重送工程驗收
+
+- **R05 CI 雙 Owner 邊界回歸 PASS，正式雙人 OAuth API E2E 仍 NOT_VERIFIED**：[`ceb591e8`](https://github.com/tommylin15/omniAgent/commit/ceb591e8160371041638d730af3a8fe276adda6a) 擴充真實本地臨時 PostgreSQL＋兩組分離的測試 verifier，覆蓋 thread、turn receipt、events/SSE、fork、message、approval、cancel、delete 的跨 Owner 拒絕。測試 verifier **不是** Google OAuth Token。
+- **R05 正式資料庫只讀盤點 PASS**：[Actions #38744815240](https://github.com/tommylin15/omniAgent/actions/runs/38744815240)；`omniagent_chat` 有 3 筆 OAuth issuer/subject mapping、3 名 Owner 曾建對話、1 名 Owner 有事件；未存取其它邏輯資料庫、未修改任何使用者資料、未取得合法雙使用者 OAuth Token。正式雙 Owner API E2E 與模型授權隔離仍 **NOT_VERIFIED**，不可開正式 Dispatch。
+- **R08 Flutter 同一 POST 意圖的結果不明重送防護已合併並通過 CI**：[`17be5669`](https://github.com/tommylin15/omniAgent/commit/17be56692343da3fa2f904f8233f7bbca522e348) 保留原 UUID idempotency key，含網路逾時／HTTP 2xx 回應格式錯誤；成功確認後才能產生新鍵；不同 ChatApi 登入工作階段隔離。瀏覽器重載／跨裝置 durable retry 與故障注入 live E2E 尚未驗收，仍 **PARTIAL**。
+- **本批相同 source SHA 對應完整 Quality／GHCR／0% Cloud Run／candidate Smoke PASS**：[Quality＋Image #38745320738](https://github.com/tommylin15/omniAgent/actions/runs/38745320738)、[0% 候選 #38746078817](https://github.com/tommylin15/omniAgent/actions/runs/38746078817)、[Smoke #38746293889](https://github.com/tommylin15/omniAgent/actions/runs/38746293889)、[runtime 唯讀 #38746406671](https://github.com/tommylin15/omniAgent/actions/runs/38746406671)。GitHub workflow SUCCESS 但無明確 one-shot marker 的 release/R01 步驟是 **NOT_RUN**，不可視為再次啟用或推論。
+
 ## P0 — 最優先待辦
 
 **R01–R16 風險已逐項轉為工程包與驗收退出條件**：[風險修復計畫](../docs/risk-remediation-plan.md)。規劃已完成 ≠ 修復已完成；P0 工作必須依安全、成本、兩 Owner E2E 及正式發布 gate 分批執行。
@@ -25,7 +32,7 @@
 | --- | --- | --- | --- |
 | 01 | 正式 Chat Gemini Dispatch 受控開啟 | **OFF／OPEN** | Owner entitlement、cost cap、Secret、signed Gateway、正式安全正負例、fallback 與配置讀回 |
 | 02 | Chat→Gateway→PostgreSQL→UI 正式模型回覆 | **PARTIAL；R01 0%-traffic 單 Owner 真實 Gemini 後端 PASS** | 後端已取得單次實際推論與 PostgreSQL terminal／Token usage 收據；仍需正式 Dispatch 啟用、多 Owner、UI 重整與同 requestId 讀回 |
-| 03 | 兩個 Owner 的權限隔離 | **NOT_VERIFIED** | 合法身分的正向與跨 Owner thread/event/credential/SSE 負向測試 |
+| 03 | 兩個 Owner 的權限隔離 | **CI fixture PASS／LIVE USER E2E NOT_VERIFIED** | 合法雙 Google 使用者自動化 OAuth token 的正向與跨 Owner thread/event/credential/SSE 負向測試 |
 | 04 | SSE、Approval、Cancel、重連、冪等及崩潰恢復 | **PARTIAL** | 具故障注入、同 SHA source/test/live E2E |
 | 05 | Codex Owner 專屬 session/workspace/authorization/terminal | **PARTIAL** | 真實 Owner 隔離與 provider→DB 回路，預算內受控驗收 |
 | 06 | Life 與 market-mart 正式消費端證據核對 | **PARTIAL** | 消費端自行提供 release/requestId/schema/DB receipt，不越界讀別專案 DB |

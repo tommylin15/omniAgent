@@ -35,6 +35,12 @@
 | **R13 OPEN** | 舊 Cloud Build YAML/Triggers、AR/GCS 清單：GCP metadata 唯讀盤點；各筆按 owner、仍被引用的 image/job、backup／應用資料分類。 | 未知依賴不刪；任何資產刪除另需批准、backup 保護、刪前／刪後 readback |
 | **R14 OPEN** | `omni_chat` hot state 實際成長分析；owner-bound GCS artifacts、Iceberg 非同步 archive，BigLake/BigQuery 保持成本核准門。 | 冪等、快照保留與 reconciliation、Owner 隔離、資料可還原；不得把歷史 archive 當即時狀態權威 |
 
+## 2026-10-15 R05/R08 執行證據（不擴大正式權限）
+
+- R05 完成本地臨時 PostgreSQL＋兩個獨立 verifier 的多 API 跨 Owner read/write/SSE 負向回歸，並以正式 `omniagent_chat` **唯讀**盤點核實三個 OAuth-backed Owner mapping（3 有 threads、1 有 events）。該筆盤點 **不是**合法雙使用者 Token 端到端驗收。驗收證據：[Actions #38744815240](https://github.com/tommylin15/omniAgent/actions/runs/38744815240)。
+- R08 補齊 session-local UUID Idempotency-Key 對未知網路／HTTP 結果及成功但 JSON 損毀的保留機制，Flutter CI、Node/Python/Postgres Quality、GHCR、0% Candidate 與 Smoke 對 source `17be5669` 全部 PASS；跨刷新持久鍵及真實故障注入未驗收，風險維持 OPEN。
+- 本批 **未**做正式 Cloud Run 流量切換、正式 Dispatch 啟用、Google 使用者 Token 生成、Credential Secret 變更或新的付費模型推論。R01 早前的單 Owner 真實推論維持獨立 PASS；後續 workflow SUCCESS 且 one-shot marker 缺席，只屬 NOT_RUN。
+
 ## 推進與關閉規則
 
 1. **所有 16 項均有單獨的 code/API/infra 入口、測試與驗收退出條件**。原始稽核保留證據和風險判定，本表負責工程執行順序，`doc/todo.md` 負責當前優先級。
