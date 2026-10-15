@@ -13,6 +13,8 @@
 
 ## P0 — 最優先待辦
 
+**R01–R16 風險已逐項轉為工程包與驗收退出條件**：[風險修復計畫](../docs/risk-remediation-plan.md)。規劃已完成 ≠ 修復已完成；P0 工作必須依安全、成本、兩 Owner E2E 及正式發布 gate 分批執行。
+
 | ID | 工作 | 現況 | 完成條件 |
 | --- | --- | --- | --- |
 | 01 | 正式 Chat Gemini Dispatch 受控開啟 | **OFF／OPEN** | Owner entitlement、cost cap、Secret、signed Gateway、正式安全正負例、fallback 與配置讀回 |
@@ -32,7 +34,7 @@
 - [ ] 完成 Credential Resolver：Owner + provider + 個人／平台 credential + entitlement，防止跨 Owner context。
 - [ ] OpenRouter 正式 Chat provider→DB E2E；Groq **已有 adapter source**，仍缺正式 Chat dispatch／UI wiring 與實際驗收。
 - [ ] MCP／Tools／Skills 的授權、執行、Approval、安全負例及實際日誌證據。
-- [ ] 修正 [風險稽核](../docs/project-risk-audit-2026-10-14.md) 中 TLS、全域配額、Secrets rotation、workflow 雙重入口與操作冪等問題。
+- [ ] 按 [風險修復計畫 R01–R16](../docs/risk-remediation-plan.md) 補齊 TLS、全域配額、Secrets rotation、歷史發布入口、重試冪等與 IAM 最小權限的實作／CI／runtime 收據。
 
 ## P2 — 資料與長期產品
 
