@@ -41,3 +41,14 @@
 2. 每項驗收證據需有 `risk_id`、`source_sha`、`tests`、`CI`、`candidate/release`、`runtime_readback`、`owner_scope`、`outcome`；沒有某層就標 PARTIAL。
 3. 安全/付費模型/正式流量/IAM/Secret 變更採**最小範圍另案核准**。不得跨專案 repo/資料庫操作，也不要求使用者人工執行 Google OAuth 驗收。
 4. CI 的 `success`、歷史單 Owner Preview、Consumer 回報或 文件 commit 均不能代替全產品發布結案。
+
+## 第一批 P0 安全實作收據（2026-10-15）
+
+本段是**已提交原始碼及受測功能**，不是已取得正式安全驗收。實作來源 SHA 以最新 GitHub main 為準：
+
+- R02：新增 `owner_authorization.ts`；Gateway Gemini 設定 `GEMINI_SHARED_REQUIRE_OWNER_AUTHORIZATION=true`、每消費端各自 HMAC key 時，驗證 project／ownerId／requestId／audience／60 秒內簽章；Shared Codex 提供等價受控設定。匿名、錯誤 project、偽造 Owner、過期證明拒絕；**尚未於三個正式消費端啟用／讀回其 DB 授權收據，因此風險保持 OPEN**。
+- R03：新增 `CHAT_DATABASE_TLS_MODE=verified-ca`，需要 `CHAT_DATABASE_CA_PEM` 與私有 IP DB 使用的 `CHAT_DATABASE_TLS_SERVERNAME`；在 Node PostgreSQL driver 強制 `rejectUnauthorized:true`。現有 `private-self-signed` 為待遷移的明確風險，不聲稱已修正 live DB 連線。
+- R15：歷史 project-wide IAM bootstrap 預設 fail-closed，需明確 `OMNIAGENT_APPROVE_LEGACY_PROJECT_WIDE_IAM=yes` 才可執行 `grant`；不修改現行 GCP IAM。實際 role bindings 的唯讀比對仍需 runtime 證據。
+- R01／R04／R05：模型全域配額、跨 Owner live E2E、Cost receipt 與正式 Chat Dispatch 均未達退出條件，**維持 OPEN／OFF**。
+
+上述權限證明使用的簽章 key 必須從 Secret Manager 或同等安全儲存提供，不得 commit 真實 key，也不可記錄 token／prompt。消費端應先驗證真正的登入者與其 DB Owner mapping 再簽章；單純簽章不能取代該消費端的終端使用者授權。

@@ -2,6 +2,7 @@ import { createServer, type Server } from "node:http";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { makeSharedGeminiHandler, parseGeminiCallers, parseSharedGeminiRequest } from "../services/agent-gateway/shared_gemini.js";
 import { GeminiProviderError, type GeminiResult } from "../services/agent-gateway/gemini_provider.js";
+import { signOwnerAuthorization } from "../services/agent-gateway/owner_authorization.js";
 
 const ids={ownerId:"00000000-0000-4000-8000-000000000001",requestId:"00000000-0000-4000-8000-000000000002"};
 const sa={omniagent:"omniagent-codex-chat-client@p.iam.gserviceaccount.com",
@@ -99,6 +100,31 @@ describe("Shared Gateway Gemini vertical slice",()=>{
     const normal=await post(url,{...base,project:"market-mart"},"Bearer market-mart");
     expect(normal.status).toBe(200);
     expect(generate).toHaveBeenCalledExactlyOnceWith("Reply with OK","gemini-3.5-flash-lite",2048);
+  });
+  it("strict mode rejects unsigned, forged, expired or wrong-owner proof before paid model execution",async()=>{
+    const signingKeys={omniagent:"a".repeat(64),"market-mart":"b".repeat(64),
+      "life-assistant":"c".repeat(64)};
+    const audience=env.GEMINI_SHARED_AUDIENCE;
+    const strictEnv={...env,GEMINI_SHARED_REQUIRE_OWNER_AUTHORIZATION:"true",
+      GEMINI_SHARED_OWNER_AUTHORIZATION_KEYS_JSON:JSON.stringify(signingKeys)};
+    const generate=vi.fn(async()=>answer);
+    const endpoint=await serve(makeSharedGeminiHandler({env:strictEnv,
+      verify:async()=>sa.omniagent,generate}));
+    const unsigned=await post(endpoint,base);
+    expect(unsigned.status).toBe(403);
+    expect(await unsigned.json()).toEqual({error:"owner_authorization_required"});
+    expect(generate).not.toHaveBeenCalled();
+    const signed=signOwnerAuthorization({...base,audience},signingKeys.omniagent,Date.now());
+    const invoke=async(body:unknown,headers:Record<string,string>)=>
+      fetch(endpoint,{method:"POST",headers:{Authorization:"Bearer ok",
+        "Content-Type":"application/json",...headers},body:JSON.stringify(body)});
+    const forged=await invoke({...base,ownerId:"00000000-0000-4000-8000-000000000003"},signed);
+    expect(forged.status).toBe(403);
+    const expired=signOwnerAuthorization({...base,audience},signingKeys.omniagent,Date.now()-65_000);
+    expect((await invoke(base,expired)).status).toBe(403);
+    const valid=await invoke(base,signed);
+    expect(valid.status).toBe(200);
+    expect(generate).toHaveBeenCalledTimes(1);
   });
   it("stays OFF by default and rejects unsafe enablement",async()=>{
     const url=await serve(makeSharedGeminiHandler({env:{}}));
