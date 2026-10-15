@@ -70,25 +70,9 @@ def main():
         doc=read_gcloud("run","services","describe",service,"--project="+PROJECT,
                         "--region="+REGION,"--format=json")
         result[service]=env_names_and_mode(doc)
-    # Only inspect the own DB via the historical shared VM; DB *name* is
-    # bounded to omniagent_chat. No writes, no SELECT owner identifiers.
-    cmd=("sudo docker exec -u postgres janus-postgres "
-         "psql -X -A -t -v ON_ERROR_STOP=1 -d omniagent_chat "
-         "-c \"SELECT CASE WHEN to_regclass('omni_chat.model_daily_budgets') "
-         "IS NULL THEN 'MISSING' ELSE 'PRESENT' END\"")
-    try:
-        r=subprocess.run(["gcloud","compute","ssh","janus-postgres-dev",
-            "--zone=us-central1-a","--project="+PROJECT,"--tunnel-through-iap",
-            "--quiet","--command="+cmd],capture_output=True,text=True,timeout=50)
-        text=r.stdout.strip()
-        if r.returncode==0 and re.search(r"(?m)^PRESENT$",text):
-            result["chat_budget_migration"]="PRESENT"
-        elif r.returncode==0 and re.search(r"(?m)^MISSING$",text):
-            result["chat_budget_migration"]="MISSING"
-        else:
-            result["chat_budget_migration"]="NOT_VERIFIED_IAP_OR_DB"
-    except (OSError,subprocess.TimeoutExpired):
-        result["chat_budget_migration"]="NOT_VERIFIED_IAP_OR_DB"
+    # Do not query a shared infrastructure host from an omniAgent project
+    # baseline. Dedicated scoped database migration evidence is required.
+    result["chat_budget_migration"]="NOT_VERIFIED_SCOPED_DB_PROBE_REQUIRED"
     result["r01_final_gate"]="BLOCKED_NEEDS_OWNER_AND_REAL_LIVE_INFERENCE"
     out=Path(sys.argv[2])
     out.write_text(json.dumps(result,sort_keys=True,indent=2)+"\n")

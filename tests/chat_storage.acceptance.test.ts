@@ -544,6 +544,10 @@ describe.runIf(Boolean(dsn))("isolated PostgreSQL ChatStore acceptance", () => {
     }));
     const aStore=new ChatStore(poolA,budget),bStore=new ChatStore(poolB,budget);
     try{
+      // The preceding integration scenario intentionally leaves RUNNING turns.
+      // This is a throwaway localhost CI database, not a live reconciliation:
+      // settle fixture leftovers so this case tests only its own two replicas.
+      await poolA.query("UPDATE omni_chat.turns SET status='ERROR' WHERE status='RUNNING'");
       const a=await aStore.owner("accounts.google.com","budget-a");
       const b=await aStore.owner("accounts.google.com","budget-b");
       const setup=async(store:ChatStore,ownerId:string,threadId:string)=>{
