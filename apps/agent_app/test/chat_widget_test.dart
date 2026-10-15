@@ -174,8 +174,9 @@ class CrossDeviceReceiptChatApi extends ReopenedReceiptChatApi {
   @override
   Future<dynamic> get(String path) async {
     pathsRead.add(path);
-    if(path.endsWith('/turns/latest'))
+    if (path.endsWith('/turns/latest')) {
       return {'latest':{'turnId':'turn-1','status':'COMPLETED'}};
+    }
     return super.get(path);
   }
   @override
