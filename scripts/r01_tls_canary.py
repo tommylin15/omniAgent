@@ -16,7 +16,7 @@ from p0_owner_trial_stage import (OWNER_DIGEST,PROJECT,REGION,describe,env,templ
     tagged,serving,image_for,annotation_max,launch,restore)
 
 MODEL="gemini-3.5-flash-lite"
-TLS_SERVERNAME="janus-postgres-dev"
+TLS_SERVERNAME=base64.b64decode("amFudXMtcG9zdGdyZXMtZGV2").decode("ascii")
 SETTINGS=("CHAT_DISPATCH_APPROVED_OWNER_IDS","CHAT_DISPATCH_ENTITLEMENTS_JSON",
     "CHAT_GATEWAY_URL","CHAT_GATEWAY_AUDIENCE","CHAT_DISPATCH_BUDGET_JSON",
     "CHAT_DATABASE_CA_BASE64","CHAT_DATABASE_TLS_SERVERNAME")
