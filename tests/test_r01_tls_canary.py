@@ -13,4 +13,5 @@ class R01TLSCanarySafety(unittest.TestCase):
                   "r01_tls_and_chat_budget_ready=PASS_WITH_VERIFIED_CA",
                   "r01_owner_live_provider_call=NOT_PERFORMED"):
             self.assertIn(x,w)
+        self.assertIn("openssl x509 -inform PEM -outform PEM",w)
 if __name__=="__main__":unittest.main()

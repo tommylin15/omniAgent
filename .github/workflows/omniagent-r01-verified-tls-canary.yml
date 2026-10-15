@@ -95,7 +95,7 @@ jobs:
           data="$(pg -d postgres -c 'SHOW data_directory')"
           test -n "$cert"; test -n "$data"
           if [[ "$cert" != /* ]]; then cert="$data/$cert"; fi
-          public="$(sudo docker exec -u postgres "$container" cat "$cert" | base64 -w 0)"
+          public="$(sudo docker exec -u postgres "$container" cat "$cert" | openssl x509 -inform PEM -outform PEM | base64 -w 0)"
           python3 - "$owner" "$public" <<'PY'
           import json,sys
           print(json.dumps({"owner_id":sys.argv[1],"certificate_base64":sys.argv[2]}))
