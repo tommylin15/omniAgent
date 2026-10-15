@@ -160,6 +160,27 @@ class _ChatPageState extends State<ChatPage> {
       connection = 'connecting';
     });
     await refresh();
+    // A browser/device with no POST key can still read the newest durable turn
+    // under its verified Owner without re-running the model.
+    try {
+      final result=await widget.api.get(
+          '/v1/threads/${value['thread_id']}/turns/latest');
+      final last=result is Map ? result['latest'] : null;
+      if(mounted && selectionEpoch==epoch &&
+          thread?['thread_id']==value['thread_id'] &&
+          last is Map && last['turnId'] is String &&
+          last['status']=='COMPLETED' &&
+          (receiptTurnId!=last['turnId'] || receiptEvidence=='none')) {
+        final turnId=last['turnId'] as String;
+        setState(() {
+          receiptTurnId=turnId;
+          receiptEvidence='pending';
+        });
+        await verifyTurnReceipt(value['thread_id'] as String,turnId,epoch);
+      }
+    } catch (_) {
+      // No inference or claim of durable completion if recovery fails.
+    }
     // Recover active status from PostgreSQL after browser reload. Do not
     // assume an in-memory queuedTurn survived a new session.
     try {

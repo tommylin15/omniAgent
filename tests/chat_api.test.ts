@@ -15,6 +15,10 @@ async function app(dispatcher?: Pick<ChatDispatcher,"runOnce">,
                    credentials?: Pick<CredentialManager,"create" | "list" | "revoke">) {
   const store = {
     ready: vi.fn(async () => undefined),
+    latestTurn:vi.fn(async (ownerId:string,threadId:string)=>{
+      if(ownerId!=="owner-alice"||threadId!=="thread-1")throw new ChatNotFound("not found");
+      return {turnId:"turn-1",status:"COMPLETED"};
+    }),
     activeTurn:vi.fn(async (_ownerId:string,_threadId:string) => null as
       null | {turnId:string;status:string}),
     owner: vi.fn(async (_issuer: string, subject: string) => "owner-" + subject),
@@ -107,6 +111,18 @@ describe("omniAgent Chat API ownership boundary", () => {
       expect(observed.join("\n")).not.toContain("owner-alice");
       expect(observed.join("\n")).not.toContain("Bearer alice");
     } finally { spy.mockRestore(); }
+  });
+
+  it("returns latest persisted turn to Owner only, without re-dispatch",async()=>{
+    const {base,store}=await app();
+    const path="/v1/threads/thread-1/turns/latest";
+    expect((await fetch(base+path)).status).toBe(401);
+    expect((await fetch(base+path,{headers:{Authorization:"Bearer bob"}})).status).toBe(404);
+    const response=await fetch(base+path,{headers:{Authorization:"Bearer alice"}});
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({latest:{turnId:"turn-1",status:"COMPLETED"}});
+    expect(store.latestTurn).toHaveBeenCalledWith("owner-alice","thread-1");
+    expect(store.message).not.toHaveBeenCalled();
   });
 
   it("only the authenticated Owner receives a no-payload persistence receipt", async () => {

@@ -252,6 +252,9 @@ export function makeChatServer(store: ChatStore, verifyUser: VerifyUser, verifyS
         auditRequest(requestId,"dispatch_settled",outcome.status);
         return send(response,202,{ ...result, dispatch:outcome });
       }
+      const lastTurn = /^\/v1\/threads\/([A-Za-z0-9][A-Za-z0-9._:-]{0,127})\/turns\/latest$/.exec(url.pathname);
+      if(request.method==="GET" && lastTurn)
+        return send(response,200,{latest:await store.latestTurn(ownerId,lastTurn[1])});
       const activeTurn = new RegExp("^/v1/threads/([A-Za-z0-9][A-Za-z0-9._:-]{0,127})/turns/active$").exec(url.pathname);
       if (request.method === "GET" && activeTurn) {
         return send(response,200,{active:await store.activeTurn(ownerId,activeTurn[1])});

@@ -168,6 +168,20 @@ class ReopenedReceiptChatApi extends DurabilityReceiptChatApi {
   }
 }
 
+class CrossDeviceReceiptChatApi extends ReopenedReceiptChatApi {
+  CrossDeviceReceiptChatApi({super.confirmed});
+  final pathsRead=<String>[];
+  @override
+  Future<dynamic> get(String path) async {
+    pathsRead.add(path);
+    if(path.endsWith('/turns/latest'))
+      return {'latest':{'turnId':'turn-1','status':'COMPLETED'}};
+    return super.get(path);
+  }
+  @override
+  Future<List<Map<String,dynamic>>> events(String threadId,int cursor) async => [];
+}
+
 class FailedThreadCreationChatApi extends FakeChatApi {
   @override
   Future<dynamic> post(String path, Map<String, dynamic> body) async {
@@ -428,6 +442,27 @@ void main() {
           : '資料庫持久化尚未驗證'),findsOneWidget);
       expect(api.writes.where((row)=>
           '${row['path']}'.endsWith('/messages')),isEmpty);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  }
+
+  for(final confirmed in [true,false]){
+    testWidgets('new device readback verifies latest DB turn ($confirmed)',
+      (tester) async{
+      addTearDown(()=>tester.binding.setSurfaceSize(null));
+      await tester.binding.setSurfaceSize(const Size(1000,800));
+      final api=CrossDeviceReceiptChatApi(confirmed:confirmed);
+      await tester.pumpWidget(MaterialApp(home:ChatPage(api)));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('thread-1'));
+      await tester.pump();
+      await tester.pump();
+      expect(api.pathsRead,contains('/v1/threads/thread-1/turns/latest'));
+      expect(api.receiptReads,1);
+      expect(find.text(confirmed
+        ? 'PostgreSQL 已確認回覆持久化'
+        : '資料庫持久化尚未驗證'),findsOneWidget);
+      expect(api.writes.where((x)=>'${x['path']}'.endsWith('/messages')),isEmpty);
       await tester.pumpWidget(const SizedBox.shrink());
     });
   }

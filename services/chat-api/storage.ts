@@ -374,6 +374,16 @@ export class ChatStore {
       row.status==="RUNNING"?"running":"queued"};
   }
 
+  /** Only a verified Owner can locate a last turn; no prompt or provider state. */
+  async latestTurn(ownerId:string,threadId:string):Promise<{turnId:string;status:string}|null>{
+    await this.thread(ownerId,threadId);
+    const row=(await this.pool.query(
+      `SELECT turn_id,status FROM omni_chat.turns WHERE owner_id=$1
+       AND thread_id=$2 ORDER BY created_at DESC,turn_id DESC LIMIT 1`,
+      [ownerId,threadId])).rows[0];
+    return row?{turnId:String(row.turn_id),status:String(row.status)}:null;
+  }
+
   /** Owner-scoped durable completion proof; never exposes message or provider data. */
   async turnReceipt(ownerId:string,threadId:string,turnId:string):
       Promise<{status:string;textPersisted:boolean;terminalPersisted:boolean;durableCompleted:boolean}> {

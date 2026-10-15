@@ -327,6 +327,12 @@ describe.runIf(Boolean(dsn))("isolated PostgreSQL ChatStore acceptance", () => {
         const committed=await messageResponse.json();
         expect(committed.dispatch.status).toBe("completed");
         const turnIdForReceipt=String(committed.turn.turn_id);
+        const latestUrl=url+"/v1/threads/joined-flow/turns/latest";
+        expect((await fetch(latestUrl)).status).toBe(401);
+        expect((await fetch(latestUrl,{headers:auth("bob")})).status).toBe(404);
+        const latest=(await (await fetch(latestUrl,{headers:auth("alice")})).json()).latest;
+        expect(latest).toEqual({turnId:turnIdForReceipt,status:"COMPLETED"});
+        expect(JSON.stringify(latest)).not.toContain("owner-only fixture prompt");
         const urlForReceipt=url+"/v1/threads/joined-flow/turns/"+turnIdForReceipt+"/receipt";
         expect((await fetch(urlForReceipt)).status).toBe(401);
         expect((await fetch(urlForReceipt,{headers:auth("bob")})).status).toBe(404);
@@ -362,6 +368,7 @@ describe.runIf(Boolean(dsn))("isolated PostgreSQL ChatStore acceptance", () => {
         // PostgreSQL. These mock verifiers do NOT count as live Google OAuth.
         for(const path of [
           "/v1/threads/joined-flow",
+          "/v1/threads/joined-flow/turns/latest",
           "/v1/threads/joined-flow/turns/active",
           "/v1/threads/joined-flow/turns/"+turnIdForReceipt+"/receipt",
           "/v1/threads/joined-flow/events?cursor=1"
