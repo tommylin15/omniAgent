@@ -105,8 +105,8 @@ def inspect_canary(sha):
     # permissions for Codex Chat client and Chat. Do not assume the gateway
     # runtime identity itself is token-mintable by this CI principal.
     authorized=[email for email in (
-        "omniagent-codex-chat-client@"+PROJECT+".iam.gserviceaccount.com",
         "omniagent-chat@"+PROJECT+".iam.gserviceaccount.com",
+        "omniagent-codex-chat-client@"+PROJECT+".iam.gserviceaccount.com",
         "omniagent-gateway@"+PROJECT+".iam.gserviceaccount.com") if email in allowed]
     if not authorized:
         raise RuntimeError("no pre-approved internal automated Chat caller")

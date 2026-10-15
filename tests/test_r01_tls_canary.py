@@ -6,6 +6,7 @@ class R01TLSCanarySafety(unittest.TestCase):
         source=Path("scripts/r01_tls_canary.py").read_text()
         ast.parse(source)
         for x in ("OWNER_DIGEST","verified-ca","CHAT_DATABASE_CA_BASE64",
+                  "CHAT_INTERNAL_ALLOWED_EMAILS","existing_callers",
                   "restore(chat,image","production_traffic_modified","ZERO_TRAFFIC"):
             self.assertIn(x,source)
         w=Path(".github/workflows/omniagent-r01-verified-tls-canary.yml").read_text()

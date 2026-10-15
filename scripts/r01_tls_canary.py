@@ -59,6 +59,16 @@ def main():
         raise RuntimeError("stale Owner trial settings are present")
     if "OMNIAGENT_BUNDLE" not in chat_env:
         raise RuntimeError("missing existing Chat signed storage bundle")
+    # Machine-only identity used in signed GHCR smoke. Add to this exact
+    # zero-percent Revision ONLY, never to the formal service template.
+    existing_callers=(chat_env.get("CHAT_INTERNAL_ALLOWED_EMAILS") or {}).get("value")
+    machine_caller="omniagent-chat@"+PROJECT+".iam.gserviceaccount.com"
+    if not isinstance(existing_callers,str) or not existing_callers.strip():
+        raise RuntimeError("missing current internal caller allowlist")
+    caller_set=[x.strip() for x in existing_callers.split(",") if x.strip()]
+    if machine_caller in caller_set:
+        raise RuntimeError("test identity unexpectedly present in formal Chat allowlist")
+    staged_callers=",".join(caller_set+[machine_caller])
     if (chat_env.get("CHAT_BYOK_MANAGEMENT_ENABLED") or {}).get("value")=="true":
         raise RuntimeError("BYOK unexpectedly active")
     gateway_doc=before[gateway]
@@ -84,7 +94,8 @@ def main():
         "CHAT_DISPATCH_ENTITLEMENTS_JSON":entitlements,
         "CHAT_DISPATCH_BUDGET_JSON":budget,
         "CHAT_GATEWAY_URL":gate_url,
-        "CHAT_GATEWAY_AUDIENCE":audience}
+        "CHAT_GATEWAY_AUDIENCE":audience,
+        "CHAT_INTERNAL_ALLOWED_EMAILS":staged_callers}
     was_updated=False
     canary_url=""
     restored=False
@@ -96,7 +107,8 @@ def main():
             try:
                 restore(chat,image,list(SETTINGS),{
                     "CHAT_DISPATCH_ENABLED":"false",
-                    "CHAT_DATABASE_TLS_MODE":"private-self-signed"
+                    "CHAT_DATABASE_TLS_MODE":"private-self-signed",
+                    "CHAT_INTERNAL_ALLOWED_EMAILS":existing_callers
                 },max_instances)
                 after=describe(chat)
                 if serving(after)!=serving(before[chat]) or not tagged(after,tag):
@@ -108,6 +120,8 @@ def main():
                     raise RuntimeError("TLS template not restored")
                 if any(key in newenv for key in SETTINGS):
                     raise RuntimeError("sensitive trial settings leaked into template")
+                if (newenv.get("CHAT_INTERNAL_ALLOWED_EMAILS") or {}).get("value")!=existing_callers:
+                    raise RuntimeError("original internal caller allowlist not restored")
                 restored=True
             except Exception:
                 print("r01_staging_restore=FAILED_REQUIRES_OPERATOR_RECONCILIATION")
