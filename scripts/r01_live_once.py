@@ -104,13 +104,27 @@ def inspect_canary(sha):
     # Signed GHCR smoke has already demonstrated narrow getOpenIdToken
     # permissions for Codex Chat client and Chat. Do not assume the gateway
     # runtime identity itself is token-mintable by this CI principal.
-    authorized=[email for email in (
-        "omniagent-chat@"+PROJECT+".iam.gserviceaccount.com",
-        "omniagent-codex-chat-client@"+PROJECT+".iam.gserviceaccount.com",
-        "omniagent-gateway@"+PROJECT+".iam.gserviceaccount.com") if email in allowed]
+    candidate_allowed={x.strip().lower() for x in
+        vars.get("CHAT_INTERNAL_ALLOWED_EMAILS","").split(",") if x.strip()}
+    # The only extra principals authorized on the exact 0%-traffic revision.
+    # The formal service must not gain either identity during this canary.
+    approved=("omniagent-chat@"+PROJECT+".iam.gserviceaccount.com",
+              "omniagent-codex-chat-client@"+PROJECT+".iam.gserviceaccount.com")
+    if candidate_allowed != (allowed | set(approved)):
+        raise RuntimeError("candidate-only caller allowlist differs from the approved scope")
+    authorized=[email for email in approved if email in candidate_allowed]
     if not authorized:
         raise RuntimeError("no pre-approved internal automated Chat caller")
     return chat_tag["url"],service_audience,authorized,serving(chat),serving(gate)
+
+def choose_approved_token(callers,audience):
+    for caller in callers:
+        try:
+            return mint_token(caller,audience)
+        except RuntimeError:
+            # IAM token minting has no model side effects; never expose tokens.
+            continue
+    raise RuntimeError("no authorized candidate-only service identity could mint an ID token")
 
 def must_http(url,path,code):
     try:
@@ -134,17 +148,7 @@ def main():
         url,audience,callers,serving_chat,serving_gate=inspect_canary(sha)
         must_http(url,"/ready",200)
         must_http(url,"/internal/v1/chat/reconciliation:candidates",401)
-        token=None
-        for caller in callers:
-            try:
-                token=mint_token(caller,audience)
-                break
-            except RuntimeError:
-                # Token issuance has no model side effects and is safe to
-                # test for the other explicitly configured caller identities.
-                continue
-        if token is None:
-            raise RuntimeError("no authorized service identity could mint a narrow ID token")
+        token=choose_approved_token(callers,audience)
         result["machine_service_identity"]="APPROVED_CALLER_TOKEN"
         remote_install();installed=True
         response=remote("prepare",sha)

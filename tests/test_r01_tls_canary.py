@@ -15,4 +15,7 @@ class R01TLSCanarySafety(unittest.TestCase):
                   "r01_owner_live_provider_call=NOT_PERFORMED"):
             self.assertIn(x,w)
         self.assertIn("openssl x509 -inform PEM -outform PEM",w)
+        self.assertIn("r01_auth_preflight.py",w)
+        self.assertLess(w.index("r01_auth_preflight.py"),w.index("r01_live_once.py"))
+        self.assertIn("dict.fromkeys(caller_set+[machine_caller,codex_caller])",source)
 if __name__=="__main__":unittest.main()

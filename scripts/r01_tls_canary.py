@@ -68,7 +68,10 @@ def main():
     caller_set=[x.strip() for x in existing_callers.split(",") if x.strip()]
     if machine_caller in caller_set:
         raise RuntimeError("test identity unexpectedly present in formal Chat allowlist")
-    staged_callers=",".join(caller_set+[machine_caller])
+    # This identity passed the existing signed GHCR smoke, but is restricted
+    # to this exact zero-traffic candidate. Formal callers are restored below.
+    codex_caller="omniagent-codex-chat-client@"+PROJECT+".iam.gserviceaccount.com"
+    staged_callers=",".join(dict.fromkeys(caller_set+[machine_caller,codex_caller]))
     if (chat_env.get("CHAT_BYOK_MANAGEMENT_ENABLED") or {}).get("value")=="true":
         raise RuntimeError("BYOK unexpectedly active")
     gateway_doc=before[gateway]
