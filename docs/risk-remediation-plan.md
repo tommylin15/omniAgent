@@ -41,6 +41,12 @@
 - R08 補齊 session-local UUID Idempotency-Key 對未知網路／HTTP 結果及成功但 JSON 損毀的保留機制，Flutter CI、Node/Python/Postgres Quality、GHCR、0% Candidate 與 Smoke 對 source `17be5669` 全部 PASS；跨刷新持久鍵及真實故障注入未驗收，風險維持 OPEN。
 - 本批 **未**做正式 Cloud Run 流量切換、正式 Dispatch 啟用、Google 使用者 Token 生成、Credential Secret 變更或新的付費模型推論。R01 早前的單 Owner 真實推論維持獨立 PASS；後續 workflow SUCCESS 且 one-shot marker 缺席，只屬 NOT_RUN。
 
+## 2026-10-15 R05 無效身分 runtime 與 R08 SSE/receipt 增量證據
+
+- R08 [`36869a67`](https://github.com/tommylin15/omniAgent/commit/36869a6752a13237c8ff8320577288e3c18b404e)：Flutter 重開既有對話由 Owner-bound SSE 事件找出回合並讀回 PostgreSQL receipt；POST 回傳缺 thread/turn durable ID，即使 HTTP 是 2xx 也維持原 Idempotency-Key。Flutter Tests／GHCR Quality／Cloud Run 0%／Signed Smoke PASS（[#38748485790](https://github.com/tommylin15/omniAgent/actions/runs/38748485790)）。跨裝置共用不確定交易鍵與正式 Google 使用者操作尚未實測，R08 維持 OPEN。
+- R05 [`77ce4d02`](https://github.com/tommylin15/omniAgent/commit/77ce4d025ba7c93b08ae4155b2318141a819999d)：新增依賴 exact-SHA Signed Smoke 的獨立 live negative pipeline，[#38749705630](https://github.com/tommylin15/omniAgent/actions/runs/38749705630) 對 0%-traffic 正式 Cloud Run 候選執行八種匿名／無效 JWT／偽造 Owner／錯誤 internal identity HTTP 401。工作流程禁止憑證讀取、provider invocation、DB mutation 與 traffic promotion；正式讀回守住原 100%。**本項僅無效 Token 負向；合法兩人 JWT 各自 Owner 授權正負例仍 NOT_VERIFIED**，R05 維持 OPEN。
+- 此次提交並未受控啟用正式 `CHAT_DISPATCH_ENABLED`、發布正式 Chat model traffic 或重新執行 R01 收費請求；不得把 no-marker workflow SUCCESS 當成正式推論。
+
 ## 推進與關閉規則
 
 1. **所有 16 項均有單獨的 code/API/infra 入口、測試與驗收退出條件**。原始稽核保留證據和風險判定，本表負責工程執行順序，`doc/todo.md` 負責當前優先級。

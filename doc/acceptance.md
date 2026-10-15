@@ -14,7 +14,9 @@
 | Two-Owner CI HTTP/PostgreSQL isolation | **PASS (synthetic verifier only)** | https://github.com/tommylin15/omniAgent/commit/ceb591e8160371041638d730af3a8fe276adda6a ; candidate source `17be5669` Quality/Flutter PASS |
 | Live Owner mapping inventory | **PASS (read-only, no OAuth E2E)** | https://github.com/tommylin15/omniAgent/actions/runs/38744815240 ; 3 OAuth-backed mappings, 3 with threads, 1 with events |
 | Flutter uncertain POST idempotency | **PASS in source/CI and candidate, partial UX E2E** | https://github.com/tommylin15/omniAgent/commit/17be56692343da3fa2f904f8233f7bbca522e348 ; https://github.com/tommylin15/omniAgent/actions/runs/38746293889 |
-| Two-Owner runtime isolation | **NOT_VERIFIED_NO_DELEGATED_USER_TOKENS** | Service-account token and synthetic CI verifier cannot replace real Google OAuth users |
+| R08 UI reopened SSE replay + DB receipt / incomplete 2xx POST envelope | **PASS for Flutter/CI and 0%-traffic candidate; broader recovery PARTIAL** | source `36869a67`; Flutter https://github.com/tommylin15/omniAgent/actions/runs/38747561873 ; Signed Smoke https://github.com/tommylin15/omniAgent/actions/runs/38748485790 |
+| R05 live invalid-user/JWT, spoofed Owner/unauthorized denial | **PASS for eight 401 negative cases on 0%-traffic candidate** | source `77ce4d02`; https://github.com/tommylin15/omniAgent/actions/runs/38749705630 ; no provider calls; formal traffic unchanged |
+| Two-Owner runtime isolation | **NOT_VERIFIED_NO_DELEGATED_USER_TOKENS** | A real pair of Google user OAuth tokens and scoped allow/deny API receipts remains missing; service-account token, malformed JWT probes and synthetic verifiers do not prove this |
 | Codex Owner session and approval/reconnect | PARTIAL | Final multi-owner acceptance missing |
 | Credential Resolver / BYOK | SOURCE_ONLY | Management OFF by default |
 | Groq Chat integration | OPEN | Provider adapter exists, dispatch not accepted |

@@ -24,6 +24,12 @@
 - **R08 Flutter 同一 POST 意圖的結果不明重送防護已合併並通過 CI**：[`17be5669`](https://github.com/tommylin15/omniAgent/commit/17be56692343da3fa2f904f8233f7bbca522e348) 保留原 UUID idempotency key，含網路逾時／HTTP 2xx 回應格式錯誤；成功確認後才能產生新鍵；不同 ChatApi 登入工作階段隔離。瀏覽器重載／跨裝置 durable retry 與故障注入 live E2E 尚未驗收，仍 **PARTIAL**。
 - **本批相同 source SHA 對應完整 Quality／GHCR／0% Cloud Run／candidate Smoke PASS**：[Quality＋Image #38745320738](https://github.com/tommylin15/omniAgent/actions/runs/38745320738)、[0% 候選 #38746078817](https://github.com/tommylin15/omniAgent/actions/runs/38746078817)、[Smoke #38746293889](https://github.com/tommylin15/omniAgent/actions/runs/38746293889)、[runtime 唯讀 #38746406671](https://github.com/tommylin15/omniAgent/actions/runs/38746406671)。GitHub workflow SUCCESS 但無明確 one-shot marker 的 release/R01 步驟是 **NOT_RUN**，不可視為再次啟用或推論。
 
+## 2026-10-15 R05／R08 最新增量驗收
+
+- **R08 歷史回覆恢復及不完整 2xx 回應修復，候選驗收 PASS（有限範圍）**：source [`36869a67`](https://github.com/tommylin15/omniAgent/commit/36869a6752a13237c8ff8320577288e3c18b404e)。從 Owner-scoped SSE 歷史事件辨識已完成回合，重新查詢 PostgreSQL turn receipt，而不是在重整後重送 Gemini；對 POST 2xx 缺少 thread/turn ID 的不確定結果保留原請求 UUID。Flutter [#38747561873](https://github.com/tommylin15/omniAgent/actions/runs/38747561873)、GHCR [#38747560916](https://github.com/tommylin15/omniAgent/actions/runs/38747560916)、Cloud Run 0% [#38748245149](https://github.com/tommylin15/omniAgent/actions/runs/38748245149)、Smoke [#38748485790](https://github.com/tommylin15/omniAgent/actions/runs/38748485790) PASS。仍缺跨裝置 durable retry、正式授權 UI 操作及網路故障 live E2E。
+- **R05 正式 Cloud Run 無效 Token／偽造 Owner 邊界 PASS（負向 only）**：source [`77ce4d02`](https://github.com/tommylin15/omniAgent/commit/77ce4d025ba7c93b08ae4155b2318141a819999d)，[live negative #38749705630](https://github.com/tommylin15/omniAgent/actions/runs/38749705630)。最新 GHCR [#38748853426](https://github.com/tommylin15/omniAgent/actions/runs/38748853426)、0% [#38749298181](https://github.com/tommylin15/omniAgent/actions/runs/38749298181)、Signed Smoke [#38749573831](https://github.com/tommylin15/omniAgent/actions/runs/38749573831) PASS；八種匿名／無效 JWT／Owner header spoof／無效寫入／內部身分拒絕均為 HTTP 401，正式流量保持不變，無模型呼叫。**雙真實 Google 使用者的合法 token/API 正向＋跨 Owner 負向仍 NOT_VERIFIED_NO_DELEGATED_USER_TOKENS**，不應視為 R05 DONE。
+- 無 one-shot marker 的 R01、formal release 等 workflow 雖顯示 SUCCESS，其推論／正式發布動作是 **NOT_RUN**，不能誤報為再次真實推論或正式 Chat Dispatch 上線。
+
 ## P0 — 最優先待辦
 
 **R01–R16 風險已逐項轉為工程包與驗收退出條件**：[風險修復計畫](../docs/risk-remediation-plan.md)。規劃已完成 ≠ 修復已完成；P0 工作必須依安全、成本、兩 Owner E2E 及正式發布 gate 分批執行。
