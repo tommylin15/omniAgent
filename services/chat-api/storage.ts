@@ -45,6 +45,10 @@ export class ChatStore {
 
   async ready(): Promise<void> {
     await this.pool.query("SELECT 1");
+    // A healthy container is not dispatch-ready if budget migration 007 is
+    // missing or the restricted database role cannot read the budget ledger.
+    if(this.budget)
+      await this.pool.query("SELECT 1 FROM omni_chat.model_daily_budgets LIMIT 0");
   }
 
   async writeSkillRevision(ownerId: string, skillId: string, revision: number,

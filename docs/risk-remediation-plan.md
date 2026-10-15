@@ -64,3 +64,8 @@
 - **重要**：R04 先前共享端點 `/v1/gemini/execute` 的 Ledger 不覆蓋 omniAgent Chat 使用的 `/internal/v1/assistant/turn`。因此新增獨立 `007_chat_model_dispatch_budget.sql` 與 `services/chat-api/dispatch_budget.ts`，直接在 `ChatStore.claimNextQueuedTurn` 的既有 `QUEUED→RUNNING` 交易內，對 Gemini／OpenRouter 的全域併發和每日 global/Owner 呼叫／保守容量額度做不可退還預留。
 - 每個 Chat dispatch **必須**配置 `CHAT_DISPATCH_BUDGET_JSON` 的六項嚴格正整數上限，否則啟用時直接拒絕啟動；現有未啟用的 Chat 與 Codex 三回合保護維持原狀。僅限 Chat 自有 DB 的模型預算資料；不承諾等同真實美元計費。
 - CI 使用兩個獨立 PostgreSQL Pool 同時 claim 不同 Owner，驗證 global 並發門、Owner 限額及不可重試；CI PASS 僅證明 fixture 邏輯，不代表正式 owner OAuth/token、Cloud Run Gateway IAM、實際 quota migration 或 terminal DB readback PASS。
+
+## R01 fail-closed 啟用條件
+- 當 `CHAT_DISPATCH_ENABLED=true` 時，Chat 必須使用 `CHAT_DATABASE_TLS_MODE=verified-ca`，並同時提供受信任 CA 與驗證主機名；否則啟動即失敗。非正式舊自簽 TLS 仍可供 **Dispatch OFF** 既有流量使用，不能據此授權正式推論。
+- `GET /ready` 會檢查 `omni_chat.model_daily_budgets` 在 DB 中可查詢，避免 migration 007 尚未實際部署卻因 `SELECT 1` 成功誤認已可 dispatch。
+- 本次源碼測試與部署都無法取代 CA、專用資料庫權限、模型呼叫 entitlement、合法使用者 token、正式 Chat→Gateway IAM 等端點讀回。

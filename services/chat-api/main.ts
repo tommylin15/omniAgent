@@ -27,6 +27,9 @@ const verify = async (token: string, audience: string) => {
   return payload;
 };
 
+if(process.env.CHAT_DISPATCH_ENABLED==="true" &&
+   process.env.CHAT_DATABASE_TLS_MODE!=="verified-ca")
+  throw new Error("Chat dispatch requires verified PostgreSQL server TLS");
 const dispatchBudget=process.env.CHAT_DISPATCH_ENABLED==="true"
   ? parseChatDispatchBudget(process.env.CHAT_DISPATCH_BUDGET_JSON??"") : undefined;
 const store = new ChatStore(pool,dispatchBudget);
