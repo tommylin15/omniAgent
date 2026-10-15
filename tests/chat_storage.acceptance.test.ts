@@ -388,7 +388,9 @@ describe.runIf(Boolean(dsn))("isolated PostgreSQL ChatStore acceptance", () => {
           headers:auth("alice")})).json();
         const listB=await (await fetch(url+"/v1/threads",{
           headers:auth("bob")})).json();
-        expect(JSON.stringify(listA)).not.toContain("joined-bob-queued");
+        expect(JSON.stringify(listA)).toContain("joined-flow");
+        expect(JSON.stringify(listA)).not.toContain("thread-b");
+        expect(JSON.stringify(listB)).toContain("thread-b");
         expect(JSON.stringify(listB)).not.toContain("joined-flow");
         expect(requests).toBe(1);
         expect((await fetch(url+"/v1/threads/joined-flow/messages",{
