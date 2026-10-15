@@ -63,8 +63,9 @@ def main():
         result["project_iam"]="READABLE"
         result["ci_role_count"]=len(roles)
         result["ci_risky_project_roles"]=sorted(high.intersection(roles))
-        result["ci_project_iam_least_privilege"]="NOT_VERIFIED" if
-            high.intersection(roles) else "NO_TRACKED_BROAD_ROLE_IN_PROJECT_POLICY"
+        result["ci_project_iam_least_privilege"]=(
+            "BROAD_ROLES_PRESENT" if high.intersection(roles)
+            else "NO_TRACKED_BROAD_ROLE_IN_PROJECT_POLICY")
     for service in SERVICES:
         doc=read_gcloud("run","services","describe",service,"--project="+PROJECT,
                         "--region="+REGION,"--format=json")
@@ -80,10 +81,12 @@ def main():
             "--zone=us-central1-a","--project="+PROJECT,"--tunnel-through-iap",
             "--quiet","--command="+cmd],capture_output=True,text=True,timeout=50)
         text=r.stdout.strip()
-        result["chat_budget_migration"]="PRESENT" if r.returncode==0 and
-            re.search(r"(?m)^PRESENT$",text) else "MISSING" if
-            r.returncode==0 and re.search(r"(?m)^MISSING$",text) else
-            "NOT_VERIFIED_IAP_OR_DB"
+        if r.returncode==0 and re.search(r"(?m)^PRESENT$",text):
+            result["chat_budget_migration"]="PRESENT"
+        elif r.returncode==0 and re.search(r"(?m)^MISSING$",text):
+            result["chat_budget_migration"]="MISSING"
+        else:
+            result["chat_budget_migration"]="NOT_VERIFIED_IAP_OR_DB"
     except (OSError,subprocess.TimeoutExpired):
         result["chat_budget_migration"]="NOT_VERIFIED_IAP_OR_DB"
     result["r01_final_gate"]="BLOCKED_NEEDS_OWNER_AND_REAL_LIVE_INFERENCE"
