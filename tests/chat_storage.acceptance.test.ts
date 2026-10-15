@@ -357,6 +357,40 @@ describe.runIf(Boolean(dsn))("isolated PostgreSQL ChatStore acceptance", () => {
         expect(stream).toContain("event: turn_completed");
         expect((await fetch(url+"/v1/threads/joined-flow/events?cursor=-1",{
           headers:auth("bob")})).status).toBe(404);
+
+        // R05: two distinct fixture principals through HTTP + real ephemeral
+        // PostgreSQL. These mock verifiers do NOT count as live Google OAuth.
+        for(const path of [
+          "/v1/threads/joined-flow",
+          "/v1/threads/joined-flow/turns/active",
+          "/v1/threads/joined-flow/turns/"+turnIdForReceipt+"/receipt",
+          "/v1/threads/joined-flow/events?cursor=1"
+        ]) {
+          const denied=await fetch(url+path,{headers:auth("bob")});
+          expect(denied.status,path).toBe(404);
+          expect(await denied.text(),path).not.toContain("bounded fixture answer");
+        }
+        for(const entry of [
+          {path:"/v1/threads/joined-flow/fork",body:{}},
+          {path:"/v1/threads/joined-flow/messages",body:{content:"foreign injection"}},
+          {path:"/v1/threads/joined-flow/turns/"+turnIdForReceipt+
+            "/approvals/foreign-decision",body:{approved:true,
+              paramsDigest:"sha256:"+"b".repeat(64)}}
+        ]) {
+          const denied=await fetch(url+entry.path,{method:"POST",
+            headers:{...auth("bob"),"Idempotency-Key":"denied-"+entry.path.length},
+            body:JSON.stringify(entry.body)});
+          expect(denied.status,entry.path).toBe(404);
+        }
+        expect((await fetch(url+"/v1/threads/joined-flow",{
+          method:"DELETE",headers:auth("bob")})).status).toBe(404);
+        const listA=await (await fetch(url+"/v1/threads",{
+          headers:auth("alice")})).json();
+        const listB=await (await fetch(url+"/v1/threads",{
+          headers:auth("bob")})).json();
+        expect(JSON.stringify(listA)).not.toContain("joined-bob-queued");
+        expect(JSON.stringify(listB)).not.toContain("joined-flow");
+        expect(requests).toBe(1);
         expect((await fetch(url+"/v1/threads/joined-flow/messages",{
           method:"POST",headers:{...auth("bob"),"Idempotency-Key":"foreign-1"},
           body:JSON.stringify({content:"cross-owner request"})})).status).toBe(404);

@@ -1,12 +1,29 @@
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:http/http.dart' as http;
 
 class ChatApi {
-  ChatApi(this.token, {http.Client? client}) : client = client ?? http.Client();
+  ChatApi(this.token, {http.Client? client, String? baseUrl})
+      : client = client ?? http.Client(), _baseOverride = baseUrl;
 
   final String token;
   final http.Client client;
+  final String? _baseOverride;
+  // Unknown POST outcomes reuse the same intent ID until 2xx is confirmed.
+  // Isolated to this authenticated API session; never shared across Owners.
+  final Map<String, String> _unconfirmedPosts = {};
+
+  static String _newIdempotencyKey() {
+    final random = Random.secure();
+    final bytes = List<int>.generate(16, (_) => random.nextInt(256));
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    final hex = bytes.map((v) => v.toRadixString(16).padLeft(2, '0')).join();
+    return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-'
+        '${hex.substring(12, 16)}-${hex.substring(16, 20)}-'
+        '${hex.substring(20)}';
+  }
   // Per-authenticated-session correlation; this is NOT a token or user ID.
   String? lastRequestId;
   static const _configuredBase = String.fromEnvironment('OMNIAGENT_API_BASE_URL');
@@ -23,16 +40,29 @@ class ChatApi {
 
   Future<dynamic> _request(String method, String path,
       [Map<String, dynamic>? body]) async {
-    if (base.isEmpty || token.isEmpty) throw StateError('omniAgent API 未設定');
-    final request = http.Request(method, Uri.parse('$base$path'))
+    final origin = _baseOverride ?? base;
+    if (origin.isEmpty || token.isEmpty) throw StateError('omniAgent API 未設定');
+    final wireBody = body == null ? null : jsonEncode(body);
+    final intent = method == 'POST' ? jsonEncode([path, wireBody]) : null;
+    if (intent != null && !_unconfirmedPosts.containsKey(intent) &&
+        _unconfirmedPosts.length >= 64) {
+      throw StateError('結果不明的操作過多，請先重新整理狀態');
+    }
+    final key = intent == null ? null
+        : _unconfirmedPosts.putIfAbsent(intent, _newIdempotencyKey);
+    lastRequestId = null;
+    final request = http.Request(method, Uri.parse('$origin$path'))
       ..headers.addAll({
         'Authorization': 'Bearer $token',
         'Content-Type': 'application/json',
-        if (method == 'POST')
-          'Idempotency-Key': DateTime.now().microsecondsSinceEpoch.toString(),
+        if (key != null) 'Idempotency-Key': key,
       });
-    if (body != null) request.body = jsonEncode(body);
+    if (wireBody != null) request.body = wireBody;
+    // Timeouts or unknown HTTP errors must not silently create a new turn.
     final response = await http.Response.fromStream(await client.send(request));
+    if (intent != null && response.statusCode >= 200 && response.statusCode < 300) {
+      _unconfirmedPosts.remove(intent);
+    }
     final candidate = response.headers['x-omniagent-request-id'];
     lastRequestId = candidate != null &&
         RegExp(r'^[0-9a-fA-F-]{36}$').hasMatch(candidate)
@@ -86,5 +116,9 @@ class ChatApi {
     return rows;
   }
 
-  void close() => client.close();
+  void close() {
+    _unconfirmedPosts.clear();
+    lastRequestId = null;
+    client.close();
+  }
 }
