@@ -58,6 +58,12 @@
 - **真實雙人 OAuth 仍 NOT_VERIFIED**：[獨立 E2E gate #38826887437](https://github.com/tommylin15/omniAgent/actions/runs/38826887437) 的原始 artifact 明確阻擋為 `NO_TWO_DELEGATED_GOOGLE_USER_TOKENS_CONFIGURED`；不能拿三筆 DB Owner mapping、CI fixture 或 GCP SA 身分替代。未做真人手動 OAuth 驗收、正式流量切換或模型推論；R05 仍 OPEN。
 - 此工作流程只對 0% Cloud Run Chat 候選執行讀寫試驗 Thread、跨 Owner 拒絕與清理；測試 /v1/me 仍會更新 Owner `last_seen_at`，不能誤稱 PostgreSQL 零寫入。後續由獲授權的雙 Google ID Token 完成真實 E2E 收據之前，維持正式 Dispatch OFF。
 
+## 2026-10-16 R05 IAM ID Token 與人類 Google OAuth 身分隔離驗收
+
+- Google 官方 IAM `generateIdToken` 可簽發 `accounts.google.com` issuer、可選 audience、`email_verified=true` 的服務帳號身分。只認 issuer/aud/sub 不能區別 human Google OAuth 與 Google-signed IAM SA。以 [`8d2f8222`](https://github.com/tommylin15/omniAgent/commit/8d2f8222d24e229d40a039d60822f81cbc60227a) 增加 human/browser claims guard，保留 service-only 驗證路徑。
+- [R05 signed SA runtime #38851741897](https://github.com/tommylin15/omniAgent/actions/runs/38851741897) 的成功收據經 Artifact 讀回：`r05_signed_sa_user_me/models/threads/events/latest=PASS_401`（5 項）；匿名／無效 JWT 8 項 PASS，無 provider call／正式 traffic promotion。部署證據：GHCR [#38851175290](https://github.com/tommylin15/omniAgent/actions/runs/38851175290)、0% 候選 [#38851581074](https://github.com/tommylin15/omniAgent/actions/runs/38851581074)、Smoke [#38851688846](https://github.com/tommylin15/omniAgent/actions/runs/38851688846) 均 PASS。
+- **範圍限制**：不保證目前 100% 正式流量已套用新版本（只推 0% 候選）；兩組真實 Google User ID Token 的合法自動化授權尚缺，所以 R05 雙 Owner 仍 PARTIAL。未核准開啟 formal Dispatch，不移除 Google login，也不以任意 GCP SA 作假的真人使用者。
+
 ## 推進與關閉規則
 
 1. **所有 16 項均有單獨的 code/API/infra 入口、測試與驗收退出條件**。原始稽核保留證據和風險判定，本表負責工程執行順序，`doc/todo.md` 負責當前優先級。
