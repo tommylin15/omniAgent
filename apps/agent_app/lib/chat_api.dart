@@ -109,12 +109,16 @@ class ChatApi {
           Uri.parse('$origin/v1/threads/$threadId/turns/reconcile'))
         ..headers.addAll({'Authorization':'Bearer $token','Idempotency-Key':key});
       final response=await http.Response.fromStream(await client.send(req));
-      if(response.statusCode!=200)return null;
+      if (response.statusCode != 200) {
+        return null;
+      }
       final decoded=jsonDecode(utf8.decode(response.bodyBytes));
       final turn=decoded is Map ? decoded['turn'] : null;
-      if(turn is! Map || turn['turnId'] is! String ||
+      if (turn is! Map || turn['turnId'] is! String ||
           !const ['QUEUED','RUNNING','COMPLETED','CANCELLED','ERROR']
-             .contains(turn['status']))return null;
+              .contains(turn['status'])) {
+        return null;
+      }
       _unconfirmedPosts.remove(intent);
       return {'turnId':turn['turnId'],'status':turn['status']};
     } catch (_){return null;}
