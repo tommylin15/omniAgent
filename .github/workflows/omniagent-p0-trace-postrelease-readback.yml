@@ -1,0 +1,139 @@
+# Current deployed production readback only. No OAuth login, provider, DB or traffic mutations.
+name: omniAgent P0 trace and two-owner code-only postrelease
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/omniagent-p0-trace-postrelease-readback.yml'
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: omniagent-p0-trace-postrelease-readonly
+  cancel-in-progress: false
+jobs:
+  verify:
+    if: github.repository == 'tommylin15/omniAgent' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      P: gen-lang-client-0593591102
+      R: us-central1
+    steps:
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+          service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Check 100% production revisions, immutable digest, Ready, 10 protected revisions
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          for service in omniagent-chat omniagent-agent-gateway omniagent-shared-codex; do
+            gcloud run services describe "$service" --project="$P" --region="$R" --format=json > "$RUNNER_TEMP/$service.json"
+            gcloud run revisions list --service="$service" --project="$P" --region="$R" --format=json > "$RUNNER_TEMP/$service.list.json"
+          done
+          for revision in omniagent-chat-00069-tep omniagent-agent-gateway-00060-vup omniagent-shared-codex-00046-naj; do
+            gcloud run revisions describe "$revision" --project="$P" --region="$R" --format=json > "$RUNNER_TEMP/$revision.json"
+          done
+          python3 - "$RUNNER_TEMP" <<'PY'
+          from pathlib import Path
+          import json,sys
+          root=Path(sys.argv[1])
+          services={
+           "omniagent-chat":("omniagent-chat-00069-tep","sha256:eeab8196eed39e96d992e8976712aa62f5eeff9562ef978879becdc72d9b074f","omniagent-chat-00045-fer"),
+           "omniagent-agent-gateway":("omniagent-agent-gateway-00060-vup","sha256:9c77697f083d3fe2ab4049eda3a1e33698567fbaecb3a92e67ef5289478441f8","omniagent-agent-gateway-00036-hid"),
+           "omniagent-shared-codex":("omniagent-shared-codex-00046-naj","sha256:fc696d522f1ce50c34fbfb18c560dd6e155ed05d07a9e8784d00a0aa39a32405","omniagent-shared-codex-00024-naw")
+          }
+          for service,(target,digest,fallback) in services.items():
+            doc=json.loads((root/(service+".json")).read_text())
+            rev=json.loads((root/(target+".json")).read_text())
+            all_revs=json.loads((root/(service+".list.json")).read_text())
+            names={str((v.get("metadata") or {}).get("name",v.get("name"))) for v in all_revs}
+            status=doc.get("status") or {}
+            traffic=[t for t in status.get("traffic") or [] if t.get("percent",0)>0]
+            if len(traffic)!=1 or traffic[0].get("percent")!=100 or traffic[0].get("revisionName")!=target:
+              raise SystemExit("BLOCKED: production traffic mismatch "+service)
+            if status.get("latestReadyRevisionName")!=target:
+              raise SystemExit("BLOCKED: latest Ready mismatch "+service)
+            containers=(rev.get("spec") or {}).get("containers") or []
+            if len(containers)!=1 or not str(containers[0].get("image","")).endswith("@"+digest):
+              raise SystemExit("BLOCKED: immutable image mismatch "+service)
+            if not any(c.get("type")=="Ready" and c.get("status")=="True"
+                for c in (rev.get("status") or {}).get("conditions") or []):
+              raise SystemExit("BLOCKED: revision not Ready "+service)
+            if len(all_revs)>10 or target not in names or fallback not in names:
+              raise SystemExit("BLOCKED: protected ten mismatch "+service)
+            env={c.get("name"):c for c in containers[0].get("env") or []}
+            if service=="omniagent-chat":
+              for feature in ("CHAT_DISPATCH_ENABLED","CHAT_BYOK_MANAGEMENT_ENABLED"):
+                if (env.get(feature) or {}).get("value")=="true" or (env.get(feature) or {}).get("valueFrom"):
+                  raise SystemExit("BLOCKED: enabled paid provider or BYOK")
+              if any(f in env for f in ("CHAT_DISPATCH_APPROVED_OWNER_IDS",
+                  "CHAT_DISPATCH_ENTITLEMENTS_JSON","CHAT_GATEWAY_URL","CHAT_GATEWAY_AUDIENCE")):
+                raise SystemExit("BLOCKED: trial owner mapping in production")
+            if service=="omniagent-agent-gateway" and "CODEX_CHAT_TRIAL_OWNER_SECRETS" in env:
+              raise SystemExit("BLOCKED: provider owner secret mapping in production")
+            print("formal_traffic_digest_ready_"+service+"=PASS")
+            print("protected_ten_"+service+"=PASS count="+str(len(all_revs)))
+          print("dispatch_and_byok=DISABLED")
+          print("manual_oauth_gate=NOT_REQUIRED")
+          print("immutable_production_readback=PASS")
+          PY
+      - name: Real public runtime trace headers and unauthenticated/invalid-token negative
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,subprocess,urllib.request,urllib.error,re
+          obj=json.loads(subprocess.run(["gcloud","run","services","describe",
+            "omniagent-chat","--project=gen-lang-client-0593591102","--region=us-central1",
+            "--format=json"],check=True,capture_output=True,text=True,timeout=55).stdout)
+          base=str((obj.get("status") or {}).get("url","")).rstrip("/")
+          if not base.startswith("https://"):
+            raise SystemExit("BLOCKED: production Chat origin missing")
+          def probe(path,authorization=None):
+            h={"User-Agent":"omniAgent-P0-trace-read-only"}
+            if authorization:h["Authorization"]=authorization
+            req=urllib.request.Request(base+path,headers=h)
+            try:
+              with urllib.request.urlopen(req,timeout=40) as r:
+                return r.status,r.headers
+            except urllib.error.HTTPError as err:
+              return err.code,err.headers
+          for path in ("/health","/ready","/"):
+            status,headers=probe(path)
+            if status!=200:
+              raise SystemExit("BLOCKED: health or Web readback")
+            if not re.fullmatch(r"[0-9a-f-]{36}",headers.get("X-OmniAgent-Request-Id",""),re.I):
+              raise SystemExit("BLOCKED: missing server trace")
+            if headers.get("X-OmniAgent-Revision")!="omniagent-chat-00069-tep":
+              raise SystemExit("BLOCKED: response served from wrong Revision")
+          for path in ("/v1/me","/v1/models","/v1/threads",
+                       "/v1/threads/opaque/turns/opaque/receipt"):
+            for auth in (None,"Bearer invalid-fixture-only"):
+              status,headers=probe(path,auth)
+              if status!=401 or not re.fullmatch(r"[0-9a-f-]{36}",
+                headers.get("X-OmniAgent-Request-Id",""),re.I):
+                raise SystemExit("BLOCKED: Owner auth denial/trace")
+          print("chat_health_ready_web=PASS")
+          print("real_runtime_trace_header_and_revision=PASS")
+          print("anonymous_invalid_oauth_denied=PASS")
+          print("real_authenticated_two_owner_oauth=NOT_VERIFIED_AUTOMATION_UNAVAILABLE")
+          print("actual_paid_codex_and_db_text=NOT_VERIFIED")
+          print("provider_calls=ZERO")
+          PY
+      - name: Summarize truthful scope
+        shell: bash
+        run: |
+          {
+            echo '### P0 audited Chat request trace release'
+            echo 'Promoted SHA: 02b91affc71cfa0654dafa853c1157483a09bfd6'
+            echo 'Three immutable 100% formal revisions, Ready, protected ten: PASS'
+            echo 'Real /health, /ready, Web, request UUID and expected Revision: PASS'
+            echo 'Anonymous and invalid Google token negative: PASS'
+            echo 'Manual OAuth gate: NOT REQUIRED; real user E2E: NOT VERIFIED'
+            echo 'Owner provider response persisted in live DB: NOT VERIFIED'
+            echo 'Model inference, DB writes, Secret access, OAuth or traffic mutations: NONE'
+          } >> "$GITHUB_STEP_SUMMARY"

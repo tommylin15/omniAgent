@@ -1,18 +1,15 @@
 import { createHmac } from "node:crypto";
 import { safeRecord, type ChatStore, type DispatchClaim } from "./storage.js";
+import { allowsModel, type ModelEntitlement } from "./model_entitlements.js";
+import { parseCodexPhase, type CodexSessionStore } from "./codex_session_store.js";
 
-export type DispatchOutcome = { status: "idle" | "completed" | "cancelled" | "error" | "running" | "awaiting_approval"; turnId?: string; reason?: string };
+export type DispatchOutcome = { status: "idle" | "completed" | "cancelled" | "error" | "running" | "approval_required"; turnId?: string; reason?: string };
 type TurnEvent = { type: string; payload: unknown };
-type Invoke = (claim: DispatchClaim) => Promise<unknown>;
-type Store = Pick<ChatStore, "claimNextQueuedTurn" | "appendEvent">;
-export type ModelGrant=Pick<DispatchClaim,"ownerId"|"runtime"|"model">;
-export function modelGrants(raw:string,owners:readonly string[]):ModelGrant[] {
-  const rows:unknown=JSON.parse(raw);
-  if (!Array.isArray(rows) || !rows.length || rows.some(row=>!row || typeof row!=="object" ||
-      !owners.includes(row.ownerId) || !["codex","gemini","openrouter"].includes(row.runtime) ||
-      typeof row.model!=="string" || row.model.length>128 || !/^[A-Za-z0-9][A-Za-z0-9._:/-]*$/.test(row.model))) throw new Error("invalid model grants");
-  return rows as ModelGrant[];
-}
+export type GatewayControl = (operation:"turn:events"|"turn:cancel"|"approval",
+  body:Record<string,unknown>) => Promise<unknown>;
+type Invoke = ((claim: DispatchClaim) => Promise<unknown>) & {control?:GatewayControl};
+type Store = Pick<ChatStore, "claimNextQueuedTurn" | "appendGatewayEvents"> &
+  Partial<Pick<ChatStore, "runningReconciliationCandidates">>;
 
 const types = new Set(["text_delta", "item_upsert", "tool_request", "tool_result",
   "approval_request", "approval_resolved", "citation", "usage",
@@ -22,51 +19,123 @@ const terminal = new Set(["turn_completed", "turn_cancelled", "turn_error"]);
 export class ChatDispatcher {
   constructor(private readonly store: Store, private readonly invoke: Invoke,
               private readonly approvedOwners: readonly string[],
-              readonly native?: {start:(claim:DispatchClaim)=>Promise<DispatchOutcome>;refreshThread:(ownerId:string,threadId:string)=>Promise<void>;
-                resolve:(ownerId:string,threadId:string,turnId:string,requestId:string)=>Promise<DispatchOutcome>;
-                  cancel:(ownerId:string,threadId:string,turnId:string)=>Promise<DispatchOutcome>},
-              private readonly grants?:readonly ModelGrant[]) {}
+              private readonly entitlements?: readonly ModelEntitlement[],
+              private readonly codex?: CodexSessionStore) {}
 
-  canDispatch(ownerId: string,runtime?:string,model?:string): boolean {
-    return this.approvedOwners.includes(ownerId) && (!this.grants || runtime===undefined ||
-      this.grants.some(grant=>grant.ownerId===ownerId && grant.runtime===runtime && grant.model===model));
+  async inspectRunningCandidates(): Promise<{ status: string; ageBasis: string; items: Record<string, unknown>[] }> {
+    if (!this.store.runningReconciliationCandidates) throw new Error("reconciliation store is unavailable");
+    const items = await this.store.runningReconciliationCandidates(this.approvedOwners);
+    return { status:"read_only", ageBasis:"queued_created_at_not_claimed_at", items };
+  }
+
+  /** Client-visible metadata is derived only from the explicit Owner entitlements. */
+  availableModels(ownerId: string): { runtime: string; model: string }[] {
+    if (!this.entitlements || !this.approvedOwners.some(owner =>
+        owner.toLowerCase() === ownerId.toLowerCase())) return [];
+    return this.entitlements.filter(entry => entry.ownerId === ownerId.toLowerCase() &&
+      entry.credentialMode === "platform").map(({runtime,model}) => ({runtime,model}))
+      .sort((a,b) => a.runtime.localeCompare(b.runtime) || a.model.localeCompare(b.model));
+  }
+
+  canDispatch(ownerId: string, runtime?: string, model?: string): boolean {
+    if (!this.approvedOwners.some(owner => owner.toLowerCase() === ownerId.toLowerCase())) return false;
+    if (!this.entitlements) return true; // Non-production fixture compatibility only.
+    return runtime !== undefined && model !== undefined &&
+      (runtime !== "codex" || (Boolean(this.codex) && Boolean(this.invoke.control))) &&
+      allowsModel(this.entitlements,ownerId,runtime,model);
   }
 
   async runOnce(target?: { ownerId: string; threadId: string; turnId: string }): Promise<DispatchOutcome> {
     if (!this.approvedOwners.length) throw new Error("dispatch approval not configured");
-    if (target && !this.canDispatch(target.ownerId)) throw new Error("dispatch owner not approved");
-    const claim = await this.store.claimNextQueuedTurn(this.approvedOwners, target);
-    if (!claim) return { status: "idle" };
-    if (!this.canDispatch(claim.ownerId,claim.runtime,claim.model)) return this.fail(claim);
-    if (claim.runtime === "codex" && this.native) {
-      try { return await this.native.start(claim); }
-      catch { return this.fail(claim); }
+    if (target && !this.approvedOwners.some(owner => owner.toLowerCase() === target.ownerId.toLowerCase()))
+      throw new Error("dispatch owner not approved");
+    if (this.entitlements?.some(entry=>entry.runtime==="codex")) {
+      if (!this.codex || !this.invoke.control)
+        throw new Error("Codex runtime control is not configured");
+      await this.codex.ready();
     }
+    const claim = this.entitlements
+      ? await this.store.claimNextQueuedTurn(this.approvedOwners,target,this.entitlements)
+      : await this.store.claimNextQueuedTurn(this.approvedOwners,target);
+    if (!claim) return { status: "idle" };
+    if (this.entitlements && !this.canDispatch(claim.ownerId,claim.runtime,claim.model))
+      throw new Error("model entitlement claim needs reconciliation");
     let events: TurnEvent[];
+    let result: unknown;
     try {
-      events = validateEvents(await this.invoke(claim), claim);
+      result=await this.invoke(claim);
     } catch {
       return this.fail(claim);
     }
-    for (const [index, event] of events.entries()) {
-      try {
-        await this.store.appendEvent(claim.ownerId, claim.threadId, claim.turnId,
-          `gateway-${claim.turnId}-${index}`, event.type, event.payload);
-      } catch {
-        // A provider may already have acted. Do not replay it after a DB fault.
-        throw new Error("dispatch_persistence_needs_reconciliation");
+    if (claim.runtime==="codex" && this.codex && result &&
+        typeof result==="object" && "status" in result) {
+      let phase;
+      try { phase=parseCodexPhase(result,claim); }
+      catch { return this.fail(claim); }
+      try { await this.codex.record(phase); }
+      catch {
+        // The transaction may have committed; never overwrite its outcome.
+        throw new Error("codex_persistence_needs_reconciliation");
       }
+      return {turnId:claim.turnId,status:phase.status==="COMPLETED"?"completed":
+        phase.status==="CANCELLED"?"cancelled":
+        phase.status==="ERROR" || phase.status==="CLEANUP_PENDING"?"error":
+        phase.status==="AWAITING_APPROVAL"?"approval_required":"running"};
+    }
+    try { events=validateEvents(result,claim); }
+    catch { return this.fail(claim); }
+    try {
+      await this.store.appendGatewayEvents(claim.ownerId, claim.threadId, claim.turnId,
+        events.map((event,index) => ({
+          eventId:`gateway-${claim.turnId}-${index}`, type:event.type, payload:event.payload
+        })));
+    } catch {
+      // No partial event stream becomes visible. Never repeat a provider request
+      // after an unknown DB commit outcome; reconcile the claimed RUNNING turn.
+      throw new Error("dispatch_persistence_needs_reconciliation");
     }
     const last = events.at(-1)!.type;
     return { status: last === "turn_completed" ? "completed" :
       last === "turn_cancelled" ? "cancelled" : "error", turnId: claim.turnId };
   }
 
+  async continueCodex(ownerId:string,threadId:string,turnId:string,
+    operation:"poll"|"cancel"|"approval",
+    approval?:{requestId:string;paramsDigest:string;approved:boolean}):Promise<DispatchOutcome> {
+    if (!this.approvedOwners.some(o=>o.toLowerCase()===ownerId.toLowerCase()))
+      throw new Error("dispatch owner not approved");
+    if (!this.codex || !this.invoke.control) throw new Error("native Codex control unavailable");
+    // begin() atomically reserves the Owner-bound handle and approval digest
+    // BEFORE external side effects. An uncertain RPC is NEVER retried.
+    const session=await this.codex.begin(ownerId,threadId,turnId,operation,approval);
+    const binding={ownerId,threadId,turnId,turnHandle:session.turnHandle,
+      nativeThreadId:session.nativeThreadId,nativeTurnId:session.nativeTurnId};
+    const body=operation==="poll"?{...binding,cursor:session.cursor}:
+      operation==="cancel"?binding:
+      {...binding,requestId:approval!.requestId,paramsDigest:approval!.paramsDigest,
+        decision:approval!.approved?"accept":"decline"};
+    let raw:unknown;
+    try {
+      raw=await this.invoke.control(operation==="poll"?"turn:events":
+        operation==="cancel"?"turn:cancel":"approval",body);
+    } catch {
+      throw new Error("native_Codex_outcome_uncertain_needs_reconciliation");
+    }
+    const phase=parseCodexPhase(raw,{ownerId,threadId,turnId});
+    await this.codex.record(phase,operation==="approval"?{
+      requestId:approval!.requestId,approved:approval!.approved}:undefined);
+    return {turnId,status:phase.status==="COMPLETED"?"completed":
+      phase.status==="CANCELLED"?"cancelled":
+      phase.status==="ERROR" || phase.status==="CLEANUP_PENDING"?"error":
+      phase.status==="AWAITING_APPROVAL"?"approval_required":"running"};
+  }
+
   private async fail(claim: DispatchClaim): Promise<DispatchOutcome> {
     try {
-      await this.store.appendEvent(claim.ownerId, claim.threadId, claim.turnId,
-        `gateway-${claim.turnId}-failed`, "turn_error",
-        { code: "gateway_outcome_uncertain" });
+      await this.store.appendGatewayEvents(claim.ownerId, claim.threadId, claim.turnId, [
+        { eventId:`gateway-${claim.turnId}-failed`, type:"turn_error",
+          payload:{ code:"gateway_outcome_uncertain" } }
+      ]);
     } catch {
       throw new Error("dispatch_failure_persistence_needs_reconciliation");
     }
@@ -74,10 +143,10 @@ export class ChatDispatcher {
   }
 }
 
-export function validateEvents(value: unknown, claim: DispatchClaim, requireTerminal=true): TurnEvent[] {
+function validateEvents(value: unknown, claim: DispatchClaim): TurnEvent[] {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("invalid response");
   const rows = (value as Record<string, unknown>).events;
-  if (!Array.isArray(rows) || (requireTerminal && rows.length < 1) || rows.length > 200) throw new Error("invalid event count");
+  if (!Array.isArray(rows) || rows.length < 1 || rows.length > 200) throw new Error("invalid event count");
   const events: TurnEvent[] = [];
   for (const row of rows) {
     if (!row || typeof row !== "object" || Array.isArray(row)) throw new Error("invalid event");
@@ -99,9 +168,8 @@ export function validateEvents(value: unknown, claim: DispatchClaim, requireTerm
       typeof clean.delta === "string" && typeof clean.text !== "string"
       ? { ...clean, text: clean.delta } : clean });
   }
-  const terminals=events.filter(e=>terminal.has(e.type)).length;
-  if ((requireTerminal && terminals!==1) || terminals>1 ||
-      (terminals===1 && !terminal.has(events.at(-1)!.type))) throw new Error("missing terminal");
+  if (events.filter(e => terminal.has(e.type)).length !== 1 ||
+      !terminal.has(events.at(-1)!.type)) throw new Error("missing terminal");
   return events;
 }
 
@@ -109,15 +177,6 @@ export function makeSignedGatewayInvoker(options: {
   url: string; audience: string; signingKey: string;
   idToken: () => Promise<string>; fetcher?: typeof fetch;
 }): Invoke {
-  const rpc=makeSignedGatewayRpc(options);
-  return claim=>rpc("turn",{ownerId:claim.ownerId,threadId:claim.threadId,turnId:claim.turnId,
-    runtime:claim.runtime,model:claim.model,messages:[{role:"user",content:claim.content}]});
-}
-
-export type GatewayOperation="turn"|"turn:start"|"turn:events"|"approval"|"turn:cancel"|"mcp/discover"|"mcp/call"|"mcp/cancel"|"mcp/disconnect";
-export function makeSignedGatewayRpc(options: {
-  url:string;audience:string;signingKey:string;idToken:()=>Promise<string>;fetcher?:typeof fetch;
-}): (operation:GatewayOperation,value:Record<string,unknown>)=>Promise<unknown> {
   const target = new URL(options.url);
   const audience = new URL(options.audience);
   if (target.protocol !== "https:" || audience.protocol !== "https:" ||
@@ -126,22 +185,29 @@ export function makeSignedGatewayRpc(options: {
       target.pathname !== "/" || audience.pathname !== "/" ||
       options.signingKey.length < 32) throw new Error("unsafe Gateway configuration");
   const fetcher = options.fetcher ?? fetch;
-  return async (operation,value) => {
-    const token = await options.idToken();
+  const post = async(path:string,payload:Record<string,unknown>):Promise<unknown> => {
+    const token=await options.idToken();
     if (!token) throw new Error("Gateway identity unavailable");
-    const timestamp = String(Date.now());
-    const body = JSON.stringify(value);
-    const signature = createHmac("sha256", options.signingKey)
+    const timestamp=String(Date.now());
+    const body=JSON.stringify(payload);
+    const signature=createHmac("sha256",options.signingKey)
       .update(timestamp).update(".").update(body).digest("hex");
-    const path=operation.startsWith("mcp/") ? "/internal/v1/"+operation : "/internal/v1/assistant/"+operation;
-    const response = await fetcher(new URL(path, target), {
-      method: "POST", signal: AbortSignal.timeout(100_000),
-      headers: { Authorization: "Bearer " + token, "Content-Type": "application/json",
-        "X-OmniAgent-Timestamp": timestamp, "X-OmniAgent-Signature": "v1=" + signature },
+    const response=await fetcher(new URL(path,target),{
+      method:"POST",signal:AbortSignal.timeout(100_000),
+      headers:{Authorization:"Bearer "+token,"Content-Type":"application/json",
+        "X-OmniAgent-Timestamp":timestamp,"X-OmniAgent-Signature":"v1="+signature},
       body
     });
-    // Never log provider HTTP error bodies.
     if (!response.ok) throw new Error("Gateway request failed");
     return response.json() as Promise<unknown>;
   };
+  const invoke:Invoke=async claim => post(claim.runtime==="codex"
+    ? "/internal/v1/assistant/turn:start" : "/internal/v1/assistant/turn",{
+    ownerId:claim.ownerId,threadId:claim.threadId,turnId:claim.turnId,
+    runtime:claim.runtime,model:claim.model,
+    messages:[{role:"user",content:claim.content}]
+  });
+  invoke.control=(operation,payload)=>post("/internal/v1/assistant/"+
+    (operation==="approval"?"approval":operation),payload);
+  return invoke;
 }

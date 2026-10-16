@@ -16,6 +16,8 @@ on:
       - 'tsconfig.json'
       - 'setup-omniagent-db-dev.sh'
       - '.github/workflows/omniagent-ghcr-publish.yml'
+      - '.github/workflows/omniagent-ghcr-one-shot-release.yml'
+      - '.github/workflows/omniagent-ghcr-cloudrun-candidate.yml'
   workflow_dispatch:
 permissions:
   contents: read
@@ -53,7 +55,7 @@ jobs:
             sleep 1
           done
           PG_TEST_URL=postgres://omniagent_test:isolated_ci_only@127.0.0.1:5432/omniagent_acceptance \
-            npx vitest run tests/chat_storage.acceptance.test.ts
+            npx vitest run tests/chat_storage.acceptance.test.ts tests/shared_gemini_quota.acceptance.test.ts
       - uses: subosito/flutter-action@v2
         with:
           channel: stable

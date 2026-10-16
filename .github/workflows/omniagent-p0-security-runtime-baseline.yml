@@ -1,0 +1,44 @@
+# R03/R15/R01 discovery only. Never mutates IAM, database or Cloud Run.
+name: omniAgent P0 security runtime baseline
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/p0_security_runtime_baseline.py'
+      - '.github/workflows/omniagent-p0-security-runtime-baseline.yml'
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  readonly:
+    if: github.repository == 'tommylin15/omniAgent' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Prevent stale-SHA metadata assessment
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git ls-remote https://github.com/tommylin15/omniAgent.git refs/heads/main | cut -f1)" = "$GITHUB_SHA"
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+          service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Redacted IAM/TLS/dispatch and own DB schema readback
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          python3 scripts/p0_security_runtime_baseline.py "$GITHUB_SHA" "$RUNNER_TEMP/p0-security-baseline.json"
+          cat "$RUNNER_TEMP/p0-security-baseline.json" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: p0-security-baseline-${{ github.sha }}
+          path: ${{ runner.temp }}/p0-security-baseline.json
+          if-no-files-found: warn
+          retention-days: 30

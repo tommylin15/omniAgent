@@ -1,15 +1,30 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { extname, isAbsolute, relative, resolve } from "node:path";
 import { ChatConflict, ChatNotFound, type ChatStore, type ThreadInput } from "./storage.js";
 import type { ChatDispatcher } from "./gateway_dispatch.js";
-import type {ChatMcp,McpOperation} from "./mcp_dispatch.js";
+import type { CredentialManager } from "./credential_management.js";
+import { isAllowedGeminiModel } from "./model_entitlements.js";
 
 export type Principal = { issuer: string; subject: string };
 export type VerifyUser = (token: string) => Promise<Principal>;
 export type VerifyService = (token: string) => Promise<void>;
 class InvalidRequest extends Error {}
+
+// Allowlist only internal stage labels and random request IDs. Never log
+// OAuth subjects, owner IDs, thread IDs, prompts, URLs or provider payloads.
+type AuditPhase = "thread_committed" | "message_committed" | "message_idempotent" |
+  "dispatch_settled" | "dispatch_needs_reconciliation" | "receipt_readback" |
+  "sse_replay" | "request_failed";
+function auditRequest(requestId:string,phase:AuditPhase,outcome?:string):void {
+  const known = ["queued","running","completed","cancelled","error","approval_required",
+    "verified","unverified","has_events","no_events","unauthorized",
+    "not_found","conflict","invalid_request","unavailable"];
+  console.info(JSON.stringify({severity:"INFO",kind:"omniagent_chat_request_audit",
+    request_id:requestId,phase,outcome:outcome && known.includes(outcome)?outcome:"none"}));
+}
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const DIGEST = /^sha256:[0-9a-f]{64}$/;
@@ -83,6 +98,8 @@ function threadInput(value: Record<string, unknown>): ThreadInput {
   const model = value.runtime === "openrouter" && typeof value.model === "string"
     && value.model.length <= 128 && /^[A-Za-z0-9][A-Za-z0-9._:-]*(?:\/[A-Za-z0-9][A-Za-z0-9._:-]*)?$/.test(value.model)
     ? value.model : id(value.model,"model");
+  if (value.runtime === "gemini" && !isAllowedGeminiModel(model))
+    throw new InvalidRequest("only approved Gemini Flash-Lite models are supported");
   return { runtime: value.runtime as ThreadInput["runtime"], model,
     assistantProfile: id(value.assistantProfile,"assistant profile"),
     ...(value.threadId === undefined ? {} : { threadId: id(value.threadId,"thread id") }),
@@ -91,8 +108,13 @@ function threadInput(value: Record<string, unknown>): ThreadInput {
 }
 
 export function makeChatServer(store: ChatStore, verifyUser: VerifyUser, verifyService: VerifyService,
-                               dispatcher?: Pick<ChatDispatcher,"runOnce"> & Partial<Pick<ChatDispatcher,"canDispatch"|"native">>,mcp?:ChatMcp) {
+                               dispatcher?: Pick<ChatDispatcher,"runOnce"> & Partial<Pick<ChatDispatcher,"canDispatch" | "inspectRunningCandidates" | "availableModels" | "continueCodex">>,
+                               credentials?: Pick<CredentialManager,"create" | "list" | "revoke">) {
   return createServer(async (request, response) => {
+    const requestId=randomUUID();
+    response.setHeader("X-OmniAgent-Request-Id",requestId);
+    if (process.env.K_REVISION)
+      response.setHeader("X-OmniAgent-Revision",process.env.K_REVISION);
     const url = new URL(request.url ?? "/", "http://localhost");
     if (request.method === "GET" && url.pathname === "/health") return send(response,200,{ status: "ok" });
     if (request.method === "GET" && url.pathname === "/ready") {
@@ -114,6 +136,11 @@ export function makeChatServer(store: ChatStore, verifyUser: VerifyUser, verifyS
           if (!dispatcher) return send(response,404,{ error:"not_found" });
           return send(response,200,await dispatcher.runOnce());
         }
+        if (request.method === "GET" && url.pathname === "/internal/v1/chat/reconciliation:candidates") {
+          if (!dispatcher?.inspectRunningCandidates)
+            return send(response,404,{ error:"not_found" });
+          return send(response,200,await dispatcher.inspectRunningCandidates());
+        }
         const value = await body(request);
         const ownerId = id(value.ownerId,"owner id");
         const threadId = id(value.threadId,"thread id");
@@ -134,13 +161,45 @@ export function makeChatServer(store: ChatStore, verifyUser: VerifyUser, verifyS
       }
       const principal = await verifyUser(token);
       const ownerId = await store.owner(principal.issuer,principal.subject);
-      const mcpRoute=/^\/v1\/mcp\/([A-Za-z0-9][A-Za-z0-9._-]{0,63})\/(discover|call|cancel|disconnect)$/.exec(url.pathname);
-      if (request.method==="POST" && mcpRoute) {
-        if (!mcp) return send(response,404,{error:"not_found"});
-        return send(response,200,await mcp.execute(ownerId,mcpRoute[1],mcpRoute[2] as McpOperation,await body(request)));
+      if (request.method === "GET" && url.pathname === "/v1/me") {
+        // Owner UUID comes from the authenticated DB mapping, never from the
+        // client. It is a locator for configuring entitlements, not a secret.
+        return send(response,200,{ownerId,modelDispatchEnabled:
+          (dispatcher?.availableModels?.(ownerId)?.length ?? 0) > 0,
+          byokManagementEnabled:Boolean(credentials)});
+      }
+      if (request.method === "GET" && url.pathname === "/v1/models") {
+        const items = dispatcher?.availableModels?.(ownerId) ?? [];
+        return send(response,200,{dispatchEnabled:items.length > 0,items});
+      }
+      // Explicitly disabled by default. Never echo API keys, vault locators
+      // or vendor errors to browsers. Ownership is derived from verified OAuth.
+      if (url.pathname === "/v1/credentials") {
+        if (!credentials) return send(response,404,{ error:"not_found" });
+        if (request.method === "GET") return send(response,200,{ items:await credentials.list(ownerId) });
+        if (request.method === "POST") {
+          const value = await body(request);
+          if (!["gemini","openrouter"].includes(String(value.provider)) ||
+              typeof value.apiKey !== "string" || value.apiKey.length < 16 ||
+              value.apiKey.length > 4096 || value.apiKey.trim() !== value.apiKey ||
+              /[\r\n\0]/.test(value.apiKey) ||
+              Object.keys(value).sort().join(",") !== "apiKey,provider") {
+            throw new InvalidRequest("credential input invalid");
+          }
+          return send(response,201,await credentials.create(ownerId,
+            value.provider as "gemini" | "openrouter",value.apiKey));
+        }
+        return send(response,404,{ error:"not_found" });
+      }
+      const credential = /^\/v1\/credentials\/([a-f0-9-]{36})$/.exec(url.pathname);
+      if (request.method === "DELETE" && credential) {
+        if (!credentials) return send(response,404,{ error:"not_found" });
+        return send(response,200,await credentials.revoke(ownerId,credential[1]));
       }
       if (request.method === "POST" && url.pathname === "/v1/threads") {
-        return send(response,201,await store.createThread(ownerId,threadInput(await body(request)),key(request)));
+        const created=await store.createThread(ownerId,threadInput(await body(request)),key(request));
+        auditRequest(requestId,"thread_committed");
+        return send(response,201,created);
       }
       if (request.method === "GET" && url.pathname === "/v1/threads") {
         return send(response,200,{ items:await store.threads(ownerId) });
@@ -169,23 +228,59 @@ export function makeChatServer(store: ChatStore, verifyUser: VerifyUser, verifyS
         if (typeof value.content !== "string" || !value.content.trim() || value.content.length > 50_000) {
           throw new InvalidRequest("message content is invalid");
         }
-        if (!dispatcher?.canDispatch?.(ownerId)) return send(response,503,{ error:"dispatch_unavailable" });
-        const targetThread=await store.thread(ownerId,messages[1]);
-        if (!dispatcher.canDispatch(ownerId,String(targetThread.runtime),String(targetThread.model))) return send(response,503,{error:"dispatch_unavailable"});
+        // An authenticated account is not automatically entitled to a
+        // provider/model; deny before persisting or claiming a queued turn.
+        if (!dispatcher?.canDispatch) return send(response,503,{ error:"dispatch_unavailable" });
+        const selected = await store.thread(ownerId,messages[1]);
+        if (!dispatcher.canDispatch(ownerId,String(selected.runtime),String(selected.model)))
+          return send(response,503,{ error:"dispatch_unavailable" });
         const result = await store.message(ownerId,messages[1],value.content,key(request));
+        auditRequest(requestId,"message_committed");
         // Keep the request alive during inference; Cloud Run can suspend work after a response.
-        const outcome = await dispatcher.runOnce({ ownerId,threadId:messages[1],turnId:String((result.turn as Record<string,unknown>).turn_id) });
+        const turn=result.turn as Record<string,unknown>;
+        if (turn.status !== "QUEUED") {
+          auditRequest(requestId,"message_idempotent");
+          return send(response,200,{...result,dispatch:{status:String(turn.status).toLowerCase()}});
+        }
+        let outcome;
+        try {
+          outcome = await dispatcher.runOnce({ ownerId,threadId:messages[1],turnId:String(turn.turn_id) });
+        } catch (error) {
+          auditRequest(requestId,"dispatch_needs_reconciliation");
+          throw error;
+        }
+        auditRequest(requestId,"dispatch_settled",outcome.status);
         return send(response,202,{ ...result, dispatch:outcome });
       }
+      // Read-only uncertain POST readback: never triggers provider execution.
+      const reconcile=/^\/v1\/threads\/([A-Za-z0-9][A-Za-z0-9._:-]{0,127})\/turns\/reconcile$/.exec(url.pathname);
+      if(request.method==="GET" && reconcile)
+        return send(response,200,{turn:await store.turnByMessageKey(ownerId,reconcile[1],key(request))});
+      const lastTurn = /^\/v1\/threads\/([A-Za-z0-9][A-Za-z0-9._:-]{0,127})\/turns\/latest$/.exec(url.pathname);
+      if(request.method==="GET" && lastTurn)
+        return send(response,200,{latest:await store.latestTurn(ownerId,lastTurn[1])});
+      const activeTurn = new RegExp("^/v1/threads/([A-Za-z0-9][A-Za-z0-9._:-]{0,127})/turns/active$").exec(url.pathname);
+      if (request.method === "GET" && activeTurn) {
+        return send(response,200,{active:await store.activeTurn(ownerId,activeTurn[1])});
+      }
+       const receipt = new RegExp("^/v1/threads/([A-Za-z0-9][A-Za-z0-9._:-]{0,127})/turns/([A-Za-z0-9][A-Za-z0-9._:-]{0,127})/receipt$").exec(url.pathname);
+       if (request.method === "GET" && receipt) {
+         const proof=await store.turnReceipt(ownerId,receipt[1],receipt[2]);
+         auditRequest(requestId,"receipt_readback",proof.durableCompleted?"verified":"unverified");
+         return send(response,200,proof);
+       }
       const events = /^\/v1\/threads\/([A-Za-z0-9][A-Za-z0-9._:-]{0,127})\/events$/.exec(url.pathname);
       if (request.method === "GET" && events) {
-        const cursor = Number(url.searchParams.get("cursor") ?? "-1");
+        const resume = url.searchParams.has("cursor") ? url.searchParams.get("cursor") :
+          request.headers["last-event-id"] ?? "-1";
+        const cursor = typeof resume==="string" && /^-?[0-9]{1,16}$/.test(resume)
+          ? Number(resume) : NaN;
         const limit = Number(url.searchParams.get("limit") ?? "200");
         if (!Number.isInteger(cursor) || cursor < -1 || !Number.isInteger(limit) || limit < 1 || limit > 200) {
           throw new InvalidRequest("event cursor or limit is invalid");
         }
-        await dispatcher?.native?.refreshThread(ownerId,events[1]);
         const rows = await store.events(ownerId,events[1],cursor,limit);
+        auditRequest(requestId,"sse_replay",rows.length?"has_events":"no_events");
         response.writeHead(200,{ "Content-Type":"text/event-stream; charset=utf-8", "Cache-Control":"no-cache", "X-Accel-Buffering":"no" });
         for (const row of rows) response.write("id: " + row.seq + "\nevent: " + row.event_type + "\ndata: " + JSON.stringify(row) + "\n\n");
         response.end();
@@ -193,11 +288,24 @@ export function makeChatServer(store: ChatStore, verifyUser: VerifyUser, verifyS
       }
       const approval = /^\/v1\/threads\/([A-Za-z0-9][A-Za-z0-9._:-]{0,127})\/turns\/([A-Za-z0-9][A-Za-z0-9._:-]{0,127})\/approvals\/([A-Za-z0-9][A-Za-z0-9._:-]{0,127})$/.exec(url.pathname);
       const cancel = /^\/v1\/threads\/([A-Za-z0-9][A-Za-z0-9._:-]{0,127})\/turns\/([A-Za-z0-9][A-Za-z0-9._:-]{0,127})\/cancel$/.exec(url.pathname);
+      const refresh = new RegExp("^/v1/threads/([A-Za-z0-9][A-Za-z0-9._:-]{0,127})/turns/([A-Za-z0-9][A-Za-z0-9._:-]{0,127})/refresh$").exec(url.pathname);
+            if (request.method === "POST" && refresh) {
+        const selected=await store.thread(ownerId,refresh[1]);
+        if (selected.runtime!=="codex" || !dispatcher?.continueCodex ||
+            !dispatcher?.canDispatch?.(ownerId,String(selected.runtime),String(selected.model)))
+          return send(response,503,{error:"dispatch_unavailable"});
+        return send(response,200,await dispatcher.continueCodex(ownerId,refresh[1],refresh[2],"poll"));
+      }
       if (request.method === "POST" && cancel) {
-        try { return send(response,200,await store.cancelQueuedTurn(ownerId,cancel[1],cancel[2])); }
-        catch (error) {
-          if (!(error instanceof ChatConflict) || !dispatcher?.native) throw error;
-          return send(response,200,await dispatcher.native.cancel(ownerId,cancel[1],cancel[2]));
+        try {
+          return send(response,200,await store.cancelQueuedTurn(ownerId,cancel[1],cancel[2]));
+        } catch(error) {
+          if (!(error instanceof ChatConflict)) throw error;
+          const selected=await store.thread(ownerId,cancel[1]);
+          if (selected.runtime!=="codex" || !dispatcher?.continueCodex ||
+              !dispatcher?.canDispatch?.(ownerId,String(selected.runtime),String(selected.model)))
+            throw error;
+          return send(response,200,await dispatcher.continueCodex(ownerId,cancel[1],cancel[2],"cancel"));
         }
       }
       if (request.method === "POST" && approval) {
@@ -205,17 +313,25 @@ export function makeChatServer(store: ChatStore, verifyUser: VerifyUser, verifyS
         if (typeof value.approved !== "boolean" || typeof value.paramsDigest !== "string" || !DIGEST.test(value.paramsDigest)) {
           throw new InvalidRequest("approval decision is invalid");
         }
-        const decision=await store.decideApproval(ownerId,approval[1],approval[2],approval[3],value.paramsDigest,value.approved);
-        if (dispatcher?.native) return send(response,200,await dispatcher.native.resolve(ownerId,approval[1],approval[2],approval[3]));
-        return send(response,200,decision);
+        const selected=await store.thread(ownerId,approval[1]);
+        if (selected.runtime==="codex") {
+          if (!dispatcher?.continueCodex ||
+              !dispatcher?.canDispatch?.(ownerId,String(selected.runtime),String(selected.model)))
+            return send(response,503,{error:"dispatch_unavailable"});
+          return send(response,200,await dispatcher.continueCodex(ownerId,approval[1],approval[2],
+            "approval",{requestId:approval[3],paramsDigest:value.paramsDigest,approved:value.approved}));
+        }
+        return send(response,200,await store.decideApproval(ownerId,approval[1],approval[2],approval[3],value.paramsDigest,value.approved));
       }
       send(response,404,{ error:"not_found" });
     } catch (error) {
       const status = error instanceof ChatNotFound ? 404 : error instanceof ChatConflict ? 409 :
         error instanceof SyntaxError || error instanceof InvalidRequest ? 400 :
         error instanceof Error && ["authentication required","unauthorized"].includes(error.message) ? 401 : 503;
-      send(response,status,{ error:status === 401 ? "unauthorized" : status === 404 ? "not_found" :
-        status === 409 ? "conflict" : status === 400 ? "invalid_request" : "unavailable" });
+      const outcome=status===401?"unauthorized":status===404?"not_found":
+        status===409?"conflict":status===400?"invalid_request":"unavailable";
+      if (url.pathname.startsWith("/v1/threads")) auditRequest(requestId,"request_failed",outcome);
+      send(response,status,{error:outcome});
     }
   });
 }

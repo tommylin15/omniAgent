@@ -1,5 +1,18 @@
 # omniAgent SPEC
 
+> **2026-10-14 status note:** Gateway-only Gemini production PASS ([#38559065522](https://github.com/tommylin15/omniAgent/actions/runs/38559065522)); independent Cloud Run/retention readback PASS ([#38498845455 attempt 3](https://github.com/tommylin15/omniAgent/actions/runs/38498845455/attempts/3)); Chat formal Dispatch OFF. Earlier dated baselines are historical. See [TODO](todo.md) for live backlog.
+
+### 2026-10-12 OAuth acceptance override
+
+Human Google browser sign-in, A→B→A account switching and manual Preview login are no longer release prerequisites (NOT_REQUIRED, not PASS). All feasible automated JWT issuer/audience/subject, OAuth Client/origin, IAM/HMAC, negative auth and cross-owner isolation tests remain mandatory. If legitimate real-user OAuth token automation is unavailable, label that scope NOT_VERIFIED_AUTOMATION_UNAVAILABLE; do not ask for human sign-in. Durable Chat/DB, provider, security and deployment gates remain independent. See [OAuth policy](../docs/oauth-automated-acceptance-policy.md).
+
+
+> Source update 2026-10-10: FR-013 now has staged BYOK metadata/vault API
+> code and migration 003 (see docs/credential-resolver.md), but Gateway
+> resolver, rotation, approved IAM/Secret Manager deployment and real Owner
+> inference are still OPEN; do not mark FR-013 accepted.
+
+
 > Executable baseline validated through `main@d1769491ba41670e86222536ee129b94bbfba04f`; Node Core run `37628904846` PASS. UI source baseline `12a94018debd11f5b389aa2fdf325339782bb9d8`; Flutter run `37625912746` PASS.
 > Architecture revision: 2026-10-07.
 > Status language distinguishes source, target design, real-dev evidence, and live acceptance.
@@ -195,13 +208,13 @@ New buckets, BigLake/BigQuery resources, schedulers, archive jobs, secret versio
 
 | Capability | Reviewed source/evidence | Accepted current status |
 | --- | --- | --- |
-| Chat API + `omni_chat` source | present | source only; live storage/cutover open |
-| durable dispatcher | no integrated accepted path | OPEN |
-| Gemini | source + prior real Gateway probe | VERIFIED-DEV at provider probe scope |
+| Chat API + `omni_chat` source | deployed and PostgreSQL runtime evidenced | single-Owner Preview text persistence PASS; formal model Dispatch still OFF |
+| durable dispatcher | source and private Owner Preview path present | formal production E2E PARTIAL; Chat Dispatch OFF |
+| Gemini | formal Gateway-only signed inference PASS (2026-10-14) | Gateway production PASS; Chat formal Dispatch OFF |
 | OpenRouter | source + prior real Gateway probe | VERIFIED-DEV at provider probe scope |
-| Codex | bridge/auth source | live owner auth/isolation OPEN |
-| Groq direct adapter | not found | TARGET-DESIGN / OPEN |
-| BYOK/platform Credential Resolver | not found | TARGET-DESIGN / OPEN |
+| Codex | Shared Codex scoped SA runtime PASS; Owner execution source | multi-Owner Chat integration/isolation PARTIAL |
+| Groq direct adapter | `services/agent-gateway/groq_provider.ts` exists | SOURCE_ONLY; full Chat wiring/E2E OPEN |
+| BYOK/platform Credential Resolver | BYOK metadata/vault source present | SOURCE_ONLY; management OFF; full resolver OPEN |
 | owner-isolated memory | owner model/source exists | full multi-owner live acceptance OPEN |
 | GCS omniAgent artifact tier | no accepted path evidenced | TARGET-DESIGN / OPEN |
 | Iceberg omniAgent historical lakehouse | no accepted path evidenced | TARGET-DESIGN / OPEN |
@@ -239,7 +252,7 @@ omniAgent final acceptance may be declared only after exact-head implementation/
 
 ## 8. CI/CD — GitHub Actions + public GHCR + Cloud Run (2026-10-08)
 
-**Owner-approved TARGET-DESIGN; migration and runtime acceptance OPEN.** This
+**Delivery path implemented and formally used; remaining Chat product integration gates PARTIAL (2026-10-14).** This
 section supersedes the historical Cloud Build V2 policy for **new releases**.
 
 Control loop: `ChatGPT → GitHub → GitHub Actions → GCP API → GitHub Actions
@@ -273,8 +286,8 @@ never silently rely on old serving images. If no validated new-only
 fallback is available, BLOCK formal promotion rather than fabricate a
 successful rollback. No synthetic approval or application gate skip.
 
-**Post-success retention policy:** after real integration/rollback rehearsal,
-successful promotion and traffic readback, the final pipeline job keeps
+**Post-success retention policy:** after approved scope-specific integration,
+successful promotion and traffic readback, a separately authorized job keeps
 the newest **10 Cloud Run revisions per existing service** (or all when
 fewer than ten exist). The approved new-GHCR 100%-traffic revision and
 its verified **previous GHCR** rollback target must both fall within
@@ -285,7 +298,7 @@ untagged/zero-traffic revisions; never remove a serving, tagged, or
 protected revision. Stale SHA, missing readback, latest revision
 unready, traffic split, altered service state or protected version
 outside the ten must BLOCK deletion, leaving more than ten if necessary.
-Dry-run, revalidate before each delete and read back afterwards.
+On 2026-10-14 the Owner separately approved removal of obsolete tagged routes to reach exactly ten per service; this exceptional cleanup already PASSED (#38574373341). For future cleanup, dry-run, verify the protected current/rollback revisions, explicitly authorize retirement of any tagged URLs, revalidate before each delete and independently read back afterwards.
 No image deletion: GHCR, legacy GCS and Artifact Registry assets are
 outside this policy. Source/publish-only Actions never trigger cleanup.
 Idle Cloud Run revisions are generally not billed for compute, except
@@ -309,7 +322,5 @@ Cloud Build a new release dependency.
 **Acceptance stages:** exact-commit complete Actions quality; three verified
 public GHCR digests; WIF/IAM; 0%-candidate revisions/readbacks; live integration
 and real recovery; protected traffic/rollback readback; only then verified
-retirement of old push/release Cloud Build triggers. Until all are evidenced,
-status is **PARTIAL/OPEN**, not DONE. Source workflows are incomplete at
-this checkpoint. [New runbook](../docs/cicd-ghcr-actions-runbook.md),
+retirement of old push/release Cloud Build triggers. The 2026-10-14 P0-V Gateway-only production release and separate 10/10/10 revision-retention operation have runtime PASS evidence, but full Chat feature acceptance is PARTIAL. Current status lives in `doc/todo.md`; this SPEC describes future release requirements, not an unsatisfied historical migration. [New runbook](../docs/cicd-ghcr-actions-runbook.md),
 [acceptance](acceptance.md), and [TODO](todo.md) govern execution.

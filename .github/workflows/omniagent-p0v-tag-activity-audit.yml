@@ -1,0 +1,62 @@
+name: omniAgent P0-V tag HTTP activity audit (read-only)
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/omniagent-p0v-tag-activity-audit.yml'
+      - 'scripts/p0v_tag_activity_audit.py'
+      - 'tests/test_p0v_tag_activity_audit.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: omniagent-p0v-tag-activity-audit
+  cancel-in-progress: false
+jobs:
+  activity-audit:
+    if: github.repository == 'tommylin15/omniAgent' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 24
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Run fail-closed tag activity and retention tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_p0v_tag_activity_audit.py' -v
+          python3 -m unittest discover -s tests -p 'test_p0v_tag_dependency_audit.py' -v
+          python3 -m unittest discover -s tests -p 'test_p0v_safe_revision_cleanup.py' -v
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+          service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Check last 30 days tagged-host request metadata only
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          python3 scripts/p0v_tag_activity_audit.py --receipt p0v-tag-activity.json
+          python3 - <<'PY'
+          import json,os
+          result=json.load(open("p0v-tag-activity.json"))
+          with open(os.environ["GITHUB_STEP_SUMMARY"],"a") as out:
+              out.write("### P0-V tag-host activity, last 30 days (READ-ONLY)\n\n")
+              out.write("Time window: "+result["window_start_utc"]+" → "+result["window_end_utc"]+"\n\n")
+              out.write("| Activity evidence | Count |\n|---|---:|\n")
+              for key,value in sorted(result["activity_summary"].items()):
+                  out.write(f'| {key} | {value} |\n')
+              out.write("\nTag-level audit artifact has every observed tag, revision and safe activity result.\n\n")
+              out.write("**NO tag is automatically authorized for deletion.** Missing Cloud Logging evidence cannot prove inactivity. This workflow performs no Cloud Run traffic, IAM, tag, Revision, Secret, provider or database mutation.\n")
+          PY
+      - name: Upload redacted telemetry audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p0v-tag-activity-${{ github.run_id }}
+          path: p0v-tag-activity.json
+          if-no-files-found: warn
+          retention-days: 90

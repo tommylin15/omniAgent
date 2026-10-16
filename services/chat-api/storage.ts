@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { Pool } from "pg";
 import { authorizeApproval } from "../agent-gateway/agent_security.js";
+import type { ModelEntitlement } from "./model_entitlements.js";
+import type { ChatDispatchBudget } from "./dispatch_budget.js";
 
 export class ChatConflict extends Error {}
 export class ChatNotFound extends Error {}
@@ -42,10 +44,14 @@ function digest(value: unknown): string {
 }
 
 export class ChatStore {
-  constructor(private readonly pool: Pool) {}
+  constructor(private readonly pool: Pool, private readonly budget?: ChatDispatchBudget) {}
 
   async ready(): Promise<void> {
     await this.pool.query("SELECT 1");
+    // A healthy container is not dispatch-ready if budget migration 007 is
+    // missing or the restricted database role cannot read the budget ledger.
+    if(this.budget)
+      await this.pool.query("SELECT 1 FROM omni_chat.model_daily_budgets LIMIT 0");
   }
 
   async writeSkillRevision(ownerId: string, skillId: string, revision: number,
@@ -218,8 +224,11 @@ export class ChatStore {
    * Reconciliation and attempt recovery must be implemented before enabling
    * unattended dispatch in production.
    */
-  async claimNextQueuedTurn(approvedOwners: readonly string[], target?: { ownerId: string; threadId: string; turnId: string }): Promise<DispatchClaim | null> {
+  async claimNextQueuedTurn(approvedOwners: readonly string[], target?: { ownerId: string; threadId: string; turnId: string },
+    entitlements?: readonly ModelEntitlement[]): Promise<DispatchClaim | null> {
     if (!approvedOwners.length) throw new Error("dispatch requires an approved owner list");
+    if (entitlements && !entitlements.length) throw new Error("dispatch requires model entitlements");
+    const modelRules = entitlements?.map(({ownerId,runtime,model}) => ({owner_id:ownerId,runtime,model}));
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
@@ -240,9 +249,16 @@ export class ChatStore {
         WHERE t.status='QUEUED' AND th.status='ACTIVE'
           AND t.owner_id = ANY($1::uuid[])
           AND ($2::uuid IS NULL OR (t.owner_id=$2 AND t.thread_id=$3 AND t.turn_id=$4))
+          AND ($5::jsonb IS NULL OR EXISTS (
+            SELECT 1 FROM jsonb_to_recordset($5::jsonb)
+              AS entitlement(owner_id uuid,runtime varchar,model varchar)
+            WHERE entitlement.owner_id=t.owner_id AND entitlement.runtime=th.runtime
+              AND entitlement.model=th.model
+          ))
         ORDER BY t.created_at,t.owner_id,t.thread_id,t.turn_id
         LIMIT 1 FOR UPDATE OF th,t SKIP LOCKED`,
-        [approvedOwners,target?.ownerId ?? null,target?.threadId ?? null,target?.turnId ?? null]
+        [approvedOwners,target?.ownerId ?? null,target?.threadId ?? null,target?.turnId ?? null,
+          modelRules ? JSON.stringify(modelRules) : null]
       )).rows[0];
       if (!selected) {
         await client.query("COMMIT");
@@ -253,6 +269,60 @@ export class ChatStore {
         ? (payload as Record<string, unknown>).content : undefined;
       if (typeof content !== "string" || !content.trim() || content.length > 50_000) {
         throw new Error("queued message is invalid");
+      }
+      if (selected.runtime !== "codex" && this.budget) {
+        // Serialize all Chat service instances within this database before
+        // reading global RUNNING counts or changing daily caps.
+        await client.query("SELECT pg_advisory_xact_lock(762014, 701)");
+        const bytes=Buffer.byteLength(content,"utf8");
+        const units=bytes+512; // conservative, not currency or provider token usage
+        if(bytes>this.budget.maxPromptBytes || units>this.budget.maxOwnerDailyTokens)
+          throw new ChatConflict("Chat inference request exceeds approved capacity");
+        const active=await client.query<{count:string}>(`
+          SELECT count(*)::text AS count FROM omni_chat.turns t
+          JOIN omni_chat.threads th ON th.owner_id=t.owner_id AND th.thread_id=t.thread_id
+          WHERE t.status='RUNNING' AND th.runtime IN ('gemini','openrouter')`);
+        // Crashed RUNNING claims deliberately retain concurrency reservation
+        // until an audited operator reconciliation. Never infer safe retry.
+        if(Number(active.rows[0].count)>=this.budget.maxConcurrent)
+          throw new ChatConflict("Chat global model concurrency exhausted");
+        const scopes=[
+          ["global","00000000-0000-0000-0000-000000000000",
+            this.budget.maxGlobalDailyCalls,this.budget.maxGlobalDailyTokens],
+          ["owner",selected.owner_id,this.budget.maxOwnerDailyCalls,
+            this.budget.maxOwnerDailyTokens]
+        ] as const;
+        for(const [scope,owner,calls,tokens] of scopes){
+          const written=await client.query(
+            `INSERT INTO omni_chat.model_daily_budgets
+              (scope,owner_id,utc_day,attempts,reserved_tokens)
+              VALUES($1,$2,(now() AT TIME ZONE 'UTC')::date,1,$3)
+              ON CONFLICT(scope,owner_id,utc_day)
+              DO UPDATE SET attempts=omni_chat.model_daily_budgets.attempts+1,
+                reserved_tokens=omni_chat.model_daily_budgets.reserved_tokens+$3
+              WHERE omni_chat.model_daily_budgets.attempts<$4
+                AND omni_chat.model_daily_budgets.reserved_tokens+$3<=$5
+              RETURNING attempts`,
+            [scope,owner,units,calls,tokens]);
+          // INSERT itself also must obey configured ceilings.
+          if(written.rowCount!==1 || units>tokens)
+            throw new ChatConflict("Chat model budget exhausted");
+        }
+      }
+      if (selected.runtime === "codex") {
+        // Owner-scoped hard cap: exactly three attempted native starts, not
+        // three successful replies. No row == no Codex permission.
+        // UPDATE takes the budget row lock and serializes concurrent claims.
+        // An uncertain provider attempt never refunds a consumed allowance.
+        const budget = await client.query(
+          `UPDATE omni_chat.codex_trial_budgets
+           SET consumed_turns=consumed_turns+1
+           WHERE owner_id=$1 AND expires_at>now()
+             AND consumed_turns<max_turns AND max_turns=3
+           RETURNING consumed_turns`,
+          [selected.owner_id]);
+        if (budget.rowCount !== 1)
+          throw new ChatConflict("Codex Owner trial is missing, expired or exhausted");
       }
       const updated = (await client.query(
         `UPDATE omni_chat.turns SET status='RUNNING'
@@ -268,6 +338,96 @@ export class ChatStore {
       await client.query("ROLLBACK");
       throw error;
     } finally { client.release(); }
+  }
+
+  /**
+   * Read-only candidates for manual reconciliation. created_at is the queue
+   * creation clock, NOT proof that the worker has been stuck for this long.
+   * No payloads, credentials, automatic retries or status mutations.
+   */
+  async runningReconciliationCandidates(approvedOwners: readonly string[]): Promise<Record<string, unknown>[]> {
+    if (!approvedOwners.length) return [];
+    return (await this.pool.query(
+      `SELECT owner_id,thread_id,turn_id,status,created_at
+       FROM omni_chat.turns
+       WHERE owner_id=ANY($1::uuid[]) AND status='RUNNING'
+         AND created_at <= now() - interval '10 minutes'
+       ORDER BY created_at,owner_id,thread_id,turn_id LIMIT 50`,
+      [approvedOwners])).rows;
+  }
+
+  /** Read back one active turn for UI restart/reconnect; never returns a
+   * Gateway native handle or data outside the verified database Owner.
+   */
+  async activeTurn(ownerId:string,threadId:string):Promise<{turnId:string;status:string}|null> {
+    await this.thread(ownerId,threadId);
+    const row=(await this.pool.query(
+      `SELECT t.turn_id,t.status,EXISTS (
+          SELECT 1 FROM omni_chat.approvals AS a
+          WHERE a.owner_id=t.owner_id AND a.thread_id=t.thread_id
+            AND a.turn_id=t.turn_id AND a.status='PENDING'
+            AND a.expires_at>now()
+        ) AS awaiting_approval
+        FROM omni_chat.turns AS t
+        WHERE t.owner_id=$1 AND t.thread_id=$2 AND t.status IN ('QUEUED','RUNNING')
+        ORDER BY t.created_at DESC,t.turn_id DESC LIMIT 1`,
+      [ownerId,threadId])).rows[0];
+    if (!row) return null;
+    return {turnId:String(row.turn_id),status:row.awaiting_approval?"approval_required":
+      row.status==="RUNNING"?"running":"queued"};
+  }
+
+  /** Owner-only durable status by original message key. No prompts or digests. */
+  async turnByMessageKey(ownerId:string,threadId:string,key:string):
+      Promise<{turnId:string;status:string}|null>{
+    await this.thread(ownerId,threadId);
+    const row=(await this.pool.query(
+      `SELECT turn_id,status FROM omni_chat.turns
+       WHERE owner_id=$1 AND thread_id=$2 AND message_key=$3 LIMIT 1`,
+      [ownerId,threadId,key])).rows[0];
+    return row?{turnId:String(row.turn_id),status:String(row.status)}:null;
+  }
+
+  /** Only a verified Owner can locate a last turn; no prompt or provider state. */
+  async latestTurn(ownerId:string,threadId:string):Promise<{turnId:string;status:string}|null>{
+    await this.thread(ownerId,threadId);
+    const row=(await this.pool.query(
+      `SELECT turn_id,status FROM omni_chat.turns WHERE owner_id=$1
+       AND thread_id=$2 ORDER BY created_at DESC,turn_id DESC LIMIT 1`,
+      [ownerId,threadId])).rows[0];
+    return row?{turnId:String(row.turn_id),status:String(row.status)}:null;
+  }
+
+  /** Owner-scoped durable completion proof; never exposes message or provider data. */
+  async turnReceipt(ownerId:string,threadId:string,turnId:string):
+      Promise<{status:string;textPersisted:boolean;terminalPersisted:boolean;durableCompleted:boolean}> {
+    const result=await this.pool.query<{
+      status:string;text_persisted:boolean;terminal_persisted:boolean;
+    }>(`SELECT t.status,
+        EXISTS (SELECT 1 FROM omni_chat.events e
+          WHERE e.owner_id=t.owner_id AND e.thread_id=t.thread_id
+            AND e.turn_id=t.turn_id AND e.event_type='text_delta'
+            AND length(btrim(COALESCE(NULLIF(e.payload->>'text',''),
+              NULLIF(e.payload->>'delta',''),'')))>0
+        ) AS text_persisted,
+        EXISTS (SELECT 1 FROM omni_chat.events e
+          WHERE e.owner_id=t.owner_id AND e.thread_id=t.thread_id
+            AND e.turn_id=t.turn_id AND
+              ((t.status='COMPLETED' AND e.event_type='turn_completed') OR
+               (t.status='CANCELLED' AND e.event_type='turn_cancelled') OR
+               (t.status='ERROR' AND e.event_type='turn_error'))
+        ) AS terminal_persisted
+        FROM omni_chat.turns t
+        JOIN omni_chat.threads th
+          ON th.owner_id=t.owner_id AND th.thread_id=t.thread_id
+        WHERE t.owner_id=$1 AND t.thread_id=$2 AND t.turn_id=$3`,
+      [ownerId,threadId,turnId]);
+    const row=result.rows[0];
+    if (!row) throw new ChatNotFound("Owner turn not found");
+    return {status:row.status,textPersisted:row.text_persisted,
+      terminalPersisted:row.terminal_persisted,
+      durableCompleted:row.status==="COMPLETED" && row.text_persisted &&
+        row.terminal_persisted};
   }
 
   async events(ownerId: string, threadId: string, cursor: number, limit: number): Promise<Record<string, unknown>[]> {
@@ -367,6 +527,82 @@ export class ChatStore {
       await client.query("ROLLBACK");
       throw error;
     } finally { client.release(); }
+  }
+
+
+  /**
+   * Persist one validated Gateway response as a single PostgreSQL transaction.
+   * Every event and its terminal turn state commit together, or none do.
+   * Deliberately fail closed on replay: a provider must never be invoked again
+   * after an uncertain crash/commit, even if no response is visible to clients.
+   */
+  async appendGatewayEvents(ownerId: string, threadId: string, turnId: string,
+    events: readonly { eventId: string; type: string; payload: unknown }[]): Promise<void> {
+    const acceptedTypes = new Set(["text_delta","item_upsert","tool_request","tool_result",
+      "approval_request","approval_resolved","citation","usage",
+      "turn_completed","turn_cancelled","turn_error"]);
+    const terminalTypes = new Set(["turn_completed","turn_cancelled","turn_error"]);
+    if (!events.length || events.length > 200 ||
+        !terminalTypes.has(events[events.length - 1].type) ||
+        events.filter(event => terminalTypes.has(event.type)).length !== 1) {
+      throw new ChatConflict("invalid Gateway event batch");
+    }
+    const seen = new Set<string>();
+    const prepared = events.map(event => {
+      if (!/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/.test(event.eventId) ||
+          seen.has(event.eventId) || !acceptedTypes.has(event.type)) {
+        throw new ChatConflict("invalid Gateway event id or type");
+      }
+      seen.add(event.eventId);
+      const payload = safeRecord(event.payload);
+      if (!payload || typeof payload !== "object" || Array.isArray(payload) ||
+          Buffer.byteLength(JSON.stringify(payload)) > 65_536) {
+        throw new ChatConflict("invalid Gateway event payload");
+      }
+      return { eventId:event.eventId,type:event.type,payload:JSON.stringify(payload) };
+    });
+    const terminal = prepared[prepared.length - 1].type;
+    const status = terminal === "turn_completed" ? "COMPLETED" :
+      terminal === "turn_cancelled" ? "CANCELLED" : "ERROR";
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const thread = (await client.query(
+        `SELECT 1 FROM omni_chat.threads WHERE owner_id=$1 AND thread_id=$2 FOR UPDATE`,
+        [ownerId,threadId])).rows[0];
+      const turn = (await client.query(
+        `SELECT status FROM omni_chat.turns WHERE owner_id=$1 AND thread_id=$2 AND turn_id=$3 FOR UPDATE`,
+        [ownerId,threadId,turnId])).rows[0];
+      if (!thread || !turn) throw new ChatNotFound("Gateway turn not found");
+      if (turn.status !== "RUNNING") throw new ChatConflict("Gateway turn is not running");
+      const existing = (await client.query(
+        `SELECT 1 FROM omni_chat.events WHERE owner_id=$1 AND thread_id=$2
+         AND event_id=ANY($3::varchar[]) LIMIT 1`,
+        [ownerId,threadId,prepared.map(event => event.eventId)])).rows;
+      if (existing.length) throw new ChatConflict("Gateway response requires reconciliation");
+      const seq = Number((await client.query(
+        `SELECT COALESCE(MAX(seq),-1)+1 AS seq FROM omni_chat.events
+         WHERE owner_id=$1 AND thread_id=$2`, [ownerId,threadId])).rows[0].seq);
+      if (!Number.isSafeInteger(seq) || seq < 0 || !Number.isSafeInteger(seq+prepared.length))
+        throw new ChatConflict("Gateway event sequence overflow");
+      for (const [index,event] of prepared.entries()) {
+        await client.query(
+          `INSERT INTO omni_chat.events(owner_id,thread_id,turn_id,event_id,seq,event_type,payload)
+           VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+          [ownerId,threadId,turnId,event.eventId,seq+index,event.type,event.payload]);
+      }
+      const updated = await client.query(
+        `UPDATE omni_chat.turns SET status=$4::varchar,completed_at=now()
+         WHERE owner_id=$1 AND thread_id=$2 AND turn_id=$3 AND status='RUNNING'`,
+        [ownerId,threadId,turnId,status]);
+      if (updated.rowCount !== 1) throw new ChatConflict("Gateway terminal status conflict");
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async appendEvent(ownerId: string, threadId: string, turnId: string, eventId: string,

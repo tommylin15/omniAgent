@@ -1,6 +1,6 @@
 import { createHmac } from "node:crypto";
 import type { AddressInfo } from "node:net";
-import { makeServer, type Json } from "../services/agent-gateway/server.js";
+import { makeServer, CodexTurnRegistry, type Json } from "../services/agent-gateway/server.js";
 import { describe, expect, it, vi } from "vitest";
 import { ChatDispatcher, makeSignedGatewayInvoker,modelGrants } from "../services/chat-api/gateway_dispatch.js";
 import type { DispatchClaim } from "../services/chat-api/storage.js";
@@ -13,7 +13,7 @@ const response = () => ({ events:[
 ] });
 function store() {
   return { claimNextQueuedTurn: vi.fn().mockResolvedValueOnce(claim).mockResolvedValue(null),
-    appendEvent: vi.fn().mockResolvedValue({}) };
+    appendGatewayEvents: vi.fn().mockResolvedValue(undefined) };
 }
 
 describe("Chat -> Gateway durable one-shot dispatch", () => {
@@ -33,10 +33,10 @@ describe("Chat -> Gateway durable one-shot dispatch", () => {
     expect(await worker.runOnce()).toEqual({status:"completed",turnId:"turn-a"});
     expect(await worker.runOnce()).toEqual({status:"idle"});
     expect(invoke).toHaveBeenCalledTimes(1);
-    expect(db.appendEvent).toHaveBeenNthCalledWith(1,"owner-a","thread-a","turn-a",
-      "gateway-turn-a-0","text_delta",{text:"world"});
-    expect(db.appendEvent).toHaveBeenNthCalledWith(2,"owner-a","thread-a","turn-a",
-      "gateway-turn-a-1","turn_completed",{status:"complete"});
+    expect(db.appendGatewayEvents).toHaveBeenCalledExactlyOnceWith("owner-a","thread-a","turn-a",[
+      {eventId:"gateway-turn-a-0",type:"text_delta",payload:{text:"world"}},
+      {eventId:"gateway-turn-a-1",type:"turn_completed",payload:{status:"complete"}}
+    ]);
   });
 
   it("rejects foreign Gateway turn bindings before writing any model text", async () => {
@@ -47,9 +47,9 @@ describe("Chat -> Gateway durable one-shot dispatch", () => {
     expect(await worker.runOnce()).toEqual({
       status:"error",turnId:"turn-a",reason:"gateway_outcome_uncertain"
     });
-    expect(db.appendEvent).toHaveBeenCalledTimes(1);
-    expect(db.appendEvent).toHaveBeenCalledWith("owner-a","thread-a","turn-a",
-      "gateway-turn-a-failed","turn_error",{code:"gateway_outcome_uncertain"});
+    expect(db.appendGatewayEvents).toHaveBeenCalledExactlyOnceWith("owner-a","thread-a","turn-a",[
+      {eventId:"gateway-turn-a-failed",type:"turn_error",payload:{code:"gateway_outcome_uncertain"}}
+    ]);
   });
 
   it("refuses cross-owner Gateway metadata even for Codex-native IDs", async () => {
@@ -65,9 +65,9 @@ describe("Chat -> Gateway durable one-shot dispatch", () => {
       expect(await worker.runOnce()).toEqual({
         status:"error",turnId:"turn-a",reason:"gateway_outcome_uncertain"
       });
-      expect(db.appendEvent).toHaveBeenCalledTimes(1);
-      expect(db.appendEvent).toHaveBeenCalledWith("owner-a","thread-a","turn-a",
-        "gateway-turn-a-failed","turn_error",{code:"gateway_outcome_uncertain"});
+      expect(db.appendGatewayEvents).toHaveBeenCalledExactlyOnceWith("owner-a","thread-a","turn-a",[
+        {eventId:"gateway-turn-a-failed",type:"turn_error",payload:{code:"gateway_outcome_uncertain"}}
+      ]);
     }
   });
 
@@ -80,8 +80,10 @@ describe("Chat -> Gateway durable one-shot dispatch", () => {
     ]) {
       const db=store();
       expect((await new ChatDispatcher(db,async()=>fake,["owner-a"]).runOnce()).status).toBe("error");
-      expect(db.appendEvent).toHaveBeenCalledTimes(1);
-      expect(db.appendEvent.mock.calls[0][4]).toBe("turn_error");
+      expect(db.appendGatewayEvents).toHaveBeenCalledTimes(1);
+      expect(db.appendGatewayEvents.mock.calls[0][3]).toMatchObject([
+        {type:"turn_error",payload:{code:"gateway_outcome_uncertain"}}
+      ]);
     }
   });
 
@@ -96,7 +98,7 @@ describe("Chat -> Gateway durable one-shot dispatch", () => {
 
   it("fails closed on event persistence errors, requiring reconciliation", async () => {
     const db=store();
-    db.appendEvent.mockRejectedValue(new Error("database down"));
+    db.appendGatewayEvents.mockRejectedValue(new Error("database down"));
     await expect(new ChatDispatcher(db,async()=>response(),["owner-a"]).runOnce())
       .rejects.toThrow("dispatch_persistence_needs_reconciliation");
   });
@@ -109,8 +111,8 @@ describe("Chat -> Gateway durable one-shot dispatch", () => {
       {type:"turn_completed",threadId:"native-thread",turnId:"native-turn",payload:{status:"completed"}}
     ]}),["owner-a"]);
     expect((await worker.runOnce()).status).toBe("completed");
-    expect(db.appendEvent).toHaveBeenNthCalledWith(1,"owner-a","thread-a","turn-a",
-      "gateway-turn-a-0","text_delta",{delta:"test",text:"test"});
+    expect(db.appendGatewayEvents).toHaveBeenCalledWith("owner-a","thread-a","turn-a",
+      expect.arrayContaining([{eventId:"gateway-turn-a-0",type:"text_delta",payload:{delta:"test",text:"test"}}]));
   });
 });
 
@@ -152,6 +154,52 @@ describe("Gateway private HTTP authentication", () => {
   });
 });
 
+describe("signed Codex native turn and control transport, fixture only", () => {
+  it("uses the Owner-bound start/approval/cancel/events endpoints without CLI or keys", async () => {
+    const oldKey=process.env.MCP_OWNER_SIGNING_KEY;
+    const signingKey="0123456789abcdef0123456789abcdef";
+    process.env.MCP_OWNER_SIGNING_KEY=signingKey;
+    const ownerId="00000000-0000-4000-8000-000000000001";
+    const bind={ownerId,threadId:"chat-thread",turnId:"chat-turn",
+      nativeThreadId:"native-thread",nativeTurnId:"native-turn",turnHandle:"hidden"};
+    const fixture={...bind,status:"IN_PROGRESS",cursor:-1,events:[]};
+    const turns={
+      start:vi.fn(async()=>fixture),
+      events:vi.fn(async()=>fixture),
+      resolve:vi.fn(async()=>fixture),
+      cancel:vi.fn(async()=>fixture)
+    };
+    const gateway=makeServer(undefined,undefined,turns as unknown as CodexTurnRegistry);
+    try {
+      await new Promise<void>(resolve=>gateway.listen(0,"127.0.0.1",resolve));
+      const local="http://127.0.0.1:"+(gateway.address() as AddressInfo).port;
+      const fetcher:typeof fetch=(url,options)=>
+        fetch(local+new URL(String(url)).pathname,options);
+      const invoker=makeSignedGatewayInvoker({
+        url:"https://gateway-candidate.example.com",audience:"https://gateway.example.com",
+        signingKey,idToken:async()=>"test-only-id-token",fetcher
+      });
+      const claim:DispatchClaim={ownerId,threadId:"chat-thread",turnId:"chat-turn",
+        runtime:"codex",model:"gpt-6-luna",content:"nonbillable prompt"};
+      expect(await invoker(claim)).toMatchObject(fixture);
+      expect(turns.start).toHaveBeenCalledOnce();
+      const payload={...bind,cursor:-1};
+      expect(await invoker.control!("turn:events",payload)).toMatchObject(fixture);
+      expect(await invoker.control!("approval",{
+        ...bind,requestId:"12",paramsDigest:"sha256:"+"f".repeat(64),decision:"decline"
+      })).toMatchObject(fixture);
+      expect(await invoker.control!("turn:cancel",bind)).toMatchObject(fixture);
+      expect(turns.events).toHaveBeenCalledOnce();
+      expect(turns.resolve).toHaveBeenCalledOnce();
+      expect(turns.cancel).toHaveBeenCalledOnce();
+    } finally {
+      await new Promise<void>(resolve=>gateway.close(()=>resolve()));
+      if(oldKey===undefined) delete process.env.MCP_OWNER_SIGNING_KEY;
+      else process.env.MCP_OWNER_SIGNING_KEY=oldKey;
+    }
+  });
+});
+
 describe("real Gateway HTTP signed handoff with nonbillable provider fixture", () => {
   it("verifies HMAC on real Gateway handler and persists only durable claim events", async () => {
     const previous = process.env.MCP_OWNER_SIGNING_KEY;
@@ -184,10 +232,10 @@ describe("real Gateway HTTP signed handoff with nonbillable provider fixture", (
       expect(provider.mock.calls[0][0]).toMatchObject({ownerId:"owner-a",
         threadId:"thread-a",turnId:"turn-a",runtime:"gemini",model:"gemini-2.5-flash",
         messages:[{role:"user",content:"hello"}]});
-      expect(db.appendEvent).toHaveBeenNthCalledWith(1,"owner-a","thread-a","turn-a",
-        "gateway-turn-a-0","text_delta",{text:"nonbillable fixture response"});
-      expect(db.appendEvent).toHaveBeenNthCalledWith(2,"owner-a","thread-a","turn-a",
-        "gateway-turn-a-1","turn_completed",{status:"complete"});
+      expect(db.appendGatewayEvents).toHaveBeenCalledExactlyOnceWith("owner-a","thread-a","turn-a",[
+        {eventId:"gateway-turn-a-0",type:"text_delta",payload:{text:"nonbillable fixture response"}},
+        {eventId:"gateway-turn-a-1",type:"turn_completed",payload:{status:"complete"}}
+      ]);
       expect(await worker.runOnce()).toEqual({status:"idle"});
       expect(provider).toHaveBeenCalledTimes(1);
     } finally {

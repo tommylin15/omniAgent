@@ -1,0 +1,159 @@
+# P0-V technical handoff does not authorize a blanket release.
+# Read actual Cloud Run serving revisions, IAM and candidate boundaries.
+# No provider calls, DB writes, traffic updates, IAM changes or credential reads.
+name: omniAgent P0-V formal release runtime inventory
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/omniagent-p0v-formal-release-inventory.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: omniagent-p0v-formal-release-inventory
+  cancel-in-progress: false
+jobs:
+  inventory:
+    if: github.repository == 'tommylin15/omniAgent' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PROJECT: gen-lang-client-0593591102
+      REGION: us-central1
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+          service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Snapshot three active services and IAM without credentials or mutable operations
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p "$RUNNER_TEMP/inventory"
+          for svc in omniagent-chat omniagent-agent-gateway omniagent-shared-codex; do
+            gcloud run services describe "$svc" --project="$PROJECT" --region="$REGION" --format=json > "$RUNNER_TEMP/inventory/$svc.service.json"
+            gcloud run services get-iam-policy "$svc" --project="$PROJECT" --region="$REGION" --format=json > "$RUNNER_TEMP/inventory/$svc.iam.json"
+            gcloud run revisions list --service="$svc" --project="$PROJECT" --region="$REGION" --format=json > "$RUNNER_TEMP/inventory/$svc.list.json"
+            REVISION="$(python3 - "$RUNNER_TEMP/inventory/$svc.service.json" <<'PY'
+          import json,sys
+          svc=json.load(open(sys.argv[1]))
+          active=[row for row in (svc.get("status") or {}).get("traffic") or [] if row.get("percent",0)>0]
+          if len(active)!=1 or active[0].get("percent")!=100 or not active[0].get("revisionName"):
+              raise SystemExit("BLOCKED: formal traffic not exactly one 100-percent revision")
+          print(active[0]["revisionName"])
+          PY
+            )"
+            gcloud run revisions describe "$REVISION" --project="$PROJECT" --region="$REGION" --format=json > "$RUNNER_TEMP/inventory/$svc.active.json"
+          done
+      - name: Validate real serving images, IAM, flags, signed pilot and revision-retention state
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - "$RUNNER_TEMP/inventory" "$GITHUB_STEP_SUMMARY" <<'PY'
+          import json,re,os,sys
+          from pathlib import Path
+          root=Path(sys.argv[1]); summary=Path(sys.argv[2]); project=os.environ["PROJECT"]
+          names=("omniagent-chat","omniagent-agent-gateway","omniagent-shared-codex")
+          docs={}; flags={}; all_ready=True
+          def load(service,kind):return json.loads((root/(service+"."+kind+".json")).read_text())
+          def single_container(revision):
+              containers=(revision.get("spec") or {}).get("containers") or []
+              if len(containers)!=1:raise SystemExit("BLOCKED: unexpected serving container shape")
+              return containers[0]
+          def safe_env(c):
+              fields=c.get("env") or []
+              names=[x.get("name") for x in fields]
+              if any(not isinstance(x,str) or not x for x in names) or len(names)!=len(set(names)):
+                  raise SystemExit("BLOCKED: duplicate or invalid serving environment")
+              return {x["name"]:x for x in fields}
+          def flag(env,name):
+              e=env.get(name)
+              if not e:return "ABSENT"
+              if "valueFrom" in e:return "SECRET_REF_NOT_EVALUATED"
+              v=e.get("value")
+              return str(v).lower() if v in ("true","false") else "SET_NONBOOLEAN"
+          def count_revisions(d):
+              if isinstance(d,list):return len(d)
+              raise SystemExit("BLOCKED: revision list schema unexpected")
+          for name in names:
+              svc=load(name,"service");iam=load(name,"iam");rev=load(name,"active")
+              rows=(svc.get("status") or {}).get("traffic") or []
+              live=[x for x in rows if x.get("percent",0)>0]
+              if len(live)!=1 or live[0].get("percent")!=100:
+                  raise SystemExit("BLOCKED: serving allocation changed")
+              current=live[0]["revisionName"]
+              if (rev.get("metadata") or {}).get("name")!=current:
+                  raise SystemExit("BLOCKED: revision readback differs from active serving")
+              conditions=(rev.get("status") or {}).get("conditions") or []
+              ready=any(x.get("type")=="Ready" and x.get("status")=="True" for x in conditions)
+              if not ready:raise SystemExit("BLOCKED: production revision not Ready "+name)
+              container=single_container(rev);image=container.get("image","")
+              digest=re.search(r"@sha256:([a-f0-9]{64})$",image)
+              if not digest:raise SystemExit("BLOCKED: unpinned production image "+name)
+              sa=(rev.get("spec") or {}).get("serviceAccountName","")
+              if not sa.endswith("@"+project+".iam.gserviceaccount.com"):
+                  raise SystemExit("BLOCKED: unrecognized serving service identity "+name)
+              env=safe_env(container)
+              members={m for b in iam.get("bindings") or [] if b.get("role")=="roles/run.invoker"
+                       for m in b.get("members") or []}
+              publicly_invokable=bool({"allUsers","allAuthenticatedUsers"}&members)
+              if name!="omniagent-chat" and publicly_invokable:
+                  raise SystemExit("BLOCKED: private backend invokable by broad principal "+name)
+              if name=="omniagent-agent-gateway":
+                  expected={"serviceAccount:omniagent-codex-"+role+"-client@"+project+".iam.gserviceaccount.com"
+                            for role in ("chat","market","life")}
+                  if not expected.issubset(members):
+                      raise SystemExit("BLOCKED: required per-consumer Gateway invokers missing")
+              revisions=count_revisions(load(name,"list"))
+              candidates=[x for x in rows if x.get("percent",0)==0 and x.get("tag")]
+              flags[name]={key:flag(env,key) for key in (
+                ("CHAT_DISPATCH_ENABLED","CHAT_BYOK_MANAGEMENT_ENABLED") if name=="omniagent-chat" else
+                ("GEMINI_SHARED_EXECUTION_ENABLED","GEMINI_PAID_ENABLED","GEMINI_SHARED_MODEL") if name=="omniagent-agent-gateway" else
+                ("CODEX_OWNER_SECRETS","CODEX_CHAT_TRIAL_OWNER_SECRETS")
+              )}
+              docs[name]={"revision":current,"digest12":digest.group(1)[:12],
+                "serviceReady":ready,"serviceAccountScoped":True,
+                "publicInvoker":publicly_invokable,"revisionCount":revisions,
+                "retentionAtMostTen":revisions<=10,
+                "zeroTrafficTags":[x.get("tag") for x in candidates],
+                "flags":flags[name]}
+              print("service="+name+" active_revision="+current+" serving=100% ready=PASS"
+                    +" digest12="+digest.group(1)[:12]+" revision_count="+str(revisions))
+              print("service="+name+" broad_iam_invoker="+str(publicly_invokable)
+                    +" tags_zero_traffic="+",".join(docs[name]["zeroTrafficTags"][:12]))
+              print("service="+name+" flag_states="+json.dumps(flags[name],sort_keys=True))
+          gate=docs["omniagent-agent-gateway"]
+          chat=docs["omniagent-chat"]
+          pilot="p0v-market2048-00d45861"
+          # A tagged pilot does not change serving revision or automatically
+          # authorize a switch to Gemini-enabled public production.
+          pilot_present=pilot in gate["zeroTrafficTags"]
+          production_gemini=gate["flags"]["GEMINI_SHARED_EXECUTION_ENABLED"]=="true"
+          production_chat=chat["flags"]["CHAT_DISPATCH_ENABLED"]=="true"
+          retention_ok=all(x["retentionAtMostTen"] for x in docs.values())
+          print("market_mart_zero_traffic_pilot_present="+("PASS" if pilot_present else "NOT_PRESENT"))
+          print("gateway_gemini_production_enabled="+str(production_gemini))
+          print("chat_model_dispatch_production_enabled="+str(production_chat))
+          print("protected_ten_revision_count="+("PASS" if retention_ok else "PARTIAL_MORE_THAN_TEN"))
+          print("three_service_formal_100percent_iam_readback=PASS")
+          print("formal_traffic_modified=NO")
+          print("model_provider_calls=ZERO")
+          print("P0V_three_consumer_technical_handoff=CONSUMER_REPORTED_PASS")
+          print("general_availability_release=NOT_AUTOMATICALLY_AUTHORIZED")
+          with summary.open("a") as f:
+              f.write("### omniAgent P0-V formal Cloud Run runtime inventory (read-only)\n\n")
+              f.write("| Service | Active revision | Digest prefix | Revision count | Backend broad IAM | Critical flags |\n")
+              f.write("|---|---|---|---:|---|---|\n")
+              for n,d in docs.items():
+                  f.write("| "+n+" | \`"+d["revision"]+"\` | \`sha256:"+d["digest12"]+"…\` | "+str(d["revisionCount"])+" | "+
+                    str(d["publicInvoker"])+" | \`"+", ".join(k+"="+v for k,v in d["flags"].items())+"\` |\n")
+              f.write("\nPilot \`"+pilot+"\` tagged at 0%: "+("YES" if pilot_present else "NO")+".\n")
+              f.write("\nRetention <=10 for all services: "+("PASS" if retention_ok else "PARTIAL")+".\n")
+              f.write("\n**No traffic, IAM, revision or provider changes.** Production enablement must use independently approved release scope.\n")
+          PY

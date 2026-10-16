@@ -2,6 +2,12 @@
 set -euo pipefail
 
 action="${1:-grant}"
+# Fail before any gcloud metadata or IAM operation if a broad grant was not
+# separately approved. Revoke remains usable without this grant approval.
+if [[ "$action" == "grant" && "${OMNIAGENT_APPROVE_LEGACY_PROJECT_WIDE_IAM:-}" != "yes" ]]; then
+  echo "BLOCKED: project-wide PostgreSQL bootstrap IAM requires separate approval" >&2
+  exit 2
+fi
 PROJECT_ID="${OMNIAGENT_GCP_PROJECT_ID:-gen-lang-client-0593591102}"
 REGION="${OMNIAGENT_GCP_REGION:-us-central1}"
 CI_SERVICE_ACCOUNT="${OMNIAGENT_GCP_CI_SERVICE_ACCOUNT:-omniagent-ci@${PROJECT_ID}.iam.gserviceaccount.com}"

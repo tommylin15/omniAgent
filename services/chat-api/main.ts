@@ -1,12 +1,15 @@
 import { GoogleAuth, OAuth2Client } from "google-auth-library";
-import {readFile} from "node:fs/promises";
-import { ChatDispatcher, makeSignedGatewayInvoker,makeSignedGatewayRpc,modelGrants } from "./gateway_dispatch.js";
-import {NativeChatRuntime} from "./runtime_dispatch.js";
-import {ChatMcp} from "./mcp_dispatch.js";
+import { verifyGoogleBrowserUserClaims } from "./google_user_identity.js";
+import { ChatDispatcher, makeSignedGatewayInvoker } from "./gateway_dispatch.js";
+import { parseModelEntitlements } from "./model_entitlements.js";
 import { Pool } from "pg";
 import { makeChatServer } from "./server.js";
 import { ChatStore } from "./storage.js";
-import { chatDatabasePoolConfig, chatDatabaseUrl } from "./database.js";
+import { CodexSessionStore } from "./codex_session_store.js";
+import { CredentialManager, CredentialRegistry } from "./credential_management.js";
+import { GoogleSecretManagerVault } from "./credential_vault.js";
+import { chatDatabasePoolConfig, chatDatabaseUrl, chatDatabaseTrustAnchor } from "./database.js";
+import { parseChatDispatchBudget } from "./dispatch_budget.js";
 
 const dsn = chatDatabaseUrl(process.env);
 const userAudience = process.env.OMNIAGENT_GOOGLE_CLIENT_ID;
@@ -15,8 +18,8 @@ const callers = new Set((process.env.CHAT_INTERNAL_ALLOWED_EMAILS ?? "").split("
 if (!dsn || !userAudience || !serviceAudience || !callers.size) throw new Error("Chat API authentication or storage is not configured");
 
 const google = new OAuth2Client();
-const pool = new Pool(chatDatabasePoolConfig(dsn,process.env.CHAT_DATABASE_TLS_MODE));
-await pool.query(await readFile("infra/postgres/migrations/003_runtime_bindings.sql","utf8"));
+const pool = new Pool(chatDatabasePoolConfig(dsn,process.env.CHAT_DATABASE_TLS_MODE,
+  chatDatabaseTrustAnchor(process.env),process.env.CHAT_DATABASE_TLS_SERVERNAME));
 const verify = async (token: string, audience: string) => {
   const payload = (await google.verifyIdToken({ idToken: token, audience })).getPayload();
   if (!payload?.sub || !["https://accounts.google.com", "accounts.google.com"].includes(payload.iss)) {
@@ -25,9 +28,13 @@ const verify = async (token: string, audience: string) => {
   return payload;
 };
 
-const store = new ChatStore(pool);
+if(process.env.CHAT_DISPATCH_ENABLED==="true" &&
+   process.env.CHAT_DATABASE_TLS_MODE!=="verified-ca")
+  throw new Error("Chat dispatch requires verified PostgreSQL server TLS");
+const dispatchBudget=process.env.CHAT_DISPATCH_ENABLED==="true"
+  ? parseChatDispatchBudget(process.env.CHAT_DISPATCH_BUDGET_JSON??"") : undefined;
+const store = new ChatStore(pool,dispatchBudget);
 let dispatcher: ChatDispatcher | undefined;
-let mcp:ChatMcp|undefined;
 if (process.env.CHAT_DISPATCH_ENABLED === "true") {
   // The existing single bundle is the only signing-key source. Never silently
   // enable worker execution on an unaccepted 0% candidate.
@@ -51,22 +58,33 @@ if (process.env.CHAT_DISPATCH_ENABLED === "true") {
     !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value))) {
     throw new Error("Chat dispatch owner entitlements unavailable");
   }
+  // A Google identity and the legacy owner allowlist alone do not grant
+  // access to every platform model. BYOK is deliberately not inferred.
+  const entitlements = parseModelEntitlements(
+    process.env.CHAT_DISPATCH_ENTITLEMENTS_JSON ?? "", approvedOwners);
   const auth = new GoogleAuth();
-  const gateway={
+  dispatcher = new ChatDispatcher(store, makeSignedGatewayInvoker({
     url, audience, signingKey,
     idToken: async () => {
       const client = await auth.getIdTokenClient(audience);
       return client.idTokenProvider.fetchIdToken(audience);
     }
-  };
-  dispatcher = new ChatDispatcher(store,makeSignedGatewayInvoker(gateway),approvedOwners,
-    new NativeChatRuntime(store,makeSignedGatewayRpc(gateway)),modelGrants(process.env.CHAT_DISPATCH_MODEL_GRANTS ?? "",approvedOwners));
-  if (process.env.CHAT_MCP_GRANTS) mcp=new ChatMcp(process.env.CHAT_MCP_GRANTS,makeSignedGatewayRpc(gateway));
+  }),approvedOwners,entitlements,new CodexSessionStore(pool));
+}
+// BYOK is not enabled on deployed Cloud Run candidates by default.
+// GCP IAM/Secret Manager/project and migration 003 require independent approval.
+let credentials: CredentialManager | undefined;
+if (process.env.CHAT_BYOK_MANAGEMENT_ENABLED === "true") {
+  const project = process.env.CHAT_BYOK_SECRET_PROJECT;
+  if (!project) throw new Error("BYOK Secret Manager project missing");
+  credentials = new CredentialManager(new CredentialRegistry(pool),
+    new GoogleSecretManagerVault(project));
 }
 const server = makeChatServer(store,
   async (token) => {
     try {
       const claims = await verify(token,userAudience);
+      verifyGoogleBrowserUserClaims(claims);
       return { issuer: claims.iss, subject: claims.sub };
     } catch { throw new Error("unauthorized"); }
   },
@@ -77,7 +95,7 @@ const server = makeChatServer(store,
         throw new Error("unauthorized");
       }
     } catch { throw new Error("unauthorized"); }
-  }, dispatcher,mcp);
+  }, dispatcher, credentials);
 
 server.listen(Number(process.env.PORT ?? "8080"),"0.0.0.0");
 process.once("SIGTERM",() => server.close(() => void pool.end()));

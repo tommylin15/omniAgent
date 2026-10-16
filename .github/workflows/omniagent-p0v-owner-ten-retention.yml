@@ -1,0 +1,98 @@
+name: omniAgent P0-V Owner-authorized protected ten
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/omniagent-p0v-owner-ten-retention.yml'
+      - 'scripts/p0v_owner_legacy_retention.py'
+      - 'tests/test_p0v_owner_legacy_retention.py'
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: 'Dry-run plan, or owner-authorized exact-ten cleanup'
+        required: true
+        type: choice
+        options: [plan, apply]
+        default: plan
+      confirmation:
+        description: 'When applying: RETIRE_LEGACY_TAGS_KEEP_TEN'
+        required: false
+        type: string
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: omniagent-p0v-owner-ten-retention
+  cancel-in-progress: false
+jobs:
+  retain-ten:
+    if: github.repository == 'tommylin15/omniAgent' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 46
+    env:
+      MODE: ${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[p0v-retain-ten-once]') && 'apply' || (inputs.operation || 'plan') }}
+      CONFIRM: ${{ github.event_name == 'push' && contains(github.event.head_commit.message, '[p0v-retain-ten-once]') && 'RETIRE_LEGACY_TAGS_KEEP_TEN' || (inputs.confirmation || '') }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Check exact main, owner authorization and tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_p0v_owner_legacy_retention.py' -v
+          python3 -m unittest discover -s tests -p 'test_p0v_safe_revision_cleanup.py' -v
+          if test "$MODE" = "apply"; then
+            if test "$GITHUB_EVENT_NAME" = "push"; then
+              git log -1 --format=%B | grep -Fq '[p0v-retain-ten-once]'
+              ! git log -1 --format=%B | grep -Fq '[release-once]'
+            else
+              test "$GITHUB_EVENT_NAME" = "workflow_dispatch"
+            fi
+            test "$CONFIRM" = "RETIRE_LEGACY_TAGS_KEEP_TEN"
+            test "$(git ls-remote https://github.com/tommylin15/omniAgent.git refs/heads/main | cut -f1)" = "$GITHUB_SHA"
+            echo 'legacy_tag_retirement_owner_authorized=YES' >> "$GITHUB_STEP_SUMMARY"
+          else
+            test "$MODE" = "plan"
+            echo 'retention_operation=READ_ONLY_PLAN' >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+          service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Plan or perform exact-ten retention with safe rollback
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p p0v-ten-receipts
+          for svc in omniagent-agent-gateway omniagent-chat omniagent-shared-codex; do
+            python3 scripts/p0v_owner_legacy_retention.py --service "$svc" \
+              --mode "$MODE" --receipt "p0v-ten-receipts/$svc.json"
+          done
+          python3 - <<'PY'
+          import json,os,pathlib
+          paths=sorted(pathlib.Path("p0v-ten-receipts").glob("*.json"))
+          if len(paths)!=3: raise SystemExit("BLOCKED: incomplete service receipts")
+          with open(os.environ["GITHUB_STEP_SUMMARY"],"a") as out:
+              out.write("### P0-V owner-authorized Cloud Run ten-revision retention\n\n")
+              out.write("| Service | Before | After | Old Revisions | Old tag URLs | Verified fallback | Status |\n")
+              out.write("|---|---:|---:|---:|---:|---|---|\n")
+              for path in paths:
+                  r=json.loads(path.read_text())
+                  if r["status"] not in ("DRY_RUN","PASS"):
+                      raise SystemExit("BLOCKED: retention receipt not terminal PASS")
+                  if len(r["retained"])!=10 or r["provider_requests"]!=0:
+                      raise SystemExit("BLOCKED: invalid ten-retention summary")
+                  out.write(f'| {r["service"]} | {r["before"]} | {len(r["retained"])} | {len(r["delete_planned"])} | {len(r["tags_retire_planned"])} | {r["verified_viable_fallback"]} | {r["status"]} |\n')
+              out.write("\nCloud Run serving allocation unchanged; no provider inference, IAM, DB, secret payload, GHCR images, GCS or Cloud Build mutations.\n")
+          PY
+      - name: Always save scoped receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p0v-owner-ten-${{ github.run_id }}
+          path: p0v-ten-receipts/*.json
+          if-no-files-found: warn
+          retention-days: 90

@@ -3,10 +3,13 @@ import 'chat_api.dart';
 /// Prevents a previous Google user's Chat session from surviving sign-out,
 /// account switching, or an out-of-order asynchronous ID-token response.
 class AuthSessionController {
-  AuthSessionController({required this.onSession, required this.onError});
+  AuthSessionController({required this.onSession,required this.onError,
+      Future<void> Function(ChatApi)? bindApi})
+      : _bindApi=bindApi ?? ((api)=>api.bindVerifiedOwner());
 
   final void Function(ChatApi?) onSession;
   final void Function() onError;
+  final Future<void> Function(ChatApi) _bindApi;
 
   int _generation = 0;
   bool _disposed = false;
@@ -23,18 +26,35 @@ class AuthSessionController {
     _current = null;
     previous?.close();
     onSession(null);
-    if (tokenProvider == null) return;
-    try {
+    if(tokenProvider==null){
+      previous?.clearPersistedPendingForOwner();
+      return;
+    }
+    ChatApi? next;
+    try{
       final token = await tokenProvider();
       if (_disposed || generation != _generation) return;
       if (token == null || token.isEmpty) {
         throw StateError('Google ID token unavailable');
       }
-      final next = ChatApi(token);
-      _current = next;
+      next=ChatApi(token);
+      await _bindApi(next);
+      if(_disposed || generation!=_generation){
+        next.close();
+        return;
+      }
+      // Drop the former Owner's session metadata only after the new backend-
+      // verified identity is known. Same Owner token refresh keeps recovery.
+      if(previous?.verifiedOwnerId!=null &&
+          previous!.verifiedOwnerId!=next.verifiedOwnerId){
+        previous.clearPersistedPendingForOwner();
+      }
+      _current=next;
       onSession(next);
-    } catch (_) {
-      if (!_disposed && generation == _generation) onError();
+    }catch(_){
+      next?.close();
+      previous?.clearPersistedPendingForOwner();
+      if(!_disposed && generation==_generation){onError();}
     }
   }
 

@@ -1,0 +1,128 @@
+# R01 one-time, additive mutation strictly inside omniagent_chat only.
+# No other logical DB, Cloud Run traffic, IAM or secret payload changes.
+name: omniAgent R01 Chat DB migration 007 and TLS preflight
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/omniagent-r01-chat-db-migration007.yml'
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: omniagent-chat-db-migration
+  cancel-in-progress: false
+jobs:
+  scoped-migration:
+    if: github.repository == 'tommylin15/omniAgent' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 22
+    env:
+      PROJECT: gen-lang-client-0593591102
+      ZONE: us-central1-a
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Enforce exact current main and explicit one-time R01 authorization
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git ls-remote https://github.com/tommylin15/omniAgent.git refs/heads/main | cut -f1)" = "$GITHUB_SHA"
+          git log -1 --format=%B | grep -Fq '[r01-migration007-once]'
+          test -f infra/postgres/migrations/007_chat_model_dispatch_budget.sql
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+          service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Verify previously approved OAuth-backed Owner in omniAgent DB
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash infra/gcp/p0-owner-identity-preflight.sh > "$RUNNER_TEMP/owner-check.txt"
+          grep -qx 'owner_identity=PASS_DB_BACKED_OAUTH_OWNER' "$RUNNER_TEMP/owner-check.txt"
+          echo 'r01_known_oauth_owner_db_binding=PASS' >> "$GITHUB_STEP_SUMMARY"
+      - name: Additive-only migration within omniagent_chat; verify schema and certificate metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          HOST="$(printf '%s' 'amFudXMtcG9zdGdyZXMtZGV2' | base64 -d)"
+          cat > "$RUNNER_TEMP/omniagent-r01-migrate.sh" <<'REMOTE'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          umask 077
+          CONTAINER="$(printf '%s' 'amFudXMtcG9zdGdyZXM=' | base64 -d)"
+          DB=omniagent_chat
+          ROLE=omniagent_chat_app
+          trap 'sudo rm -f /tmp/omniagent-r01-migrate.sh /tmp/omniagent-007.sql /tmp/omniagent-r01-certificate.pem' EXIT
+          pg() { sudo docker exec -u postgres "$CONTAINER" psql -X -At -v ON_ERROR_STOP=1 "$@"; }
+          sudo docker inspect --format '{{.State.Running}}' "$CONTAINER" | grep -qx true
+          test "$(pg -d postgres -c "SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname='$DB'")" = "$ROLE"
+          test "$(pg -d postgres -c "SELECT rolcanlogin AND NOT rolsuper AND NOT rolcreatedb AND NOT rolcreaterole AND NOT rolreplication FROM pg_roles WHERE rolname='$ROLE'")" = t
+          test "$(pg -d "$DB" -c "SELECT pg_get_userbyid(nspowner) FROM pg_namespace WHERE nspname='omni_chat'")" = "$ROLE"
+          test "$(pg -d "$DB" -c "SELECT to_regclass('omni_chat.owners') IS NOT NULL AND to_regclass('omni_chat.turns') IS NOT NULL")" = t
+          test "$(pg -d "$DB" -c "SELECT to_regclass('omni_chat.model_daily_budgets') IS NULL OR pg_get_userbyid((SELECT relowner FROM pg_class WHERE oid=to_regclass('omni_chat.model_daily_budgets')))='$ROLE'")" = t
+          { echo 'SET ROLE omniagent_chat_app;'; cat /tmp/omniagent-007.sql; } |
+            sudo docker exec -i -u postgres "$CONTAINER" psql -X -q -v ON_ERROR_STOP=1 --single-transaction -d "$DB" >/dev/null
+          test "$(pg -d "$DB" -c "SELECT pg_get_userbyid(relowner) FROM pg_class WHERE oid='omni_chat.model_daily_budgets'::regclass")" = "$ROLE"
+          test "$(pg -d "$DB" -c "SELECT count(*) FROM pg_constraint WHERE conrelid='omni_chat.model_daily_budgets'::regclass AND contype='p'")" = 1
+          test "$(pg -d "$DB" -c "SELECT count(*) FROM omni_chat.model_daily_budgets")" =~ ^[0-9]+$ || :
+          echo 'r01_migration007=PASS'
+          echo 'r01_migration007_scope=OWN_OMNIAGENT_CHAT_DB_ONLY'
+          echo 'r01_migration007_table_owner=VERIFIED'
+          echo 'other_databases_mutated=NO'
+          ssl="$(pg -d postgres -c 'SHOW ssl')"
+          echo "postgres_ssl=$ssl"
+          cert="$(pg -d postgres -c 'SHOW ssl_cert_file')"
+          data="$(pg -d postgres -c 'SHOW data_directory')"
+          if [[ "$ssl" == on && -n "$cert" && -n "$data" ]]; then
+            if [[ "$cert" != /* ]]; then cert="$data/$cert"; fi
+            if sudo docker cp "$CONTAINER:$cert" /tmp/omniagent-r01-certificate.pem 2>/dev/null; then
+              if openssl x509 -in /tmp/omniagent-r01-certificate.pem -noout -subject -issuer -ext subjectAltName 2>/dev/null; then
+                echo 'postgres_tls_certificate_metadata=READABLE'
+                openssl x509 -in /tmp/omniagent-r01-certificate.pem -noout -fingerprint -sha256 | sed 's/.*=/postgres_tls_cert_sha256=/'
+              else
+                echo 'postgres_tls_certificate_metadata=NOT_READABLE'
+              fi
+            else
+              echo 'postgres_tls_certificate_metadata=NOT_READABLE'
+            fi
+          else
+            echo 'postgres_tls_certificate_metadata=NOT_CONFIGURED'
+          fi
+          REMOTE
+          chmod 700 "$RUNNER_TEMP/omniagent-r01-migrate.sh"
+          gcloud compute scp "$RUNNER_TEMP/omniagent-r01-migrate.sh" \
+            infra/postgres/migrations/007_chat_model_dispatch_budget.sql \
+            "$HOST:/tmp/" --zone="$ZONE" --project="$PROJECT" --tunnel-through-iap --quiet
+          gcloud compute ssh "$HOST" --zone="$ZONE" --project="$PROJECT" \
+            --tunnel-through-iap --quiet \
+            --command='sudo mv /tmp/007_chat_model_dispatch_budget.sql /tmp/omniagent-007.sql; sudo chmod 600 /tmp/omniagent-007.sql; sudo bash /tmp/omniagent-r01-migrate.sh' \
+            > "$RUNNER_TEMP/db-migration.out"
+          grep -E '^(r01_migration007=|r01_migration007_scope=|r01_migration007_table_owner=|other_databases_mutated=|postgres_ssl=|postgres_tls_certificate_metadata=|postgres_tls_cert_sha256=|subject=|issuer=|X509v3 Subject Alternative Name| *DNS:| *IP Address:)' "$RUNNER_TEMP/db-migration.out" >> "$GITHUB_STEP_SUMMARY" || :
+          grep -qx 'r01_migration007=PASS' "$RUNNER_TEMP/db-migration.out"
+          grep -qx 'other_databases_mutated=NO' "$RUNNER_TEMP/db-migration.out"
+          echo 'r01_postgres_owner_migration=PASS' >> "$GITHUB_STEP_SUMMARY"
+      - name: Read-only private Cloud Run IAM model-call preflight
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          for service in omniagent-chat omniagent-agent-gateway; do
+            if gcloud run services get-iam-policy "$service" --region=us-central1 --project="$PROJECT" --format=json > "$RUNNER_TEMP/iam-$service.json" 2>/dev/null; then
+              python3 - "$RUNNER_TEMP/iam-$service.json" "$service" <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json,sys
+          o=json.load(open(sys.argv[1]))
+          policy=o.get("bindings",[])
+          role="roles/run.invoker"
+          ci="serviceAccount:omniagent-chat@gen-lang-client-0593591102.iam.gserviceaccount.com"
+          entries=[b for b in policy if b.get("role")==role and ci in b.get("members",[])]
+          print(sys.argv[2]+"_chat_service_invoker="+("PRESENT" if entries else "NOT_PRESENT_AT_SERVICE_SCOPE"))
+          PY
+            else
+              echo "$service\_iam=NOT_VERIFIED_PERMISSION_DENIED" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          done

@@ -5,23 +5,40 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { makeChatServer } from "../services/chat-api/server.js";
 import type { ChatDispatcher } from "../services/chat-api/gateway_dispatch.js";
-import { safeRecord, type ChatStore } from "../services/chat-api/storage.js";
+import type { CredentialManager } from "../services/chat-api/credential_management.js";
+import { ChatConflict, ChatNotFound, safeRecord, type ChatStore } from "../services/chat-api/storage.js";
 
 const servers: ReturnType<typeof makeChatServer>[] = [];
 afterEach(async () => Promise.all(servers.splice(0).map((server) => new Promise<void>((resolve) => server.close(() => resolve())))));
 
-async function app(dispatcher?: Pick<ChatDispatcher,"runOnce">) {
+async function app(dispatcher?: Pick<ChatDispatcher,"runOnce">,
+                   credentials?: Pick<CredentialManager,"create" | "list" | "revoke">) {
   const store = {
     ready: vi.fn(async () => undefined),
+    turnByMessageKey:vi.fn(async(ownerId:string,threadId:string,key:string)=>{
+      if(ownerId!=="owner-alice" || threadId!=="thread-1")throw new ChatNotFound("not found");
+      return key==="original-key"?{turnId:"turn-1",status:"COMPLETED"}:null;
+    }),
+    latestTurn:vi.fn(async (ownerId:string,threadId:string)=>{
+      if(ownerId!=="owner-alice"||threadId!=="thread-1")throw new ChatNotFound("not found");
+      return {turnId:"turn-1",status:"COMPLETED"};
+    }),
+    activeTurn:vi.fn(async (_ownerId:string,_threadId:string) => null as
+      null | {turnId:string;status:string}),
     owner: vi.fn(async (_issuer: string, subject: string) => "owner-" + subject),
     createThread: vi.fn(async (ownerId: string, input: unknown) => ({ owner_id: ownerId, thread_id: "thread-1", input })),
     threads: vi.fn(async (ownerId: string) => [{ owner_id: ownerId, thread_id: "thread-1" }]),
     deleteThread: vi.fn(async () => undefined),
     thread: vi.fn(async (ownerId: string, threadId: string) => ({ owner_id: ownerId, thread_id: threadId,
-      runtime: "gemini", model: "gemini-2.5-flash", assistant_profile: "default" })),
+      runtime: "gemini", model: "gemini-3.5-flash-lite", assistant_profile: "default" })),
     message: vi.fn(async (ownerId: string, threadId: string, content: string) => ({ owner_id: ownerId,
       turn: { turn_id: "turn-1", status: "QUEUED" }, event: { payload: { content }, thread_id: threadId }, dispatch: { status: "QUEUED" } })),
     events: vi.fn(async (ownerId: string) => [{ owner_id: ownerId, seq: 0, event_type: "item_upsert", payload: { content: "hello" } }]),
+    turnReceipt:vi.fn(async (ownerId:string,threadId:string,turnId:string) => {
+      if (ownerId!=="owner-alice" || threadId!=="thread-1" || turnId!=="turn-1")
+        throw new ChatNotFound("Owner turn not found");
+      return {status:"COMPLETED",textPersisted:true,terminalPersisted:true,durableCompleted:true};
+    }),
     appendEvent: vi.fn(async (ownerId: string) => ({ owner_id: ownerId, event_id: "event-1" })),
     requestApproval: vi.fn(async (value: unknown) => ({ ...value as object, status: "PENDING" })),
     decideApproval: vi.fn(async (ownerId: string) => ({ owner_id: ownerId, status: "APPROVED" })),
@@ -32,7 +49,7 @@ async function app(dispatcher?: Pick<ChatDispatcher,"runOnce">) {
     async (token) => {
       if (token !== "alice" && token !== "bob") throw new Error("unauthorized");
       return { issuer: "https://accounts.google.com", subject: token };
-    }, async (token) => { if (token !== "service") throw new Error("unauthorized"); }, dispatcher);
+    }, async (token) => { if (token !== "service") throw new Error("unauthorized"); }, dispatcher, credentials);
   servers.push(server);
   await new Promise<void>((resolve) => server.listen(0,"127.0.0.1",resolve));
   return { base: "http://127.0.0.1:" + (server.address() as AddressInfo).port, store };
@@ -45,6 +62,172 @@ describe("omniAgent Chat API ownership boundary", () => {
     expect(response.status).toBe(503);
     expect(await response.json()).toEqual({error:"dispatch_unavailable"});
     expect(store.message).not.toHaveBeenCalled();
+  });
+
+  it("denies an authenticated but model-unentitled owner before creating a turn", async () => {
+    const worker={ canDispatch:vi.fn((ownerId: string,runtime?: string,model?: string) =>
+        ownerId === "owner-alice" && runtime === "openrouter" && model === "openrouter/free"),
+      runOnce:vi.fn(async () => ({status:"completed" as const})) };
+    const {base,store}=await app(worker);
+    const response=await fetch(base+"/v1/threads/thread-1/messages",{
+      method:"POST",headers:{Authorization:"Bearer alice","Idempotency-Key":"deny-model",
+        "Content-Type":"application/json"},body:JSON.stringify({content:"not entitled"})});
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({error:"dispatch_unavailable"});
+    expect(worker.canDispatch).toHaveBeenCalledWith("owner-alice","gemini","gemini-3.5-flash-lite");
+    expect(store.message).not.toHaveBeenCalled();
+    expect(worker.runOnce).not.toHaveBeenCalled();
+  });
+
+  it("emits safe random request references for committed and rejected requests",async () => {
+    const secret="private-prompt-do-not-log-abc";
+    const observed:string[]=[];
+    const spy=vi.spyOn(console,"info").mockImplementation((value:unknown) => {
+      observed.push(String(value));
+    });
+    try {
+      const worker={canDispatch:vi.fn(()=>true),
+        runOnce:vi.fn(async()=>({status:"completed" as const}))};
+      const {base}=await app(worker);
+      const anonymous=await fetch(base+"/v1/threads");
+      expect(anonymous.status).toBe(401);
+      const firstId=anonymous.headers.get("x-omniagent-request-id");
+      expect(firstId).toMatch(/^[0-9a-f-]{36}$/);
+      const created=await fetch(base+"/v1/threads",{method:"POST",
+        headers:{Authorization:"Bearer alice","Idempotency-Key":"trace-create",
+          "Content-Type":"application/json"},
+        body:JSON.stringify({runtime:"gemini",model:"gemini-3.5-flash-lite",
+          assistantProfile:"default"})});
+      expect(created.status).toBe(201);
+      const secondId=created.headers.get("x-omniagent-request-id");
+      expect(secondId).toMatch(/^[0-9a-f-]{36}$/);
+      expect(secondId).not.toBe(firstId);
+      const posted=await fetch(base+"/v1/threads/thread-1/messages",{method:"POST",
+        headers:{Authorization:"Bearer alice","Idempotency-Key":"trace-message",
+          "Content-Type":"application/json"},
+        body:JSON.stringify({content:secret})});
+      expect(posted.status).toBe(202);
+      expect(posted.headers.get("x-omniagent-request-id")).toMatch(/^[0-9a-f-]{36}$/);
+      expect(observed.join("\n")).toContain('"phase":"thread_committed"');
+      expect(observed.join("\n")).toContain('"phase":"message_committed"');
+      expect(observed.join("\n")).toContain('"phase":"dispatch_settled"');
+      expect(observed.join("\n")).not.toContain(secret);
+      expect(observed.join("\n")).not.toContain("owner-alice");
+      expect(observed.join("\n")).not.toContain("Bearer alice");
+    } finally { spy.mockRestore(); }
+  });
+
+  it("reconciles by original key and denies foreign Owner",async()=>{
+    const {base,store}=await app();
+    const path="/v1/threads/thread-1/turns/reconcile";
+    expect((await fetch(base+path)).status).toBe(401);
+    expect((await fetch(base+path,{headers:{Authorization:"Bearer bob",
+      "Idempotency-Key":"original-key"}})).status).toBe(404);
+    const absent=await fetch(base+path,{headers:{Authorization:"Bearer alice",
+      "Idempotency-Key":"missing"}});
+    expect(await absent.json()).toEqual({turn:null});
+    const own=await fetch(base+path,{headers:{Authorization:"Bearer alice",
+      "Idempotency-Key":"original-key","X-OmniAgent-Owner-Id":"owner-bob"}});
+    expect(own.status).toBe(200);
+    expect(await own.json()).toEqual({turn:{turnId:"turn-1",status:"COMPLETED"}});
+    expect(store.message).not.toHaveBeenCalled();
+  });
+
+  it("returns latest persisted turn to Owner only, without re-dispatch",async()=>{
+    const {base,store}=await app();
+    const path="/v1/threads/thread-1/turns/latest";
+    expect((await fetch(base+path)).status).toBe(401);
+    expect((await fetch(base+path,{headers:{Authorization:"Bearer bob"}})).status).toBe(404);
+    const response=await fetch(base+path,{headers:{Authorization:"Bearer alice"}});
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({latest:{turnId:"turn-1",status:"COMPLETED"}});
+    expect(store.latestTurn).toHaveBeenCalledWith("owner-alice","thread-1");
+    expect(store.message).not.toHaveBeenCalled();
+  });
+
+  it("only the authenticated Owner receives a no-payload persistence receipt", async () => {
+    const {base,store}=await app();
+    const path="/v1/threads/thread-1/turns/turn-1/receipt";
+    expect((await fetch(base+path)).status).toBe(401);
+    expect((await fetch(base+path,{headers:{Authorization:"Bearer service"}})).status).toBe(401);
+    const own=await fetch(base+path,{headers:{Authorization:"Bearer alice"}});
+    expect(own.status).toBe(200);
+    expect(await own.json()).toEqual({status:"COMPLETED",textPersisted:true,
+      terminalPersisted:true,durableCompleted:true});
+    expect((await fetch(base+path,{headers:{Authorization:"Bearer bob"}})).status).toBe(404);
+    expect(store.turnReceipt).toHaveBeenCalledWith("owner-alice","thread-1","turn-1");
+    expect(store.turnReceipt).toHaveBeenCalledWith("owner-bob","thread-1","turn-1");
+  });
+
+  it("exposes only the authenticated Owner identity and current disabled flags", async () => {
+    const {base}=await app();
+    expect((await fetch(base+"/v1/me")).status).toBe(401);
+    expect((await fetch(base+"/v1/me",{
+      headers:{Authorization:"Bearer service"}})).status).toBe(401);
+    expect(await (await fetch(base+"/v1/me",{
+      headers:{Authorization:"Bearer alice"}})).json()).toEqual({
+        ownerId:"owner-alice",modelDispatchEnabled:false,byokManagementEnabled:false});
+    expect(await (await fetch(base+"/v1/me",{
+      headers:{Authorization:"Bearer bob"}})).json()).toEqual({
+        ownerId:"owner-bob",modelDispatchEnabled:false,byokManagementEnabled:false});
+  });
+
+  it("reveals only verified Owner model entitlements and denies anonymous model inventory", async () => {
+    const ownerModel = {runtime:"gemini",model:"gemini-3.5-flash-lite"};
+    const worker={runOnce:vi.fn(),availableModels:vi.fn((ownerId:string) =>
+      ownerId === "owner-alice" ? [ownerModel] : []),
+      canDispatch:vi.fn((ownerId:string,runtime?:string,model?:string) =>
+        ownerId === "owner-alice" && runtime === ownerModel.runtime && model === ownerModel.model)};
+    const {base}=await app(worker);
+    expect((await fetch(base+"/v1/models")).status).toBe(401);
+    const alice=await fetch(base+"/v1/models",{headers:{Authorization:"Bearer alice"}});
+    expect(await alice.json()).toEqual({dispatchEnabled:true,items:[ownerModel]});
+    const bob=await fetch(base+"/v1/models",{headers:{Authorization:"Bearer bob"}});
+    expect(await bob.json()).toEqual({dispatchEnabled:false,items:[]});
+    const disabled=await app();
+    const result=await fetch(disabled.base+"/v1/models",{headers:{Authorization:"Bearer alice"}});
+    expect(await result.json()).toEqual({dispatchEnabled:false,items:[]});
+  });
+
+  it("keeps BYOK disabled by default and never exposes an uploaded provider key", async () => {
+    const disabled=await app();
+    expect((await fetch(disabled.base+"/v1/credentials",{
+      headers:{Authorization:"Bearer alice"}})).status).toBe(404);
+    const raw="fake-secret-provider-credential-123";
+    const credentials={
+      list:vi.fn(async (_ownerId:string)=>[{
+        profile_id:"00000000-0000-4000-8000-000000000003",
+        provider:"gemini" as const,status:"ACTIVE" as const,created_at:"fixture"
+      }]),
+      create:vi.fn(async (_ownerId:string,_provider:"gemini" | "openrouter",_value:string)=>({
+        profile_id:"00000000-0000-4000-8000-000000000003",
+        provider:"gemini" as const,status:"ACTIVE" as const,created_at:"fixture"
+      })),
+      revoke:vi.fn(async (_ownerId:string,_profileId:string)=>({
+        profile_id:"00000000-0000-4000-8000-000000000003",
+        provider:"gemini" as const,status:"REVOKED" as const,created_at:"fixture"
+      }))
+    };
+    const {base}=await app(undefined,credentials);
+    expect((await fetch(base+"/v1/credentials")).status).toBe(401);
+    const headers={Authorization:"Bearer alice","Content-Type":"application/json"};
+    const created=await fetch(base+"/v1/credentials",{
+      method:"POST",headers,body:JSON.stringify({provider:"gemini",apiKey:raw})});
+    expect(created.status).toBe(201);
+    expect(JSON.stringify(await created.json())).not.toContain(raw);
+    expect(credentials.create).toHaveBeenCalledWith("owner-alice","gemini",raw);
+    const listing=await fetch(base+"/v1/credentials",{headers});
+    expect(listing.status).toBe(200);
+    expect(JSON.stringify(await listing.json())).not.toContain(raw);
+    expect(credentials.list).toHaveBeenCalledWith("owner-alice");
+    const revoke=await fetch(base+"/v1/credentials/00000000-0000-4000-8000-000000000003",{
+      method:"DELETE",headers});
+    expect(revoke.status).toBe(200);
+    expect(credentials.revoke).toHaveBeenCalledWith("owner-alice",
+      "00000000-0000-4000-8000-000000000003");
+    expect((await fetch(base+"/v1/credentials",{
+      method:"POST",headers,body:JSON.stringify({provider:"gemini",apiKey:raw,ownerId:"owner-bob"})})).status).toBe(400);
+    expect(credentials.create).toHaveBeenCalledTimes(1);
   });
 
   it("uses UTF-8 and permanently deletes only the authenticated owner's thread", async () => {
@@ -60,6 +243,21 @@ describe("omniAgent Chat API ownership boundary", () => {
     expect(events.headers.get("content-type")).toContain("charset=utf-8");
     expect(await events.text()).toContain("你好，世界");
   });
+  it("refuses non-Lite Gemini thread creation before persisting anything", async () => {
+    const {base,store}=await app();
+    const headers={Authorization:"Bearer alice","Idempotency-Key":"not-lite",
+      "Content-Type":"application/json"};
+    for (const model of ["gemini-3.8-flash","gemini-3.7-flash",
+      "gemini-3.6-flash","gemini-2.5-flash","gemini-3.1-pro-preview"]) {
+      const result=await fetch(base+"/v1/threads",{
+        method:"POST",headers,body:JSON.stringify({runtime:"gemini",model,
+          assistantProfile:"default"})});
+      expect(result.status).toBe(400);
+      expect(await result.json()).toEqual({error:"invalid_request"});
+    }
+    expect(store.createThread).not.toHaveBeenCalled();
+  });
+
   it("accepts provider/model IDs without relaxing thread IDs", async () => {
     const { base, store } = await app();
     const headers = { Authorization: "Bearer alice", "Idempotency-Key": "key-1", "Content-Type": "application/json" };
@@ -104,7 +302,7 @@ describe("omniAgent Chat API ownership boundary", () => {
     const { base, store } = await app(worker);
     const headers = { Authorization: "Bearer alice", "Idempotency-Key": "key-1", "Content-Type": "application/json" };
     const created = await fetch(base + "/v1/threads", { method: "POST", headers,
-      body: JSON.stringify({ runtime: "gemini", model: "gemini-2.5-flash", assistantProfile: "default", ownerId: "owner-bob" }) });
+      body: JSON.stringify({ runtime: "gemini", model: "gemini-3.5-flash-lite", assistantProfile: "default", ownerId: "owner-bob" }) });
     expect(created.status).toBe(201);
     expect((await created.json()).owner_id).toBe("owner-alice");
     const message = await fetch(base + "/v1/threads/thread-1/messages", { method: "POST", headers,
@@ -117,6 +315,73 @@ describe("omniAgent Chat API ownership boundary", () => {
     expect(await replay.text()).toContain("event: item_upsert");
     expect(store.message).toHaveBeenCalledWith("owner-alice","thread-1","hello","key-1");
     expect((await (await fetch(base + "/v1/threads", { headers: { Authorization: "Bearer bob" } })).json()).items[0].owner_id).toBe("owner-bob");
+  });
+
+  it("restores only the signed-in Owner active-turn status without native handles", async () => {
+    const {base,store}=await app();
+    store.activeTurn.mockImplementation(async(ownerId:string) =>
+      ownerId==="owner-alice"?{turnId:"turn-alice",status:"approval_required"}:null);
+    expect((await fetch(base+"/v1/threads/thread-1/turns/active")).status).toBe(401);
+    const alice=await fetch(base+"/v1/threads/thread-1/turns/active",{
+      headers:{Authorization:"Bearer alice"}});
+    expect(await alice.json()).toEqual({active:{
+      turnId:"turn-alice",status:"approval_required"}});
+    const bob=await fetch(base+"/v1/threads/thread-1/turns/active",{
+      headers:{Authorization:"Bearer bob"}});
+    expect(await bob.json()).toEqual({active:null});
+    expect(store.activeTurn).toHaveBeenCalledWith("owner-alice","thread-1");
+    expect(store.activeTurn).toHaveBeenCalledWith("owner-bob","thread-1");
+  });
+
+  it("resumes SSE replay from Last-Event-ID without cross-owner cursor injection", async () => {
+    const {base,store}=await app();
+    const auth={Authorization:"Bearer alice"};
+    const ok=await fetch(base+"/v1/threads/thread-1/events",{headers:{
+      ...auth,"Last-Event-ID":"42"}});
+    expect(ok.status).toBe(200);
+    expect(store.events).toHaveBeenCalledWith("owner-alice","thread-1",42,200);
+    const override=await fetch(base+"/v1/threads/thread-1/events?cursor=1",{
+      headers:{...auth,"Last-Event-ID":"42"}});
+    expect(override.status).toBe(200);
+    expect(store.events).toHaveBeenLastCalledWith("owner-alice","thread-1",1,200);
+    expect((await fetch(base+"/v1/threads/thread-1/events",{
+      headers:{...auth,"Last-Event-ID":"NaN"}})).status).toBe(400);
+  });
+
+  it("routes Codex approvals and polling to the native Owner-bound worker", async () => {
+    const worker={
+      runOnce:vi.fn(),
+      canDispatch:vi.fn((ownerId:string,runtime?:string) =>
+        ownerId==="owner-alice" && runtime==="codex"),
+      continueCodex:vi.fn(async () => ({status:"completed" as const,turnId:"turn-1"}))
+    };
+    const {base,store}=await app(worker);
+    store.thread.mockResolvedValue({owner_id:"owner-alice",thread_id:"thread-1",
+      runtime:"codex",model:"gpt-6-luna"});
+    const headers={Authorization:"Bearer alice","Content-Type":"application/json"};
+    const resumed=await fetch(base+"/v1/threads/thread-1/turns/turn-1/refresh",{
+      method:"POST",headers});
+    expect(resumed.status).toBe(200);
+    expect(worker.continueCodex).toHaveBeenCalledWith(
+      "owner-alice","thread-1","turn-1","poll");
+    const digest="sha256:"+"e".repeat(64);
+    const approved=await fetch(base+"/v1/threads/thread-1/turns/turn-1/approvals/17",{
+      method:"POST",headers,body:JSON.stringify({paramsDigest:digest,approved:true})});
+    expect(approved.status).toBe(200);
+    expect(worker.continueCodex).toHaveBeenCalledWith(
+      "owner-alice","thread-1","turn-1","approval",
+      {requestId:"17",paramsDigest:digest,approved:true});
+    expect(store.decideApproval).not.toHaveBeenCalled();
+    store.cancelQueuedTurn.mockRejectedValueOnce(new ChatConflict("already running"));
+    const cancelled=await fetch(base+"/v1/threads/thread-1/turns/turn-1/cancel",{
+      method:"POST",headers});
+    expect(cancelled.status).toBe(200);
+    expect(worker.continueCodex).toHaveBeenCalledWith(
+      "owner-alice","thread-1","turn-1","cancel");
+    const denied=await fetch(base+"/v1/threads/thread-1/turns/turn-1/refresh",{
+      method:"POST",headers:{Authorization:"Bearer bob"}});
+    expect(denied.status).toBe(503);
+    expect(worker.continueCodex).toHaveBeenCalledTimes(3);
   });
 
   it("requires separate user and service identities for decisions and runtime writes", async () => {
@@ -141,6 +406,28 @@ describe("omniAgent Chat API ownership boundary", () => {
       body:JSON.stringify({ ownerId:"owner-alice",threadId:"thread-1",turnId:"turn-1",eventId:"event-1",type:"text_delta",payload:{} }) });
     expect(serviceWrite.status).toBe(201);
     expect(store.appendEvent).toHaveBeenCalledWith("owner-alice","thread-1","turn-1","event-1","text_delta",{});
+  });
+
+  it("exposes only service-authenticated read-only reconciliation metadata", async () => {
+    const worker={
+      canDispatch:vi.fn(() => false),
+      runOnce:vi.fn(),
+      inspectRunningCandidates:vi.fn(async () => ({
+        status:"read_only",ageBasis:"queued_created_at_not_claimed_at",
+        items:[{owner_id:"owner-alice",thread_id:"thread-1",turn_id:"turn-1",
+          status:"RUNNING",created_at:"2026-10-10T00:00:00Z"}]
+      }))
+    };
+    const {base}=await app(worker);
+    const route=base+"/internal/v1/chat/reconciliation:candidates";
+    expect((await fetch(route)).status).toBe(401);
+    expect((await fetch(route,{headers:{Authorization:"Bearer alice"}})).status).toBe(401);
+    const result=await fetch(route,{headers:{Authorization:"Bearer service"}});
+    expect(result.status).toBe(200);
+    expect(await result.json()).toMatchObject({status:"read_only",
+      items:[{status:"RUNNING",thread_id:"thread-1"}]});
+    expect(worker.inspectRunningCandidates).toHaveBeenCalledOnce();
+    expect(worker.runOnce).not.toHaveBeenCalled();
   });
 
   it("rejects anonymous and human requests to disabled internal dispatch", async () => {
@@ -174,7 +461,7 @@ describe("omniAgent Chat API ownership boundary", () => {
       body:JSON.stringify({ threadId:"thread-2" }) });
     expect(fork.status).toBe(201);
     expect(store.createThread).toHaveBeenCalledWith("owner-alice",{
-      runtime:"gemini",model:"gemini-2.5-flash",assistantProfile:"default",
+      runtime:"gemini",model:"gemini-3.5-flash-lite",assistantProfile:"default",
       parentThreadId:"thread-1",threadId:"thread-2" },"fork-1");
     const cancel = await fetch(base + "/v1/threads/thread-1/turns/turn-1/cancel", { method:"POST", headers });
     expect(cancel.status).toBe(200);

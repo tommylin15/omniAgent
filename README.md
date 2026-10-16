@@ -1,25 +1,20 @@
 # omniAgent
 
-Independent Agent runtime, Chat API/storage target, provider/worker orchestration layer, and Flutter Chat UI source.
+Independent Chat and Agent platform: Flutter frontend, owner-scoped Chat API/PostgreSQL, private Agent Gateway and Shared Codex. **Full product status is PARTIAL**, not general-availability acceptance.
 
-omniAgent is the authoritative owner of its Chat/Gateway/UI source and current deployment documentation. Phase 6B remains partial: the recorded Gateway candidate and real Gemini/OpenRouter provider probes passed at their cited checkpoints, while durable Chat→Gateway dispatch, real Chat/UI deployment, multi-owner acceptance, Codex owner auth, storage cutover, and final acceptance remain open.
+## Current verified runtime (2026-10-14, Asia/Taipei)
 
-## Current architecture direction
+- Gateway-only Gemini production: **PASS**. [Signed three-caller release #38559065522](https://github.com/tommylin15/omniAgent/actions/runs/38559065522).
+- Independent Cloud Run formal serving, IAM and revision readback: **PASS**. Chat `00069-tep`, Gateway `00076-pog`, Shared Codex `00046-naj`, each Ready at 100% traffic, [audit attempt 3](https://github.com/tommylin15/omniAgent/actions/runs/38498845455/attempts/3).
+- Cloud Run revision cleanup: **PASS at snapshot**, 31 removed, each service exactly 10 left. [Execution #38574373341](https://github.com/tommylin15/omniAgent/actions/runs/38574373341).
+- Gateway `GEMINI_SHARED_EXECUTION_ENABLED=true`, but Chat `CHAT_DISPATCH_ENABLED=false` in formal production. A private Gateway live route is **not** full public Chat inference.
+- Single approved Owner Gemini Preview and PostgreSQL persisted response: PASS for that limited path, [DB readback #38381669212](https://github.com/tommylin15/omniAgent/actions/runs/38381669212).
+- Other consumer P0-V paths: technical handoff **consumer-reported PASS**, without independent per-consumer production/database receipt in this repository.
 
-omniAgent keeps operational state and long-term data as separate concerns:
+## Documentation
 
-- **PostgreSQL / `omni_chat`** — authoritative hot state for owners, threads, turns, events, approvals, Skills, idempotency, dispatch state, and replay cursors.
-- **GCS** — target object/artifact layer for large message bodies, attachments, tool outputs, exports, and other payloads that should not inflate the hot relational path.
-- **Iceberg on GCS** — target immutable historical/audit/analytics lakehouse for conversation events, worker/tool executions, provider usage, errors/retries, and long-term history.
-- **BigLake/BigQuery integration** — target analytics/query layer over archived data; implementation and cost-impacting resources require separate approval.
-- **Credential plane** — target BYOK + platform-provided credential model. Provider credentials are independent from owner memory; sharing a platform provider key never permits shared Chat memory or execution context.
+The authoritative **current** status and requirements are [TODO](doc/todo.md), [Acceptance](doc/acceptance.md), [WBS](doc/wbs.md), [SPEC](doc/spec.md), [CI/CD runbook](docs/cicd-ghcr-actions-runbook.md), [Gateway integration contract](docs/shared-gemini-vertical-slice.md) and [risk audit](docs/project-risk-audit-2026-10-14.md). Historical Cloud Build and older stage checkpoints are evidence, not current release status.
 
-The accepted design keeps Iceberg out of the runtime queue/state-machine path. PostgreSQL remains the source of truth for live turn transitions and owner-isolated replay. Historical archival is asynchronous.
+PostgreSQL/omni_chat remains the hot state authority. GCS artifacts and Iceberg/BigLake analytics remain target architecture. Direct Groq provider **source exists** but has no accepted full Chat dispatch integration. BYOK/credential management remains separately gated.
 
-Target provider set is Gemini, OpenRouter, Codex, and Groq. Current source contains Gemini/OpenRouter/Codex support; direct Groq support and the generalized Credential Resolver are planning targets, not implemented evidence.
-
-Node: run `npm ci`, `npm run build`, and `npm test` here. Flutter: run `flutter pub get`, `flutter analyze lib test`, `flutter test`, and `flutter build web` from `apps/agent_app`. No credentials or real endpoint values are checked in.
-
-**CI/CD target (2026-10-08, migration OPEN):** GitHub Actions full CI + public GHCR immutable digests → Cloud Run 0%-traffic candidate revisions → real acceptance / protected promotion / rollback. The new release process does not invoke Cloud Build or explicitly write Artifact Registry/GCS. [Policy](doc/spec.md#8-cicd--github-actions--public-ghcr--cloud-run-2026-10-08) · [runbook](docs/cicd-ghcr-actions-runbook.md).
-
-See [current control documents](doc/README.md), [architecture](docs/architecture.md), [storage ownership/import gate](docs/chat-storage-migration.md), [active TODO](doc/todo.md), and [deployment runbook](docs/runbook-ui-cutover.md).
+Development: `npm ci && npm run build && npm test` at repository root; `flutter pub get`, `flutter analyze lib test`, `flutter test`, `flutter build web` in `apps/agent_app`. These commands alone are not evidence a specific commit passed CI or production.

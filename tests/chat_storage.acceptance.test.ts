@@ -2,7 +2,14 @@ import { readFileSync } from "node:fs";
 import { Pool } from "pg";
 import { describe, expect, it } from "vitest";
 import { ChatConflict, ChatNotFound, ChatStore } from "../services/chat-api/storage.js";
-import { ChatDispatcher } from "../services/chat-api/gateway_dispatch.js";
+import { ChatDispatcher, makeSignedGatewayInvoker } from "../services/chat-api/gateway_dispatch.js";
+import { makeChatServer } from "../services/chat-api/server.js";
+import { makeServer } from "../services/agent-gateway/server.js";
+import { parseModelEntitlements } from "../services/chat-api/model_entitlements.js";
+import type { AddressInfo } from "node:net";
+import { CredentialRegistry } from "../services/chat-api/credential_management.js";
+import { CodexSessionStore, parseCodexPhase } from "../services/chat-api/codex_session_store.js";
+import { parseChatDispatchBudget } from "../services/chat-api/dispatch_budget.js";
 
 const dsn = process.env.PG_TEST_URL;
 describe.runIf(Boolean(dsn))("isolated PostgreSQL ChatStore acceptance", () => {
@@ -15,7 +22,7 @@ describe.runIf(Boolean(dsn))("isolated PostgreSQL ChatStore acceptance", () => {
     try {
       expect((await pool.query("SELECT current_database() AS name")).rows[0].name).toBe("omniagent_acceptance");
       expect((await pool.query("SELECT to_regclass('omni_chat.owners') AS present")).rows[0].present).toBeNull();
-      for (const filename of ["001_chat_ownership.sql", "002_skill_storage.sql", "003_runtime_bindings.sql"]) {
+      for (const filename of ["001_chat_ownership.sql", "002_skill_storage.sql", "003_credential_metadata.sql", "004_codex_live_turns.sql", "005_codex_trial_3_turn_budget.sql", "007_chat_model_dispatch_budget.sql"]) {
         const sql = readFileSync("infra/postgres/migrations/" + filename,"utf8");
         await pool.query(sql);
         await pool.query(sql);
@@ -30,6 +37,26 @@ describe.runIf(Boolean(dsn))("isolated PostgreSQL ChatStore acceptance", () => {
       const b = await store.owner("https://accounts.google.com","bob");
       expect(await store.owner("https://accounts.google.com","alice")).toBe(a);
       expect(b).not.toBe(a);
+      // FR-013: a credential reference is not a credential value. The
+      // registry is owner-bound and cannot resolve PENDING/REVOKING/REVOKED.
+      const credentials=new CredentialRegistry(pool);
+      const profile="00000000-0000-4000-8000-000000000091";
+      const ref="projects/test-project/secrets/omniagent-byok-"+profile.replace(/-/g,"")+"/versions/1";
+      await credentials.reserve(a,profile,"gemini",ref);
+      expect((await credentials.list(a)).map(row=>row.status)).toEqual(["PENDING"]);
+      expect(await credentials.list(b)).toEqual([]);
+      expect(JSON.stringify(await credentials.list(a))).not.toContain("secret_version");
+      await expect(credentials.resolveRef(a,"gemini",profile)).rejects.toBeInstanceOf(ChatNotFound);
+      await expect(credentials.activate(b,profile)).rejects.toBeInstanceOf(ChatConflict);
+      expect((await credentials.activate(a,profile)).status).toBe("ACTIVE");
+      expect(await credentials.resolveRef(a,"gemini",profile)).toBe(ref);
+      await expect(credentials.resolveRef(b,"gemini",profile)).rejects.toBeInstanceOf(ChatNotFound);
+      await expect(credentials.resolveRef(a,"openrouter",profile)).rejects.toBeInstanceOf(ChatNotFound);
+      await expect(credentials.beginRevoke(b,profile)).rejects.toBeInstanceOf(ChatNotFound);
+      expect((await credentials.beginRevoke(a,profile)).status).toBe("REVOKING");
+      await expect(credentials.resolveRef(a,"gemini",profile)).rejects.toBeInstanceOf(ChatNotFound);
+      expect((await credentials.finalizeRevoke(a,profile)).status).toBe("REVOKED");
+
       const input = { threadId:"thread-a", runtime:"gemini" as const, model:"test-model", assistantProfile:"default" };
       const thread = await store.createThread(a,input,"create-1");
       expect(thread.thread_id).toBe("thread-a");
@@ -44,10 +71,20 @@ describe.runIf(Boolean(dsn))("isolated PostgreSQL ChatStore acceptance", () => {
       const first = await store.message(a,"thread-a","hello","message-1");
       const turnId = first.turn.turn_id as string;
       expect(first.turn.status).toBe("QUEUED");
+      expect(await store.turnReceipt(a,"thread-a",turnId))
+        .toEqual({status:"QUEUED",textPersisted:false,
+          terminalPersisted:false,durableCompleted:false});
+      await expect(store.turnReceipt(b,"thread-a",turnId))
+        .rejects.toBeInstanceOf(ChatNotFound);
       expect(first.event.seq).toBe("0");
       expect((await store.message(a,"thread-a","hello","message-1")).turn.turn_id).toBe(turnId);
       await expect(store.message(a,"thread-a","different","message-1")).rejects.toBeInstanceOf(ChatConflict);
       await expect(store.message(b,"thread-a","hello","message-1")).rejects.toBeInstanceOf(ChatNotFound);
+      expect(await store.turnByMessageKey(a,"thread-a","message-1"))
+        .toEqual({turnId,status:"QUEUED"});
+      expect(await store.turnByMessageKey(a,"thread-a","missing")).toBeNull();
+      await expect(store.turnByMessageKey(b,"thread-a","message-1"))
+        .rejects.toBeInstanceOf(ChatNotFound);
       const appended = await store.appendEvent(a,"thread-a",turnId,"event-1","text_delta",{ text:"world" });
       expect(Number(appended.seq)).toBe(1);
       expect((await store.events(a,"thread-a",-1,200)).map((row) => Number(row.seq))).toEqual([0,1]);
@@ -63,11 +100,6 @@ describe.runIf(Boolean(dsn))("isolated PostgreSQL ChatStore acceptance", () => {
       await expect(store.decideApproval(b,"thread-a",turnId,"approval-1",digest,true)).rejects.toBeInstanceOf(ChatConflict);
       await expect(store.decideApproval(a,"thread-a",turnId,"approval-1","sha256:"+"c".repeat(64),true)).rejects.toBeInstanceOf(ChatConflict);
       expect((await store.decideApproval(a,"thread-a",turnId,"approval-1",digest,true)).status).toBe("APPROVED");
-      expect(await store.unforwardedApprovals(a,"thread-a",turnId)).toEqual(["approval-1"]);
-      await expect(store.markApprovalForwarded(b,"thread-a",turnId,"approval-1")).rejects.toBeInstanceOf(ChatConflict);
-      await store.markApprovalForwarded(a,"thread-a",turnId,"approval-1");
-      expect(await store.unforwardedApprovals(a,"thread-a",turnId)).toEqual([]);
-      await expect(store.markApprovalForwarded(a,"thread-a",turnId,"approval-1")).rejects.toBeInstanceOf(ChatConflict);
       const queued = await store.message(a,"thread-a","second","message-2");
       expect((await store.cancelQueuedTurn(a,"thread-a",queued.turn.turn_id as string)).status).toBe("CANCELLED");
       await expect(store.cancelQueuedTurn(b,"thread-a",queued.turn.turn_id as string)).rejects.toBeInstanceOf(ChatNotFound);
@@ -104,6 +136,43 @@ describe.runIf(Boolean(dsn))("isolated PostgreSQL ChatStore acceptance", () => {
       // No automatic replay of in-flight provider effects after a crash.
       expect(await store.claimNextQueuedTurn([a,b])).toBeNull();
 
+      // Read-only diagnostics expose only old RUNNING identifiers from
+      // explicitly approved owners, never prompts or other owners' rows.
+      await pool.query(`UPDATE omni_chat.turns SET created_at=now()-interval '11 minutes'
+        WHERE owner_id=$1 AND turn_id=$2`,[a,observed.get(a)!.turnId]);
+      const candidates=await store.runningReconciliationCandidates([a]);
+      expect(candidates.some(row=>row.turn_id===observed.get(a)!.turnId)).toBe(true);
+      expect(candidates.every(row=>row.owner_id===a && row.status==="RUNNING")).toBe(true);
+      expect(JSON.stringify(candidates)).not.toContain("dispatch alice");
+      expect(JSON.stringify(candidates)).not.toContain("dispatch bob");
+      expect(await store.runningReconciliationCandidates([])).toEqual([]);
+
+      // A worker may only claim the exact allowlisted owner/runtime/model.
+      // A denied model stays QUEUED and must never be sent to a provider.
+      await store.createThread(a,{...input,threadId:"model-denied",model:"unlisted-model"},"denied-create");
+      const blockedTurn=await store.message(a,"model-denied","do not invoke","denied-message");
+      const rules=[{ownerId:a,runtime:"gemini" as const,model:"test-model",
+        credentialMode:"platform" as const}];
+      expect(await store.claimNextQueuedTurn([a],undefined,rules)).toBeNull();
+      expect((await pool.query(
+        "SELECT status FROM omni_chat.turns WHERE owner_id=$1 AND thread_id='model-denied'",
+        [a])).rows[0].status).toBe("QUEUED");
+      await store.createThread(a,{...input,threadId:"model-allowed"},"allowed-create");
+      const allowedTurn=await store.message(a,"model-allowed","model explicitly allowed","allowed-message");
+      expect(await store.claimNextQueuedTurn([a],undefined,rules)).toMatchObject({
+        ownerId:a,threadId:"model-allowed",turnId:allowedTurn.turn.turn_id,
+        model:"test-model",runtime:"gemini"
+      });
+      expect(await store.claimNextQueuedTurn([a],undefined,rules)).toBeNull();
+      expect((await pool.query(
+        "SELECT status FROM omni_chat.turns WHERE owner_id=$1 AND thread_id='model-denied'",
+        [a])).rows[0].status).toBe("QUEUED");
+      expect(blockedTurn.turn.status).toBe("QUEUED");
+      // Leave the shared test fixture queue clean for the subsequent test
+      // sections; the denial above has already been checked on the database.
+      expect((await store.cancelQueuedTurn(a,"model-denied",String(blockedTurn.turn.turn_id))).status)
+        .toBe("CANCELLED");
+
       // Real ephemeral Postgres persists Gateway replies under the claimed
       // owner only. The provider is stubbed: GCP live integration is separate.
       const pending=await store.message(b,"thread-b","gateway hello","gateway-1");
@@ -124,25 +193,54 @@ describe.runIf(Boolean(dsn))("isolated PostgreSQL ChatStore acceptance", () => {
       await expect(store.appendEvent(a,"thread-b",pending.turn.turn_id as string,
         "foreign","text_delta",{text:"not allowed"})).rejects.toBeInstanceOf(ChatNotFound);
 
+      // An entire Gateway response must be visible atomically: a database
+      // failure on the second event rolls back the first and leaves RUNNING
+      // for explicit reconciliation, never a partial streamed answer.
+      await store.createThread(a,{...input,threadId:"atomic-thread"},"atomic-create");
+      const atomicQueued = await store.message(a,"atomic-thread","atomic prompt","atomic-message");
+      const atomicId = String(atomicQueued.turn.turn_id);
+      expect(await store.claimNextQueuedTurn([a],{
+        ownerId:a,threadId:"atomic-thread",turnId:atomicId
+      })).toMatchObject({ownerId:a,threadId:"atomic-thread",turnId:atomicId});
+      const batch = [
+        {eventId:"gateway-atomic-success",type:"text_delta",payload:{text:"你好"}},
+        {eventId:"gateway-atomic-fail",type:"turn_completed",payload:{status:"completed"}}
+      ];
+      await pool.query(`ALTER TABLE omni_chat.events ADD CONSTRAINT reject_atomic_second
+        CHECK (event_id <> 'gateway-atomic-fail')`);
+      try {
+        await expect(store.appendGatewayEvents(a,"atomic-thread",atomicId,batch))
+          .rejects.toMatchObject({code:"23514"});
+        const partial = await store.events(a,"atomic-thread",-1,200);
+        expect(partial.map(row=>row.event_type)).toEqual(["item_upsert"]);
+        expect((await pool.query(`SELECT status FROM omni_chat.turns WHERE
+          owner_id=$1 AND thread_id='atomic-thread' AND turn_id=$2`,[a,atomicId])).rows[0].status)
+          .toBe("RUNNING");
+      } finally {
+        await pool.query("ALTER TABLE omni_chat.events DROP CONSTRAINT reject_atomic_second");
+      }
+      await store.appendGatewayEvents(a,"atomic-thread",atomicId,batch);
+      const committed = await store.events(a,"atomic-thread",-1,200);
+      expect(committed.map(row=>row.event_type)).toEqual(
+        ["item_upsert","text_delta","turn_completed"]);
+      expect(committed.map(row=>Number(row.seq))).toEqual([0,1,2]);
+      expect(committed[1].payload).toEqual({text:"你好"});
+      expect((await pool.query(`SELECT status FROM omni_chat.turns WHERE
+        owner_id=$1 AND thread_id='atomic-thread' AND turn_id=$2`,[a,atomicId])).rows[0].status)
+        .toBe("COMPLETED");
+      await expect(store.appendGatewayEvents(a,"atomic-thread",atomicId,batch))
+        .rejects.toBeInstanceOf(ChatConflict);
+      await expect(store.appendGatewayEvents(b,"atomic-thread",atomicId,batch))
+        .rejects.toBeInstanceOf(ChatNotFound);
+      await expect(store.appendGatewayEvents(a,"atomic-thread",atomicId,[
+        {eventId:"gateway-invalid-secret",type:"turn_error",payload:{api_key:"never-store"}}
+      ])).rejects.toThrow("credential");
+      expect((await store.events(a,"atomic-thread",-1,200))).toHaveLength(3);
+
       const disposable = await store.createThread(a,{...input,threadId:"delete-me"},"delete-create");
       await store.message(a,String(disposable.thread_id),"永久刪除測試","delete-message");
       const running = await store.claimNextQueuedTurn([a], {ownerId:a,threadId:"delete-me",turnId:String((await store.message(a,"delete-me","永久刪除測試","delete-message")).turn.turn_id)});
       expect(running?.threadId).toBe("delete-me");
-      const native={ownerId:a,threadId:"delete-me",turnId:running!.turnId,turnHandle:"test-handle",
-        nativeThreadId:"native-thread",nativeTurnId:"native-turn",cursor:-1};
-      await store.saveRuntimeBinding(native);
-      await store.saveRuntimeBinding(native);
-      await expect(store.saveRuntimeBinding({...native,turnHandle:"different"})).rejects.toBeInstanceOf(ChatConflict);
-      await expect(store.acquireRuntimeBinding(b,"delete-me",running!.turnId)).rejects.toBeInstanceOf(ChatNotFound);
-      const leased=await store.acquireRuntimeBinding(a,"delete-me",running!.turnId);
-      expect(leased?.turnHandle).toBe("test-handle");
-      expect(await store.acquireRuntimeBinding(a,"delete-me",running!.turnId)).toBeNull();
-      await pool.query(`UPDATE omni_chat.runtime_bindings SET operation_until=now()-interval '1 second' WHERE owner_id=$1 AND thread_id='delete-me'`,[a]);
-      await expect(store.acquireRuntimeBinding(a,"delete-me",running!.turnId)).rejects.toThrow("reconciliation");
-      await store.releaseRuntimeBinding(leased!,4);
-      const resumed=await store.acquireRuntimeBinding(a,"delete-me",running!.turnId);
-      expect(resumed?.cursor).toBe(4);
-      await store.releaseRuntimeBinding(resumed!,4);
       await expect(store.deleteThread(a,"delete-me")).rejects.toBeInstanceOf(ChatConflict);
       await store.appendEvent(a,"delete-me",running!.turnId,"delete-completed","turn_completed",{status:"complete"});
       await store.createThread(a,{...input,threadId:"kept-fork",parentThreadId:"delete-me"},"fork-create");
@@ -150,7 +248,7 @@ describe.runIf(Boolean(dsn))("isolated PostgreSQL ChatStore acceptance", () => {
       await store.deleteThread(a,"delete-me");
       await expect(store.thread(a,"delete-me")).rejects.toBeInstanceOf(ChatNotFound);
       expect((await store.thread(a,"kept-fork")).parent_thread_id).toBeNull();
-      for (const table of ["threads","turns","events","approvals","runtime_bindings"]) {
+      for (const table of ["threads","turns","events","approvals"]) {
         expect((await pool.query(`SELECT count(*) AS n FROM omni_chat.${table} WHERE owner_id=$1 AND thread_id=$2`,[a,"delete-me"])).rows[0].n).toBe("0");
       }
 
@@ -176,6 +274,376 @@ describe.runIf(Boolean(dsn))("isolated PostgreSQL ChatStore acceptance", () => {
         .rejects.toThrow("skill revisions are immutable");
       await store.writeSkillRevision(b,"summary",1,{ prompt:"bob's skill" },"skill-1");
       expect((await store.skillState(b,"summary")).current_revision).toBe(1);
+
+      // True disposable PostgreSQL + both HTTP servers + signed HMAC
+      // + Owner capability endpoint + replay. Stubbed provider never bills.
+      const priorSigning = process.env.MCP_OWNER_SIGNING_KEY;
+      const signingKey = "0123456789abcdef0123456789abcdef";
+      process.env.MCP_OWNER_SIGNING_KEY = signingKey;
+      let requests = 0;
+      const gateway = makeServer(undefined,undefined,undefined,async request => {
+        requests++;
+        return {events:[
+          { ownerId:request.ownerId,threadId:request.threadId,turnId:request.turnId,
+            type:"text_delta",payload:{text:"bounded fixture answer"} },
+          { ownerId:request.ownerId,threadId:request.threadId,turnId:request.turnId,
+            type:"turn_completed",payload:{status:"completed"} }
+        ]};
+      });
+      let chat: ReturnType<typeof makeChatServer> | undefined;
+      try {
+        await new Promise<void>(resolve=>gateway.listen(0,"127.0.0.1",resolve));
+        const gatewayLocal = "http://127.0.0.1:"+(gateway.address() as AddressInfo).port;
+        const invoker = makeSignedGatewayInvoker({
+          url:"https://approved-private-gateway.example.com",
+          audience:"https://approved-gateway.example.com",
+          signingKey,
+          idToken:async()=>"fixture-signed-service-only",
+          fetcher: ((target: RequestInfo | URL,init?: RequestInit) =>
+            fetch(gatewayLocal+new URL(String(target)).pathname,init)) as typeof fetch
+        });
+        const entitlements = parseModelEntitlements(JSON.stringify([
+          {ownerId:a,runtime:"gemini",model:"gemini-3.5-flash-lite",credentialMode:"platform"}
+        ]),[a]);
+        const worker = new ChatDispatcher(store,invoker,[a],entitlements);
+        chat = makeChatServer(store,async token => {
+          if (!["alice","bob"].includes(token)) throw new Error("unauthorized");
+          return {issuer:"https://accounts.google.com",subject:token};
+        },async token => {if(token!=="service")throw new Error("unauthorized");},worker);
+        await new Promise<void>(resolve=>chat!.listen(0,"127.0.0.1",resolve));
+        const url = "http://127.0.0.1:"+(chat.address() as AddressInfo).port;
+        const auth = (owner: string) => ({Authorization:"Bearer "+owner,
+          "Content-Type":"application/json"});
+        expect((await fetch(url+"/v1/models")).status).toBe(401);
+        expect(await (await fetch(url+"/v1/models",{headers:auth("alice")})).json())
+          .toEqual({dispatchEnabled:true,items:[{runtime:"gemini",model:"gemini-3.5-flash-lite"}]});
+        expect(await (await fetch(url+"/v1/models",{headers:auth("bob")})).json())
+          .toEqual({dispatchEnabled:false,items:[]});
+        const threadResponse=await fetch(url+"/v1/threads",{
+          method:"POST",headers:{...auth("alice"),"Idempotency-Key":"joined-create-1"},
+          body:JSON.stringify({runtime:"gemini",model:"gemini-3.5-flash-lite",
+            threadId:"joined-flow",assistantProfile:"default"})});
+        expect(threadResponse.status).toBe(201);
+        expect((await threadResponse.json()).owner_id).toBe(a);
+        const messageResponse=await fetch(url+"/v1/threads/joined-flow/messages",{
+          method:"POST",headers:{...auth("alice"),"Idempotency-Key":"joined-message-1"},
+          body:JSON.stringify({content:"owner-only fixture prompt"})});
+        expect(messageResponse.status).toBe(202);
+        const committed=await messageResponse.json();
+        expect(committed.dispatch.status).toBe("completed");
+        const turnIdForReceipt=String(committed.turn.turn_id);
+        const latestUrl=url+"/v1/threads/joined-flow/turns/latest";
+        expect((await fetch(latestUrl)).status).toBe(401);
+        expect((await fetch(latestUrl,{headers:auth("bob")})).status).toBe(404);
+        const latest=(await (await fetch(latestUrl,{headers:auth("alice")})).json()).latest;
+        expect(latest).toEqual({turnId:turnIdForReceipt,status:"COMPLETED"});
+        expect(JSON.stringify(latest)).not.toContain("owner-only fixture prompt");
+        const reconcileUrl=url+"/v1/threads/joined-flow/turns/reconcile";
+        expect((await fetch(reconcileUrl)).status).toBe(401);
+        expect((await fetch(reconcileUrl,{headers:{
+          ...auth("bob"),"Idempotency-Key":"joined-message-1"}})).status).toBe(404);
+        const reconciled=await fetch(reconcileUrl,{headers:{
+          ...auth("alice"),"Idempotency-Key":"joined-message-1",
+          "X-OmniAgent-Owner-Id":b}});
+        expect(reconciled.status).toBe(200);
+        expect(await reconciled.json()).toEqual({
+          turn:{turnId:turnIdForReceipt,status:"COMPLETED"}});
+        expect(requests).toBe(1);
+        const urlForReceipt=url+"/v1/threads/joined-flow/turns/"+turnIdForReceipt+"/receipt";
+        expect((await fetch(urlForReceipt)).status).toBe(401);
+        expect((await fetch(urlForReceipt,{headers:auth("bob")})).status).toBe(404);
+        const verified=await fetch(urlForReceipt,{headers:auth("alice")});
+        expect(verified.status).toBe(200);
+        const receipt=await verified.json();
+        expect(receipt).toEqual({status:"COMPLETED",textPersisted:true,
+          terminalPersisted:true,durableCompleted:true});
+        expect(JSON.stringify(receipt)).not.toContain("bounded fixture answer");
+        expect(JSON.stringify(receipt)).not.toContain("owner-only fixture prompt");
+        expect(requests).toBe(1);
+        // The same client idempotency key must not invoke the provider twice.
+        const sameMessage=await fetch(url+"/v1/threads/joined-flow/messages",{
+          method:"POST",headers:{...auth("alice"),"Idempotency-Key":"joined-message-1"},
+          body:JSON.stringify({content:"owner-only fixture prompt"})});
+        expect(sameMessage.status).toBe(200);
+        expect((await sameMessage.json()).dispatch.status).toBe("completed");
+        expect(requests).toBe(1);
+        expect((await pool.query(
+          "SELECT count(*)::int AS n FROM omni_chat.events WHERE owner_id=$1 AND thread_id=$2 AND turn_id=$3 AND event_type='turn_completed'",
+          [a,"joined-flow",turnIdForReceipt])).rows[0].n).toBe(1);
+        const replay=await fetch(url+"/v1/threads/joined-flow/events?cursor=-1",{
+          headers:auth("alice")});
+        expect(replay.status).toBe(200);
+        const stream=await replay.text();
+        expect(stream).toContain("event: text_delta");
+        expect(stream).toContain("bounded fixture answer");
+        expect(stream).toContain("event: turn_completed");
+        expect((await fetch(url+"/v1/threads/joined-flow/events?cursor=-1",{
+          headers:auth("bob")})).status).toBe(404);
+
+        // R05: two distinct fixture principals through HTTP + real ephemeral
+        // PostgreSQL. These mock verifiers do NOT count as live Google OAuth.
+        for(const path of [
+          "/v1/threads/joined-flow",
+          "/v1/threads/joined-flow/turns/latest",
+          "/v1/threads/joined-flow/turns/active",
+          "/v1/threads/joined-flow/turns/"+turnIdForReceipt+"/receipt",
+          "/v1/threads/joined-flow/events?cursor=1"
+        ]) {
+          const denied=await fetch(url+path,{headers:auth("bob")});
+          expect(denied.status,path).toBe(404);
+          expect(await denied.text(),path).not.toContain("bounded fixture answer");
+        }
+        for(const entry of [
+          {path:"/v1/threads/joined-flow/fork",body:{}},
+          {path:"/v1/threads/joined-flow/messages",body:{content:"foreign injection"}},
+          {path:"/v1/threads/joined-flow/turns/"+turnIdForReceipt+
+            "/approvals/foreign-decision",body:{approved:true,
+              paramsDigest:"sha256:"+"b".repeat(64)}}
+        ]) {
+          const denied=await fetch(url+entry.path,{method:"POST",
+            headers:{...auth("bob"),"Idempotency-Key":"denied-"+entry.path.length},
+            body:JSON.stringify(entry.body)});
+          expect(denied.status,entry.path).toBe(404);
+        }
+        expect((await fetch(url+"/v1/threads/joined-flow",{
+          method:"DELETE",headers:auth("bob")})).status).toBe(404);
+        const listA=await (await fetch(url+"/v1/threads",{
+          headers:auth("alice")})).json();
+        const listB=await (await fetch(url+"/v1/threads",{
+          headers:auth("bob")})).json();
+        expect(JSON.stringify(listA)).toContain("joined-flow");
+        expect(JSON.stringify(listA)).not.toContain("thread-b");
+        expect(JSON.stringify(listB)).toContain("thread-b");
+        expect(JSON.stringify(listB)).not.toContain("joined-flow");
+        expect(requests).toBe(1);
+        expect((await fetch(url+"/v1/threads/joined-flow/messages",{
+          method:"POST",headers:{...auth("bob"),"Idempotency-Key":"foreign-1"},
+          body:JSON.stringify({content:"cross-owner request"})})).status).toBe(404);
+        expect(requests).toBe(1);
+        const replayFromCursor=await fetch(url+"/v1/threads/joined-flow/events?cursor=1",{
+          headers:auth("alice")});
+        const resumed=await replayFromCursor.text();
+        expect(resumed).not.toContain("owner-only fixture prompt");
+        expect(resumed).toContain("turn_completed");
+        const resumedHeader=await fetch(url+"/v1/threads/joined-flow/events",{
+          headers:{...auth("alice"),"Last-Event-ID":"1"}});
+        expect(resumedHeader.status).toBe(200);
+        const fromLastId=await resumedHeader.text();
+        expect(fromLastId).toContain("turn_completed");
+        expect(fromLastId).not.toContain("owner-only fixture prompt");
+        expect((await fetch(url+"/v1/threads/joined-flow/turns/"+turnIdForReceipt+"/cancel",{
+          method:"POST",headers:auth("bob")})).status).toBe(404);
+        await store.createThread(b,{threadId:"joined-bob-queued",runtime:"gemini",
+          model:"gemini-3.5-flash-lite",assistantProfile:"default"},"joined-bob-create");
+        const queuedForB=await store.message(b,"joined-bob-queued","fixture queued","joined-bob-msg");
+        const cancelled=await fetch(url+"/v1/threads/joined-bob-queued/turns/"+
+          queuedForB.turn.turn_id+"/cancel",{method:"POST",headers:auth("bob")});
+        expect(cancelled.status).toBe(200);
+        expect((await store.turnReceipt(b,"joined-bob-queued",String(queuedForB.turn.turn_id))))
+          .toMatchObject({status:"CANCELLED",terminalPersisted:true,
+            textPersisted:false,durableCompleted:false});
+        expect((await store.turnReceipt(a,"joined-flow",turnIdForReceipt)).durableCompleted).toBe(true);
+      } finally {
+        if (chat) await new Promise<void>(resolve=>chat!.close(()=>resolve()));
+        await new Promise<void>(resolve=>gateway.close(()=>resolve()));
+        if (priorSigning === undefined) delete process.env.MCP_OWNER_SIGNING_KEY;
+        else process.env.MCP_OWNER_SIGNING_KEY=priorSigning;
+      }
+
+      // Bounded non-billable Codex native approval/cancel reconstruction.
+      // No provider process or credentials are launched by this fixture.
+      const native=new CodexSessionStore(pool);
+      await native.ready();
+      // A Codex native turn is impossible without an explicitly enrolled
+      // Owner trial row. This fixture authorizes only b for three starts.
+      await pool.query(
+        `INSERT INTO omni_chat.codex_trial_budgets(owner_id,max_turns,expires_at)
+         VALUES($1,3,now()+interval '60 minutes')`,[b]);
+      await store.createThread(b,{threadId:"native-approval",runtime:"codex",
+        model:"gpt-6-luna",assistantProfile:"default"},"native-create");
+      const pendingNative=await store.message(b,"native-approval","Codex mocked approval","native-message");
+      const nativeTurn=String(pendingNative.turn.turn_id);
+      expect(await store.claimNextQueuedTurn([b],{
+        ownerId:b,threadId:"native-approval",turnId:nativeTurn})).toMatchObject({ownerId:b});
+      const nativeBinding={ownerId:b,threadId:"native-approval",turnId:nativeTurn};
+      const approvalDigest="sha256:"+"e".repeat(64);
+      const future=new Date(Date.now()+180_000).toISOString();
+      const initial=parseCodexPhase({...nativeBinding,status:"AWAITING_APPROVAL",
+        turnHandle:"native-hidden-handle",nativeThreadId:"native-thread",
+        nativeTurnId:"native-turn",cursor:0,events:[
+          {seq:0,threadId:"native-thread",turnId:"native-turn",type:"approval_request",
+            payload:{requestId:"17",operation:"shell",paramsDigest:approvalDigest,
+              expiresAt:future,ownerId:b,threadId:"native-thread",turnId:"native-turn"}}
+        ]},nativeBinding);
+      await native.record(initial);
+      expect(await store.activeTurn(b,"native-approval")).toEqual({
+        turnId:nativeTurn,status:"approval_required"});
+      await expect(store.activeTurn(a,"native-approval"))
+        .rejects.toBeInstanceOf(ChatNotFound);
+      const saved=await store.events(b,"native-approval",-1,100);
+      expect(saved.map(event=>event.event_type)).toEqual(["item_upsert","approval_request"]);
+      expect(JSON.stringify(saved)).not.toContain("native-hidden-handle");
+      expect(JSON.stringify(saved)).not.toContain("native-thread");
+      await expect(native.begin(a,"native-approval",nativeTurn,"approval",{
+        requestId:"17",paramsDigest:approvalDigest,approved:true})).rejects.toBeInstanceOf(ChatNotFound);
+      await expect(native.begin(b,"native-approval",nativeTurn,"approval",{
+        requestId:"17",paramsDigest:"sha256:"+"a".repeat(64),approved:true}))
+        .rejects.toBeInstanceOf(ChatConflict);
+      const control=await native.begin(b,"native-approval",nativeTurn,"approval",{
+        requestId:"17",paramsDigest:approvalDigest,approved:true});
+      expect(control.turnHandle).toBe("native-hidden-handle");
+      expect(control.cursor).toBe(0);
+      await expect(native.begin(b,"native-approval",nativeTurn,"approval",{
+        requestId:"17",paramsDigest:approvalDigest,approved:true})).rejects.toBeInstanceOf(ChatConflict);
+      await native.record(parseCodexPhase({...nativeBinding,status:"COMPLETED",
+        turnHandle:"native-hidden-handle",nativeThreadId:"native-thread",
+        nativeTurnId:"native-turn",cursor:3,events:[
+          {seq:1,threadId:"native-thread",turnId:"native-turn",type:"approval_resolved",
+            payload:{requestId:"17",decision:"accept"}},
+          {seq:2,threadId:"native-thread",turnId:"native-turn",type:"text_delta",
+            payload:{delta:"nonbillable native fixture"}},
+          {seq:3,threadId:"native-thread",turnId:"native-turn",type:"turn_completed",
+            payload:{status:"completed"}}
+        ]},nativeBinding),{requestId:"17",approved:true});
+      expect((await pool.query(
+        "SELECT status FROM omni_chat.turns WHERE owner_id=$1 AND thread_id=$2 AND turn_id=$3",
+        [b,"native-approval",nativeTurn])).rows[0].status).toBe("COMPLETED");
+      expect(await store.activeTurn(b,"native-approval")).toBeNull();
+       const nativeReceipt=await store.turnReceipt(b,"native-approval",nativeTurn);
+       expect(nativeReceipt).toEqual({status:"COMPLETED",textPersisted:true,
+         terminalPersisted:true,durableCompleted:true});
+       await expect(store.turnReceipt(a,"native-approval",nativeTurn))
+         .rejects.toBeInstanceOf(ChatNotFound);
+       const replayedNative=await store.events(b,"native-approval",0,200);
+       expect(replayedNative.map(row=>row.event_type))
+         .toEqual(["approval_request","approval_resolved","text_delta","turn_completed"]);
+       expect(JSON.stringify(nativeReceipt)).not.toContain("native-thread");
+       expect(JSON.stringify(nativeReceipt)).not.toContain("nonbillable native");
+      expect((await pool.query(
+        "SELECT status FROM omni_chat.approvals WHERE owner_id=$1 AND thread_id=$2 AND turn_id=$3",
+        [b,"native-approval",nativeTurn])).rows[0].status).toBe("APPROVED");
+      expect((await pool.query(
+        "SELECT count(*)::int AS count FROM omni_chat.codex_turn_sessions WHERE owner_id=$1",
+        [b])).rows[0].count).toBe(0);
+      await expect(native.begin(b,"native-approval",nativeTurn,"poll"))
+        .rejects.toBeInstanceOf(ChatNotFound);
+      await expect(store.events(a,"native-approval",-1,100)).rejects.toBeInstanceOf(ChatNotFound);
+
+      await store.createThread(b,{threadId:"native-cancel",runtime:"codex",
+        model:"gpt-6-luna",assistantProfile:"default"},"native-cancel-create");
+      const toCancel=await store.message(b,"native-cancel","Mock pending native work","native-cancel-message");
+      const cancelTurn=String(toCancel.turn.turn_id);
+      expect(await store.claimNextQueuedTurn([b],{
+        ownerId:b,threadId:"native-cancel",turnId:cancelTurn})).toMatchObject({ownerId:b});
+      const cancelBinding={ownerId:b,threadId:"native-cancel",turnId:cancelTurn};
+      await native.record(parseCodexPhase({...cancelBinding,status:"IN_PROGRESS",
+        turnHandle:"cancel-handle",nativeThreadId:"cancel-thread",nativeTurnId:"cancel-native",
+        cursor:-1,events:[]},cancelBinding));
+      expect(await store.activeTurn(b,"native-cancel")).toEqual({
+        turnId:cancelTurn,status:"running"});
+      expect((await native.begin(b,"native-cancel",cancelTurn,"cancel")).turnHandle).toBe("cancel-handle");
+      await native.record(parseCodexPhase({...cancelBinding,status:"CANCELLED",
+        turnHandle:"cancel-handle",nativeThreadId:"cancel-thread",nativeTurnId:"cancel-native",
+        cursor:0,events:[{seq:0,threadId:"cancel-thread",turnId:"cancel-native",
+          type:"turn_cancelled",payload:{status:"interrupted"}}]},cancelBinding));
+      expect((await store.events(b,"native-cancel",-1,100)).at(-1)!.event_type).toBe("turn_cancelled");
+      expect((await pool.query(
+        "SELECT status FROM omni_chat.turns WHERE owner_id=$1 AND thread_id=$2 AND turn_id=$3",
+        [b,"native-cancel",cancelTurn])).rows[0].status).toBe("CANCELLED");
+      // A declined/failed/cancelled Codex run is still one spent allowance.
+      expect((await pool.query(
+        "SELECT consumed_turns FROM omni_chat.codex_trial_budgets WHERE owner_id=$1",
+        [b])).rows[0].consumed_turns).toBe(2);
+      await store.createThread(b,{threadId:"trial-three",runtime:"codex",
+        model:"test-codex",assistantProfile:"default"},"trial-three-create");
+      const third=await store.message(b,"trial-three","third bounded attempt","trial-three-msg");
+      await store.createThread(b,{threadId:"trial-four",runtime:"codex",
+        model:"test-codex",assistantProfile:"default"},"trial-four-create");
+      const fourth=await store.message(b,"trial-four","fourth forbidden attempt","trial-four-msg");
+      const thirdTarget={ownerId:b,threadId:"trial-three",turnId:String(third.turn.turn_id)};
+      const fourthTarget={ownerId:b,threadId:"trial-four",turnId:String(fourth.turn.turn_id)};
+      const racing=await Promise.allSettled([
+        store.claimNextQueuedTurn([b],thirdTarget),
+        store.claimNextQueuedTurn([b],fourthTarget)
+      ]);
+      expect(racing.filter(result=>result.status==="fulfilled")).toHaveLength(1);
+      expect(racing.filter(result=>result.status==="rejected")).toHaveLength(1);
+      const winner = racing.find(result=>result.status==="fulfilled");
+      expect(winner?.status==="fulfilled" && winner.value?.ownerId).toBe(b);
+      expect((await pool.query(
+        "SELECT consumed_turns,max_turns FROM omni_chat.codex_trial_budgets WHERE owner_id=$1",
+        [b])).rows[0]).toMatchObject({consumed_turns:3,max_turns:3});
+      // The rejected turn remains QUEUED and continues to be denied.
+      const deniedTarget = racing[0].status==="rejected"?thirdTarget:fourthTarget;
+      await expect(store.claimNextQueuedTurn([b],deniedTarget))
+        .rejects.toBeInstanceOf(ChatConflict);
+      expect((await pool.query(
+        "SELECT count(*)::int AS count FROM omni_chat.turns WHERE owner_id=$1 AND thread_id IN ('trial-three','trial-four') AND status='RUNNING'",
+        [b])).rows[0].count).toBe(1);
+      expect((await pool.query(
+        "SELECT count(*)::int AS count FROM omni_chat.turns WHERE owner_id=$1 AND thread_id IN ('trial-three','trial-four') AND status='QUEUED'",
+        [b])).rows[0].count).toBe(1);
+      await store.createThread(a,{threadId:"trial-foreign",runtime:"codex",
+        model:"test-codex",assistantProfile:"default"},"trial-foreign-create");
+      const foreign=await store.message(a,"trial-foreign","owner without trial","trial-foreign-msg");
+      await expect(store.claimNextQueuedTurn([a],{ownerId:a,
+        threadId:"trial-foreign",turnId:String(foreign.turn.turn_id)}))
+        .rejects.toBeInstanceOf(ChatConflict);
+      expect((await pool.query(
+        "SELECT count(*)::int AS count FROM omni_chat.codex_trial_budgets",
+        [])).rows[0].count).toBe(1);
     } finally { await pool.end(); }
   },60_000);
+  it("enforces durable cross-instance Chat-model Owner/global cap, without touching other Owners",async()=>{
+    const poolA=new Pool({connectionString:dsn,max:4});
+    const poolB=new Pool({connectionString:dsn,max:4});
+    const budget=parseChatDispatchBudget(JSON.stringify({
+      maxConcurrent:2,maxGlobalDailyCalls:4,maxOwnerDailyCalls:2,
+      maxGlobalDailyTokens:10000,maxOwnerDailyTokens:5000,maxPromptBytes:4000
+    }));
+    const aStore=new ChatStore(poolA,budget),bStore=new ChatStore(poolB,budget);
+    try{
+      // The preceding integration scenario intentionally leaves RUNNING turns.
+      // This is a throwaway localhost CI database, not a live reconciliation:
+      // settle fixture leftovers so this case tests only its own two replicas.
+      await poolA.query("UPDATE omni_chat.turns SET status='ERROR' WHERE status='RUNNING'");
+      const a=await aStore.owner("accounts.google.com","budget-a");
+      const b=await aStore.owner("accounts.google.com","budget-b");
+      const setup=async(store:ChatStore,ownerId:string,threadId:string)=>{
+        await store.createThread(ownerId,{threadId,runtime:"gemini",
+          model:"gemini-3.5-flash-lite",assistantProfile:"default"},"key-"+threadId);
+        const msg=await store.message(ownerId,threadId,"bounded request","msg-"+threadId);
+        return {ownerId,threadId,turnId:String(msg.turn.turn_id)};
+      };
+      const t1=await setup(aStore,a,"budget-01");
+      const t2=await setup(bStore,b,"budget-02");
+      const t3=await setup(aStore,a,"budget-03");
+      const t4=await setup(aStore,a,"budget-04");
+      const t5=await setup(bStore,b,"budget-05");
+      const race=await Promise.allSettled([aStore.claimNextQueuedTurn([a],t1),
+        bStore.claimNextQueuedTurn([b],t2)]);
+      expect(race.every(x=>x.status==="fulfilled")).toBe(true);
+      await expect(aStore.claimNextQueuedTurn([a],t3))
+        .rejects.toThrow(/concurrency exhausted/);
+      await poolA.query("UPDATE omni_chat.turns SET status='COMPLETED' WHERE owner_id=$1 AND thread_id=$2",
+        [a,t1.threadId]);
+      expect(await bStore.claimNextQueuedTurn([a],t3)).toMatchObject({ownerId:a});
+      await expect(aStore.claimNextQueuedTurn([a],t4))
+        .rejects.toThrow(/concurrency exhausted/);
+      await poolB.query("UPDATE omni_chat.turns SET status='COMPLETED' WHERE owner_id=$1 AND thread_id=$2",
+        [b,t2.threadId]);
+      await expect(aStore.claimNextQueuedTurn([a],t4))
+        .rejects.toThrow(/budget exhausted/);
+      expect(await bStore.claimNextQueuedTurn([b],t5)).toMatchObject({ownerId:b});
+      const rows=await poolA.query(
+        "SELECT scope,attempts FROM omni_chat.model_daily_budgets ORDER BY scope,owner_id");
+      expect(rows.rows.filter(row=>row.scope==="global")[0].attempts).toBe(4);
+      expect(rows.rows.filter(row=>row.scope==="owner").map(row=>row.attempts).sort())
+        .toEqual([2,2]);
+      const queued=await poolA.query(
+        "SELECT status FROM omni_chat.turns WHERE owner_id=$1 AND thread_id=$2",
+        [a,t4.threadId]);
+      expect(queued.rows[0].status).toBe("QUEUED");
+    }finally{await Promise.all([poolA.end(),poolB.end()]);}
+  },20_000);
 });

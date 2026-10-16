@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { CodexBridge, type AgentEvent } from "./codex_bridge.js";
 import { dispatchAssistant } from "./assistant_dispatch.js";
+import { makeSharedGeminiHandler } from "./shared_gemini.js";
 import { McpHost } from "./mcp_host.js";
 
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
@@ -456,7 +457,11 @@ export class CodexTurnRegistry {
       throw new Error("codex turn messages are invalid");
     }
     if (continuation.runtime !== undefined && continuation.runtime !== "codex") throw new Error("codex continuation runtime is invalid");
-    const auth = OwnerAuthRegistry.parse(process.env.CODEX_OWNER_SECRETS || "").auth(ownerId);
+    // Native Codex Chat trial has a distinct, read-only auth scope. The
+    // separate Owner login/logout APIs must not be able to rotate or delete
+    // the source shared Codex Secret used for this bounded experiment.
+    const auth = OwnerAuthRegistry.parse(
+      process.env.CODEX_CHAT_TRIAL_OWNER_SECRETS || "").auth(ownerId);
     const root = await mkdtemp(join(process.env.SANDBOX_ROOT || tmpdir(), "chat-turn-"));
     const home = join(root, "codex-home");
     const workspace = join(root, "workspace");
@@ -468,7 +473,9 @@ export class CodexTurnRegistry {
       client.start();
       const bridge = new CodexBridge(ownerId, workspace, client, mcp);
       client.onFailure(() => bridge.processError());
-      await bridge.initialize();
+      // The trial reuses an existing shared login Secret read-only.
+      // Do not proactively rotate its refresh token via account/read.
+      await bridge.initialize(undefined, { refreshToken: false });
       let nativeThread = typeof continuation.codexThreadId === "string" ? continuation.codexThreadId : "";
       if (!nativeThread) {
         const started = object(await bridge.startThread(model));
@@ -540,9 +547,17 @@ export class CodexTurnRegistry {
     if (!Number.isInteger(cursor) || cursor < -1) throw new Error("cursor is invalid");
     const result = session.bridge.eventsAfter(cursor);
     const events = result.events.filter((event) => event.turnId === session.nativeTurnId);
-    session.lastReturnedSeq=Math.max(session.lastReturnedSeq,result.cursor);
-    if (events.some((event) => ["turn_completed", "turn_cancelled", "turn_error"].includes(event.type))) await this.cleanup(handle);
-    return { ...result, events, turnHandle:handle, ownerId, threadId, nativeThreadId, turnId, nativeTurnId,
+    // A native read must advance the process-local cursor too. Otherwise the
+    // next approval/interrupt wait can replay already durable provider events.
+    if (events.length) session.lastReturnedSeq = Math.max(
+      session.lastReturnedSeq, events.at(-1)!.seq);
+    const last=events.at(-1)?.type;
+    const status=last==="turn_completed"?"COMPLETED":
+      last==="turn_cancelled"?"CANCELLED":last==="turn_error"?"ERROR":
+      events.some(e=>e.type==="approval_request")?"AWAITING_APPROVAL":"IN_PROGRESS";
+    if (["COMPLETED","CANCELLED","ERROR"].includes(status)) await this.cleanup(handle);
+    return { status, turnHandle:handle, cursor:events.at(-1)?.seq ?? cursor,
+      events, ownerId, threadId, nativeThreadId, turnId, nativeTurnId,
       continuation: { runtime: "codex", codexThreadId: nativeThreadId, codexTurnId: nativeTurnId, turnHandle: handle } } as unknown as Json;
   }
 
@@ -702,8 +717,13 @@ async function signedBody(request: IncomingMessage): Promise<Json> {
 export function makeServer(mcp = new McpHost(), sessions = new OwnerSessionRegistry(),
   turns = new CodexTurnRegistry(), dispatch = dispatchAssistant) {
   let running = false;
+  const sharedGemini = makeSharedGeminiHandler();
   return createServer(async (request: IncomingMessage, response: ServerResponse) => {
     const url = new URL(request.url || "/", "http://localhost");
+    if (request.method === "POST" && url.pathname === "/v1/gemini/execute") {
+      await sharedGemini(request, response);
+      return;
+    }
     if (request.method === "GET" && url.pathname === "/health") {
       send(response, 200, { status: "ok", codexVersion: CODEX_VERSION });
       return;

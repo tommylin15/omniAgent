@@ -1,4 +1,79 @@
-# Chat → Gateway one-shot dispatch: bounded integration
+# Chat → Gateway dispatch: historical implementation and current acceptance boundary
+
+> **Current status 2026-10-14:** private Gemini Gateway production PASS, but formal Chat `CHAT_DISPATCH_ENABLED=false`. Single Owner Preview Gemini persistence PASS; full multi-Owner/approval/reconnect production Chat remains OPEN. See [current TODO](../doc/todo.md) and [P0-V contract](shared-gemini-vertical-slice.md). Dated source-only notes below are checkpoints, not current flags.
+
+### 2026-10-10 Safe running-turn inspection
+
+GET /internal/v1/chat/reconciliation:candidates requires the existing trusted internal-service identity and configured dispatch. It provides bounded owner-scoped identifiers only, with no prompts, credentials, queue mutations or provider invocations. Age is based on created_at, not claim time, and must not imply safe retry.
+
+
+## 2026-10-10 Model-entitlement and OpenRouter SSE integrity — CODE ONLY
+
+Chat dispatch remains OFF by default. Enabling `CHAT_DISPATCH_ENABLED=true`
+in a later, separately approved acceptance requires two independent inputs:
+`CHAT_DISPATCH_APPROVED_OWNER_IDS` (real approved Owner UUIDs) and
+`CHAT_DISPATCH_ENTITLEMENTS_JSON` (nonempty, bounded explicit records).
+Each record must contain exactly `ownerId`, `runtime` (`gemini`,
+`openrouter`, or `codex`), `model`, and `credentialMode:"platform"`.
+Example **format only, not a real owner**:
+
+```json
+[{"ownerId":"00000000-0000-4000-8000-000000000001",
+  "runtime":"gemini","model":"gemini-2.5-flash","credentialMode":"platform"}]
+```
+
+A UUID absent from the separate allowlist, unsupported runtime, wrong
+model, duplicate, unrecognized field, BYOK credential mode, or paid
+OpenRouter platform model is rejected before startup/claim. The Chat
+API checks the authenticated Owner's persisted thread Runtime/Model
+before writing a message. PostgreSQL's queue claim filters the same
+allowlisted Owner/Runtime/Model tuples before changing a turn to RUNNING,
+using row locks and SKIP LOCKED. An unentitled queued turn stays QUEUED;
+a mismatched claim stops before provider invocation. Independent
+Gateway Codex Owner Secret mapping is still a separate required gate.
+
+OpenRouter SSE requires a real [DONE] terminator before emitting a
+successful turn_completed. Truncation, provider error frames, invalid
+JSON or payload, oversized bytes/text, or excessive event counts
+fail closed without a false completed turn; a streaming UTF-8 decoder
+handles Chinese split across network chunks. Fixtures do not call
+external models or read credentials.
+
+**STATUS: SOURCE IMPLEMENTED; exact-SHA CI + candidate/runtime
+acceptance pending.** No model access, Secret setting, provider billing,
+BYOK lifecycle, formal traffic cutover or production rollback is
+authorized or performed by this change.
+
+
+## 2026-10-10 Transactional Gateway event persistence — implementation staged
+
+The Chat dispatcher now hands each already-validated Gateway response to
+`ChatStore.appendGatewayEvents` rather than writing individual events
+across separate transactions. The PostgreSQL method locks the
+owner/thread/turn, checks it is RUNNING, rejects any existing event ID,
+writes all response rows with monotonically increasing thread-local
+sequences and changes the turn to its terminal status within **one**
+transaction. Any insertion, binding, credential-sanitization, or terminal
+state failure rolls the transaction back; clients must not observe a
+partially committed Gateway answer. A subsequent replay attempt is
+rejected for explicit reconciliation; the provider is **never**
+automatically re-invoked on an uncertain outcome. The failure-response
+`turn_error` uses the same transactional path.
+
+The disposable PostgreSQL acceptance test injects a deliberate
+constraint failure **on the second event** and verifies that the first
+event and final turn state were not committed. It then commits a
+valid response, verifies ordered replay, terminal state, duplicate
+rejection, cross-owner denial and credential exclusion. All tests run
+against CI's disposable DB only; no live owner/model/Secret or paid
+provider is invoked.
+
+**Status: STAGED-CODE** pending exact-SHA tests/CI. Even a green test
+does not verify real Chat → Gateway provider execution or owner-scoped
+live PostgreSQL SSE replay. Model entitlements and billable Codex remain
+disabled pending the user's explicit decision; unified application
+acceptance and formal traffic changes remain later gates.
+
 
 **Current status: SOURCE / TEST INTEGRATION; LIVE AUTHENTICATED PROVIDER ACCEPTANCE OPEN.**
 

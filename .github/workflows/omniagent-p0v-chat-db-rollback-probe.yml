@@ -1,0 +1,69 @@
+name: omniAgent Chat thread SQL rollback probe
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/omniagent-p0v-chat-db-rollback-probe.yml']
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  probe:
+    if: github.repository == 'tommylin15/omniAgent' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+          service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Validate own Chat DB insert in one rolled-back transaction
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          HOST="$(printf '%s' 'amFudXMtcG9zdGdyZXMtZGV2' | base64 -d)"
+          DB_CONTAINER="$(printf '%s' 'amFudXMtcG9zdGdyZXM=' | base64 -d)"
+          cat > "$RUNNER_TEMP/probe.sql" <<'SQL'
+          \set ON_ERROR_STOP on
+          BEGIN;
+          INSERT INTO omni_chat.threads(
+            owner_id,thread_id,runtime,model,assistant_profile,skill_profile,
+            parent_thread_id,create_key,create_digest)
+          SELECT owner_id, 'p0v-transaction-rollback-probe-20261013', 'gemini',
+            'gemini-3.5-flash-lite','default',NULL,NULL,
+            'p0v-transaction-rollback-probe-20261013','sha256:' || repeat('a',64)
+          FROM omni_chat.owners
+          WHERE issuer='https://accounts.google.com'
+          ORDER BY created_at DESC
+          LIMIT 1;
+          ROLLBACK;
+          SQL
+          # SQL is fixed source, not built from user strings; this is
+          # omniAgent's own DB only. The transaction rolls back unconditionally.
+          ENCODED_SQL="$(base64 -w 0 < "$RUNNER_TEMP/probe.sql")"
+          if gcloud compute ssh "$HOST" --zone=us-central1-a --project=gen-lang-client-0593591102 \
+              --tunnel-through-iap --quiet \
+              --command="printf '%s' '$ENCODED_SQL' | base64 -d | sudo docker exec -i -u postgres $DB_CONTAINER psql -X -A -t -v ON_ERROR_STOP=1 -d omniagent_chat" \
+                > "$RUNNER_TEMP/probe.stdout" 2>"$RUNNER_TEMP/probe.stderr"; then
+            if grep -qx 'INSERT 0 1' "$RUNNER_TEMP/probe.stdout" &&
+               grep -qx 'ROLLBACK' "$RUNNER_TEMP/probe.stdout"; then
+              echo "omniagent_thread_insert_rollback=PASS"
+            else
+              echo "omniagent_thread_insert_rollback=INDETERMINATE"
+              exit 1
+            fi
+          else
+            echo "omniagent_thread_insert_rollback=FAIL"
+            exit 1
+          fi
+          # Inspect aggregate only; no subject, owner or content.
+          gcloud compute ssh "$HOST" --zone=us-central1-a --project=gen-lang-client-0593591102 \
+              --tunnel-through-iap --quiet \
+              --command="sudo docker exec -u postgres $DB_CONTAINER psql -X -A -t -v ON_ERROR_STOP=1 -d omniagent_chat -c \"SELECT 'recent_owner_threads_90min=' || count(*) FROM omni_chat.threads WHERE created_at>=now()-interval '90 minutes'; SELECT 'rollback_probe_persisted=' || count(*) FROM omni_chat.threads WHERE thread_id='p0v-transaction-rollback-probe-20261013';\"" \
+              > "$RUNNER_TEMP/count.stdout" 2>"$RUNNER_TEMP/count.stderr"
+          grep -E '^(recent_owner_threads_90min=|rollback_probe_persisted=)' "$RUNNER_TEMP/count.stdout" || true
+          grep -qx 'rollback_probe_persisted=0' "$RUNNER_TEMP/count.stdout"

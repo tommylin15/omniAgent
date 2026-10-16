@@ -1,3 +1,5 @@
+import { isAllowedGeminiModel } from "./gemini_model_policy.js";
+
 export type GeminiCitation = { title: string; uri: string };
 export type GeminiUsage = { promptTokens: number; candidateTokens: number; totalTokens: number };
 export type GeminiResult = {
@@ -8,6 +10,7 @@ export type GeminiResult = {
   citations: GeminiCitation[];
   usage?: GeminiUsage;
   finishReason?: string;
+  blockReason?: string;
 };
 type JsonRecord = Record<string, unknown>;
 type Fetcher = typeof fetch;
@@ -33,6 +36,7 @@ function result(body: unknown, model: string, queriedAt: string): GeminiResult {
   const candidates = record(body).candidates;
   const candidate = record(Array.isArray(candidates) ? candidates[0] : undefined);
   const metadata = record(candidate.groundingMetadata);
+  const feedback = record(record(body).promptFeedback);
   const citations = (Array.isArray(metadata.groundingChunks) ? metadata.groundingChunks : [])
     .map((chunk) => record(record(chunk).web))
     .filter((web) => typeof web.uri === "string")
@@ -48,31 +52,34 @@ function result(body: unknown, model: string, queriedAt: string): GeminiResult {
     ...(typeof promptTokens === "number" && typeof candidateTokens === "number" && typeof totalTokens === "number"
       ? { usage: { promptTokens, candidateTokens, totalTokens } } : {}),
     ...(typeof candidate.finishReason === "string" ? { finishReason: candidate.finishReason } : {}),
+    ...(typeof feedback.blockReason === "string" ? { blockReason: feedback.blockReason } : {}),
   };
 }
 
 export class GeminiProvider {
   constructor(
     private readonly apiKey: string,
-    private readonly model = "gemini-2.5-flash",
+    private readonly model = "gemini-3.5-flash-lite",
     private readonly fetcher: Fetcher = fetch,
     private readonly baseUrl = "https://generativelanguage.googleapis.com/v1beta",
   ) {
     if (!apiKey.trim()) throw new Error("GEMINI_API_KEY is required");
     if (process.env.GEMINI_PAID_ENABLED === "true") throw new Error("Gemini paid tier is disabled");
-    if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(model)) throw new Error("Gemini model is invalid");
+    if (!isAllowedGeminiModel(model)) throw new Error("Gemini model is not on the Flash-Lite allowlist");
   }
 
   static fromEnvironment(fetcher: Fetcher = fetch, model?: string): GeminiProvider {
-    return new GeminiProvider(process.env.GEMINI_API_KEY ?? "", model ?? (process.env.GEMINI_MODEL || "gemini-2.5-flash"), fetcher);
+    return new GeminiProvider(process.env.GEMINI_API_KEY ?? "", model ?? (process.env.GEMINI_MODEL || "gemini-3.5-flash-lite"), fetcher);
   }
 
-  async generate(prompt: string, options: { grounding?: boolean; systemInstruction?: string; signal?: AbortSignal } = {}): Promise<GeminiResult> {
+  async generate(prompt: string, options: { grounding?: boolean; systemInstruction?: string; signal?: AbortSignal; maxOutputTokens?: number } = {}): Promise<GeminiResult> {
     if (!prompt.trim() || prompt.length > 32_768) throw new Error("Gemini prompt is invalid");
+    if (options.maxOutputTokens !== undefined && (!Number.isInteger(options.maxOutputTokens) || options.maxOutputTokens < 1 || options.maxOutputTokens > 2048)) throw new Error("Gemini output token limit is invalid");
     const queriedAt = new Date().toISOString();
     const body = {
       ...(options.systemInstruction ? { system_instruction: { parts: [{ text: options.systemInstruction }] } } : {}),
       contents: [{ role: "user", parts: [{ text: prompt }] }],
+      ...(options.maxOutputTokens ? { generationConfig: { maxOutputTokens: options.maxOutputTokens } } : {}),
       ...(options.grounding ? { tools: [{ google_search: {} }] } : {}),
     };
     const response = await this.fetcher(`${this.baseUrl}/models/${encodeURIComponent(this.model)}:generateContent`, {

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CodexExecutionStageError, classifyCodexRefreshFailure, makeSharedCodexServer, parseCallers, parseRequest } from "../services/shared-codex/server.js";
+import { signOwnerAuthorization } from "../services/agent-gateway/owner_authorization.js";
 
 const ownerId = "00000000-0000-4000-8000-000000000001";
 const requestId = "00000000-0000-4000-8000-000000000002";
@@ -17,6 +18,33 @@ describe("shared Codex authenticated execution contract", () => {
       { prompt: "" }, { prompt: "x".repeat(17_000) }, { model: "model with spaces" },
       { credential: "forbidden" },
     ]) expect(() => parseRequest({ ...valid, ...patch })).toThrow();
+  });
+
+  it("requires signed owner authorization with matching owner/request binding before Codex execution", async()=>{
+    const audience="https://shared-codex.example.run.app";
+    const key="d".repeat(64);
+    const execute=vi.fn(async()=>({text:"ok",threadId:"native-a",turnId:"native-b"}));
+    const server=makeSharedCodexServer({callers:new Map([["consumer-a",caller]]),
+      audience,verify:async()=>caller,execute,
+      ownerAuthorizationKeys:new Map([["consumer-a",key]])});
+    server.listen(0,"127.0.0.1");
+    await new Promise<void>(resolve=>server.once("listening",resolve));
+    const addr=server.address();
+    if(!addr || typeof addr==="string") throw new Error("address missing");
+    const url="http://127.0.0.1:"+addr.port+"/v1/codex/execute";
+    const invoke=(body:unknown,headers:Record<string,string>={})=>
+      fetch(url,{method:"POST",headers:{Authorization:"Bearer signed",...headers},body:JSON.stringify(body)});
+    try{
+      expect((await invoke(valid)).status).toBe(403);
+      expect(execute).not.toHaveBeenCalled();
+      const signature=signOwnerAuthorization({...valid,audience,model:""},key,Date.now());
+      expect((await invoke({...valid,ownerId:"00000000-0000-4000-8000-000000000003"},signature)).status).toBe(403);
+      expect((await invoke({...valid,prompt:"changed"},signature)).status).toBe(403);
+      expect((await invoke(valid,signature)).status).toBe(200);
+      expect(execute).toHaveBeenCalledOnce();
+    }finally{
+      await new Promise<void>(resolve=>server.close(()=>resolve()));
+    }
   });
 
   it("classifies refresh failures without returning native exception or token text", () => {

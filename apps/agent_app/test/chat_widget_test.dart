@@ -1,11 +1,36 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:omniagent_app/auth_session.dart';
 import 'package:omniagent_app/chat_api.dart';
 import 'package:omniagent_app/chat_page.dart';
 import 'package:omniagent_app/main.dart';
+
+class AuthenticatedOwnerChatApi extends FakeChatApi {
+  @override
+  Future<dynamic> get(String path) async {
+    if (path == '/v1/me') {
+      return {'ownerId':'00000000-0000-4000-8000-000000000001',
+        'modelDispatchEnabled':false,'byokManagementEnabled':false};
+    }
+    return super.get(path);
+  }
+}
+
+class RestrictedChatApi extends ChatApi {
+  RestrictedChatApi() : super('test');
+  final writes = <String>[];
+  @override
+  Future<dynamic> get(String path) async => path == '/v1/models'
+      ? {'dispatchEnabled':false,'items':[]} : {'items':[]};
+  @override
+  Future<dynamic> post(String path, Map<String,dynamic> body) async {
+    writes.add(path);
+    return {'status':'unexpected'};
+  }
+}
 
 class FakeChatApi extends ChatApi {
   FakeChatApi({this.withApproval = false}) : super('test');
@@ -77,7 +102,196 @@ class FakeChatApi extends ChatApi {
       ];
 }
 
+class DurabilityReceiptChatApi extends FakeChatApi {
+  DurabilityReceiptChatApi({this.confirmed = true});
+  final bool confirmed;
+  int receiptReads = 0;
+
+  @override
+  Future<dynamic> get(String path) async {
+    if (path.endsWith('/turns/turn-1/receipt')) {
+      receiptReads++;
+      return {'status':'COMPLETED','textPersisted':confirmed,
+        'terminalPersisted':true,'durableCompleted':confirmed};
+    }
+    return super.get(path);
+  }
+
+  @override
+  Future<List<Map<String,dynamic>>> events(String threadId,int cursor) async {
+    if (cursor >= 2 ||
+        !writes.any((row)=>'${row['path']}'.endsWith('/messages'))) {
+      return [];
+    }
+    return [
+      if (cursor < 0)
+        {'event_id':'user-1','seq':0,'turn_id':'turn-1','event_type':'item_upsert',
+          'payload':{'role':'user','content':'test prompt'}},
+      if (cursor < 1)
+        {'event_id':'text-1','seq':1,'turn_id':'turn-1','event_type':'text_delta',
+          'payload':{'text':'mock reply'}},
+      if (cursor < 2)
+        {'event_id':'terminal-1','seq':2,'turn_id':'turn-1',
+          'event_type':'turn_completed','payload':{'status':'completed'}},
+    ];
+  }
+}
+
+class ReopenedReceiptChatApi extends DurabilityReceiptChatApi {
+  ReopenedReceiptChatApi({super.confirmed});
+
+  @override
+  Future<dynamic> get(String path) async {
+    if (path == '/v1/threads') {
+      return {'items':[
+        {'thread_id':'thread-1','runtime':'gemini','model':'gemini-3.5-flash-lite'}
+      ]};
+    }
+    if (path.endsWith('/turns/active')) return {'active':null};
+    return super.get(path);
+  }
+
+  @override
+  Future<List<Map<String,dynamic>>> events(String threadId,int cursor) async {
+    if (cursor >= 2) return [];
+    return [
+      if (cursor < 0)
+        {'event_id':'stored-user','seq':0,'turn_id':'turn-1',
+          'event_type':'item_upsert','payload':{'role':'user','content':'stored question'}},
+      if (cursor < 1)
+        {'event_id':'stored-reply','seq':1,'turn_id':'turn-1',
+          'event_type':'text_delta','payload':{'text':'stored response'}},
+      if (cursor < 2)
+        {'event_id':'stored-terminal','seq':2,'turn_id':'turn-1',
+          'event_type':'turn_completed','payload':{'status':'completed'}},
+    ];
+  }
+}
+
+class CrossDeviceReceiptChatApi extends ReopenedReceiptChatApi {
+  CrossDeviceReceiptChatApi({super.confirmed});
+  final pathsRead=<String>[];
+  @override
+  Future<dynamic> get(String path) async {
+    pathsRead.add(path);
+    if (path.endsWith('/turns/latest')) {
+      return {'latest':{'turnId':'turn-1','status':'COMPLETED'}};
+    }
+    return super.get(path);
+  }
+  @override
+  Future<List<Map<String,dynamic>>> events(String threadId,int cursor) async => [];
+}
+
+class FailedThreadCreationChatApi extends FakeChatApi {
+  @override
+  Future<dynamic> post(String path, Map<String, dynamic> body) async {
+    if (path == '/v1/threads') {
+      throw StateError('omniAgent API 503（追蹤碼：01234567-89ab-4cde-8fab-0123456789ab）');
+    }
+    return super.post(path,body);
+  }
+}
+
+class TracedChatApi extends FakeChatApi {
+  @override
+  Future<dynamic> post(String path,Map<String,dynamic> body) async {
+    final value=await super.post(path,body);
+    if (path.endsWith('/messages')) {
+      lastRequestId='01234567-89ab-4cde-8fab-0123456789ab';
+    }
+    return value;
+  }
+}
+
+class ResumedNativeChatApi extends FakeChatApi {
+  @override
+  Future<dynamic> get(String path) async {
+    if (path.endsWith('/turns/active')) {
+      return {'active':{'turnId':'turn-1','status':'approval_required'}};
+    }
+    return super.get(path);
+  }
+}
+
+class NativeTurnChatApi extends FakeChatApi {
+  @override
+  Future<dynamic> post(String path, Map<String,dynamic> body) async {
+    if (path.endsWith('/messages')) {
+      writes.add({'path':path,...body});
+      return {'turn':{'turn_id':'turn-1','status':'QUEUED'},
+        'dispatch':{'status':'running','turnId':'turn-1'}};
+    }
+    if (path.endsWith('/refresh')) {
+      writes.add({'path':path,...body});
+      return {'status':'approval_required','turnId':'turn-1'};
+    }
+    if (path.endsWith('/cancel')) {
+      writes.add({'path':path,...body});
+      return {'status':'cancelled','turnId':'turn-1'};
+    }
+    return super.post(path,body);
+  }
+}
+
+class DelayedReplayApi extends FakeChatApi {
+  final pending = <String, Completer<List<Map<String, dynamic>>>>{};
+
+  @override
+  Future<dynamic> get(String path) async => {
+        'items': [
+          {'thread_id': 'thread-a', 'runtime': 'gemini', 'model': 'model-a'},
+          {'thread_id': 'thread-b', 'runtime': 'gemini', 'model': 'model-b'},
+        ],
+      };
+
+  @override
+  Future<List<Map<String, dynamic>>> events(String threadId, int cursor) =>
+      pending.putIfAbsent(threadId,
+          () => Completer<List<Map<String, dynamic>>>()).future;
+}
+
 void main() {
+  testWidgets('switching threads isolates pending SSE replays and failed old requests',
+      (tester) async {
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.binding.setSurfaceSize(const Size(1200, 900));
+    final api = DelayedReplayApi();
+    await tester.pumpWidget(MaterialApp(home: ChatPage(api)));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('thread-a'));
+    await tester.pump();
+    expect(api.pending.containsKey('thread-a'), isTrue);
+    await tester.tap(find.text('thread-b'));
+    await tester.pump();
+    expect(api.pending.containsKey('thread-b'), isTrue);
+
+    // Old request is still alive when B starts. Its error may not put B
+    // into disconnected state or reschedule a poller for A.
+    api.pending['thread-a']!.completeError(StateError('old request failed'));
+    await tester.pump();
+    expect(find.text('正在同步事件'), findsOneWidget);
+    expect(find.text('連線中斷，請重新載入事件'), findsNothing);
+
+    api.pending['thread-b']!.complete([
+      {
+        'event_id': 'b-event',
+        'seq': 0,
+        'event_type': 'text_delta',
+        'payload': {'text': 'response B'}
+      }
+    ]);
+    await tester.pump();
+    expect(find.text('事件已同步 · 游標 0'), findsOneWidget);
+
+    await tester.tap(find.text('新對話'));
+    await tester.pump();
+    expect(find.text('事件已同步 · 游標 0'), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+
   testWidgets('permanent thread deletion requires confirmation', (tester) async {
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.binding.setSurfaceSize(const Size(1200, 900));
@@ -99,7 +313,7 @@ void main() {
   });
   for (final selection in {
     'Codex': 'gpt-6-luna',
-    'Gemini': 'gemini-3.1-pro-preview',
+    'Gemini': 'gemini-3.5-flash-lite',
     'OpenRouter': 'google/gemma-4-31b-it:free',
     'Groq（型號預覽）': 'llama-3.1-8b-instant'
   }.entries) {
@@ -142,6 +356,7 @@ void main() {
     final controller = AuthSessionController(
       onSession: (api) => sessions.add(api?.token),
       onError: () => failures++,
+      bindApi: (_) async {},
     );
     await controller.update(() async => 'alice-token');
     expect(controller.current?.token, 'alice-token');
@@ -158,6 +373,7 @@ void main() {
     final controller = AuthSessionController(
       onSession: (api) => changes.add(api?.token),
       onError: () => fail('unexpected token error'),
+      bindApi: (_) async {},
     );
     final alice = controller.update(() => pendingAlice.future);
     await controller.update(() async => 'bob-token');
@@ -174,6 +390,7 @@ void main() {
     final controller = AuthSessionController(
       onSession: (api) => changes.add(api?.token),
       onError: () => errors++,
+      bindApi: (_) async {},
     );
     await controller.update(() async => 'alice-token');
     await controller.update(() async => null);
@@ -189,6 +406,101 @@ void main() {
     expect(find.text('omniAgent'), findsOneWidget);
     expect(find.byKey(const Key('twin-beast-mascot-slot')), findsOneWidget);
     expect(find.text('登入或 API 尚未設定'), findsOneWidget);
+  });
+
+  for (final confirmed in [true,false]) {
+    testWidgets('receipt is DB-verified, never inferred from a UI reply ($confirmed)',
+        (tester) async {
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.binding.setSurfaceSize(const Size(1000,800));
+      final api=DurabilityReceiptChatApi(confirmed:confirmed);
+      await tester.pumpWidget(MaterialApp(home:ChatPage(api)));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('建立對話'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField).last,'receipt fixture');
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pumpAndSettle();
+      expect(api.receiptReads,1);
+      expect(find.text(confirmed
+        ? 'PostgreSQL 已確認回覆持久化'
+        : '資料庫持久化尚未驗證'),findsOneWidget);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  }
+
+  for (final confirmed in [true,false]) {
+    testWidgets('reopen from Owner SSE replay must recheck PostgreSQL receipt ($confirmed)',
+        (tester) async {
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.binding.setSurfaceSize(const Size(1000,800));
+      final api=ReopenedReceiptChatApi(confirmed:confirmed);
+      await tester.pumpWidget(MaterialApp(home:ChatPage(api)));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('thread-1'));
+      await tester.pump();
+      await tester.pump();
+      expect(api.receiptReads,1);
+      expect(find.text(confirmed
+          ? 'PostgreSQL 已確認回覆持久化'
+          : '資料庫持久化尚未驗證'),findsOneWidget);
+      expect(api.writes.where((row)=>
+          '${row['path']}'.endsWith('/messages')),isEmpty);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  }
+
+  for(final confirmed in [true,false]){
+    testWidgets('new device readback verifies latest DB turn ($confirmed)',
+      (tester) async{
+      addTearDown(()=>tester.binding.setSurfaceSize(null));
+      await tester.binding.setSurfaceSize(const Size(1000,800));
+      final api=CrossDeviceReceiptChatApi(confirmed:confirmed);
+      await tester.pumpWidget(MaterialApp(home:ChatPage(api)));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('thread-1'));
+      await tester.pump();
+      await tester.pump();
+      expect(api.pathsRead,contains('/v1/threads/thread-1/turns/latest'));
+      expect(api.receiptReads,1);
+      expect(find.text(confirmed
+        ? 'PostgreSQL 已確認回覆持久化'
+        : '資料庫持久化尚未驗證'),findsOneWidget);
+      expect(api.writes.where((x)=>'${x['path']}'.endsWith('/messages')),isEmpty);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  }
+
+  testWidgets('failed thread creation surfaces safe HTTP status and request trace', (tester) async {
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.binding.setSurfaceSize(const Size(1000, 800));
+    final api=FailedThreadCreationChatApi();
+    await tester.pumpWidget(MaterialApp(home:ChatPage(api)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('建立對話'));
+    await tester.pump();
+    expect(find.textContaining('omniAgent API 503'), findsOneWidget);
+    expect(find.textContaining('追蹤碼：01234567-89ab-4cde-8fab-0123456789ab'),
+        findsOneWidget);
+    expect(find.text('今天想一起完成什麼？'),findsOneWidget);
+  });
+
+  testWidgets('request reference follows only current logged-in ChatPage', (tester) async {
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.binding.setSurfaceSize(const Size(1000,800));
+    final api=TracedChatApi();
+    await tester.pumpWidget(MaterialApp(home:ChatPage(api,key:ObjectKey(api))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('建立對話'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).last,'fixture trace');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+    expect(find.text('請求追蹤碼：01234567-89ab-4cde-8fab-0123456789ab'),findsOneWidget);
+    final next=FakeChatApi();
+    await tester.pumpWidget(MaterialApp(home:ChatPage(next,key:ObjectKey(next))));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('請求追蹤碼：'),findsNothing);
   });
 
   testWidgets('threads and queued messages use only omniAgent routes',
@@ -219,6 +531,80 @@ void main() {
         api.writes
             .any((write) => '${write['path']}'.startsWith('/api/v1/me/chats')),
         isFalse);
+  });
+
+  testWidgets('reopened Chat restores native approval status from Owner DB', (tester) async {
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.binding.setSurfaceSize(const Size(1000,800));
+    final resumed=ResumedNativeChatApi();
+    await tester.pumpWidget(MaterialApp(home:ChatPage(resumed)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('建立對話'));
+    await tester.pumpAndSettle();
+    expect(find.text('正在等待核准決策'),findsOneWidget);
+    expect(find.text('中斷執行'),findsOneWidget);
+    final other=FakeChatApi();
+    await tester.pumpWidget(MaterialApp(home:ChatPage(other,key:ObjectKey(other))));
+    await tester.pumpAndSettle();
+    expect(find.text('正在等待核准決策'),findsNothing);
+  });
+
+  testWidgets('native running turn becomes approval-required and can be cancelled',
+      (tester) async {
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.binding.setSurfaceSize(const Size(1000,800));
+    final api=NativeTurnChatApi();
+    await tester.pumpWidget(MaterialApp(home: ChatPage(api)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('建立對話'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).last,'hello');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+    expect(api.writes.any((row)=>'${row['path']}'.endsWith('/refresh')),isTrue);
+    expect(find.text('正在等待核准決策'),findsOneWidget);
+    await tester.tap(find.text('中斷執行'));
+    await tester.pumpAndSettle();
+    expect(api.writes.any((row)=>'${row['path']}'.endsWith('/cancel')),isTrue);
+    expect(find.text('正在等待核准決策'),findsNothing);
+  });
+
+  testWidgets('copy Owner ID appears only after verified backend identity',
+      (tester) async {
+    final api=AuthenticatedOwnerChatApi();
+    await tester.pumpWidget(MaterialApp(home: ChatPage(api)));
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('複製 Owner ID'),findsOneWidget);
+    final copied=<String>[];
+    final messenger=TestDefaultBinaryMessengerBinding
+        .instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'Clipboard.setData') {
+        copied.add((call.arguments as Map)['text'] as String);
+      }
+      return null;
+    });
+    addTearDown(() => messenger.setMockMethodCallHandler(
+        SystemChannels.platform, null));
+    await tester.tap(find.byTooltip('複製 Owner ID'));
+    await tester.pumpAndSettle();
+    expect(copied,['00000000-0000-4000-8000-000000000001']);
+
+    final other=FakeChatApi();
+    await tester.pumpWidget(MaterialApp(
+      home:ChatPage(other,key:ObjectKey(other))));
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('複製 Owner ID'),findsNothing);
+  });
+
+  testWidgets('unentitled Owner sees disabled model creation', (tester) async {
+    final api = RestrictedChatApi();
+    await tester.pumpWidget(MaterialApp(home: ChatPage(api)));
+    await tester.pumpAndSettle();
+    expect(find.text('此帳號尚未取得所選模型的執行權限；不會送出付費推論。'), findsOneWidget);
+    final create = tester.widget<FilledButton>(find.widgetWithText(FilledButton,'建立對話'));
+    expect(create.onPressed, isNull);
+    expect(api.writes, isEmpty);
   });
 
   testWidgets(

@@ -1,0 +1,57 @@
+name: omniAgent P0-V Cloud Run tag dependency audit
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/omniagent-p0v-tag-dependency-audit.yml'
+      - 'scripts/p0v_tag_dependency_audit.py'
+      - 'tests/test_p0v_tag_dependency_audit.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: omniagent-p0v-tag-inventory-only
+  cancel-in-progress: false
+jobs:
+  audit:
+    if: github.repository == 'tommylin15/omniAgent' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify review-only classification
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p 'test_p0v_tag_dependency_audit.py' -v
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+          service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Read current revision tags and only omniAgent repository references
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/p0v_tag_dependency_audit.py --receipt p0v-tag-dependency-audit.json
+          python3 - <<'PY'
+          import json,os
+          data=json.load(open("p0v-tag-dependency-audit.json"))
+          with open(os.environ["GITHUB_STEP_SUMMARY"],"a") as out:
+              out.write("### P0-V tagged endpoint protection register (read only)\n\n")
+              out.write("| Service | Tag | Revision | Classification | Repository refs |\n")
+              out.write("|---|---|---|---|---:|\n")
+              for t in data["tags"]:
+                  out.write(f'| {t["service"]} | \`{t["tag"]}\` | \`{t["revision"]}\` | {t["classification"]} | {len(t["reference_files_in_omniagent_only"])} |\n')
+              out.write("\nNO tag deprecation or deletion authorized. No external project repository read.\n")
+          PY
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p0v-tag-dependency-audit-${{ github.run_id }}
+          path: p0v-tag-dependency-audit.json
+          if-no-files-found: warn
+          retention-days: 90

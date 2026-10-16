@@ -1,0 +1,195 @@
+# Exactly-current GHCR signed candidate, no-traffic R01 verified-TLS canary.
+# Never change formal traffic, Secret versions, provider IAM or other DBs.
+name: omniAgent R01 verified-TLS Chat canary
+on:
+  workflow_run:
+    workflows: ['omniAgent GHCR current candidate auto smoke']
+    types: [completed]
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: omniagent-ghcr-cloudrun-release
+  cancel-in-progress: false
+jobs:
+  tls-canary:
+    if: >-
+      github.repository == 'tommylin15/omniAgent' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == 'tommylin15/omniAgent'
+    runs-on: ubuntu-latest
+    timeout-minutes: 28
+    env:
+      RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+      - name: Authorize exact SHA one-time TLS canary
+        id: gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
+          test "$(git ls-remote https://github.com/tommylin15/omniAgent.git refs/heads/main | cut -f1)" = "$RELEASE_SHA"
+          if ! git log -1 --format=%B | grep -Fq '[r01-tls-canary-once]'; then
+            echo 'authorized=false' >> "$GITHUB_OUTPUT"
+            echo 'r01_tls_canary=NOOP_NO_EXPLICIT_MARKER' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          echo 'authorized=true' >> "$GITHUB_OUTPUT"
+      - uses: google-github-actions/auth@v2
+        if: steps.gate.outputs.authorized == 'true'
+        with:
+          workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+          service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+        if: steps.gate.outputs.authorized == 'true'
+      - name: Confirm Chat runtime SA may invoke private Gateway
+        if: steps.gate.outputs.authorized == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          gcloud run services get-iam-policy omniagent-agent-gateway \
+            --project=gen-lang-client-0593591102 --region=us-central1 --format=json > "$RUNNER_TEMP/gateway-iam.json"
+          python3 - "$RUNNER_TEMP/gateway-iam.json" <<'PY'
+          import json,sys
+          rows=json.load(open(sys.argv[1])).get("bindings",[])
+          member="serviceAccount:omniagent-chat@gen-lang-client-0593591102.iam.gserviceaccount.com"
+          invokers={m for row in rows if row.get("role")=="roles/run.invoker"
+                    for m in row.get("members",[])}
+          if member not in invokers or "allUsers" in invokers or "allAuthenticatedUsers" in invokers:
+              raise SystemExit("private gateway invoker IAM not accepted")
+          print("r01_chat_private_gateway_service_iam=PASS")
+          PY
+      - name: Extract verified OAuth Owner UUID and public PostgreSQL certificate only
+        if: steps.gate.outputs.authorized == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          HOST="$(printf '%s' 'amFudXMtcG9zdGdyZXMtZGV2' | base64 -d)"
+          cat > "$RUNNER_TEMP/r01-public-certificate-and-own-owner.sh" <<'REMOTE'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          umask 077
+          container="$(printf '%s' 'amFudXMtcG9zdGdyZXM=' | base64 -d)"
+          trap 'sudo rm -f /tmp/r01-public-certificate-and-own-owner.sh' EXIT
+          pg() { sudo docker exec -u postgres "$container" psql -X -At -v ON_ERROR_STOP=1 "$@"; }
+          db=omniagent_chat
+          test "$(pg -d "$db" -c "SELECT to_regclass('omni_chat.model_daily_budgets') IS NOT NULL")" = t
+          test "$(pg -d postgres -c 'SHOW ssl')" = on
+          expected='bd46f8f29ba78faaa606f03d6a760c1726ce27a7cd75381d5c04b9525861f70f'
+          owner=''
+          count=0
+          while IFS= read -r candidate; do
+            if [[ "$(printf %s "$candidate" | sha256sum | cut -f1 -d' ')" == "$expected" ]]; then
+              owner="$candidate"; count=$((count+1))
+            fi
+          done < <(pg -d "$db" -c "SELECT owner_id FROM omni_chat.owners WHERE issuer <> '' AND subject <> ''")
+          test "$count" = 1
+          cert="$(pg -d postgres -c 'SHOW ssl_cert_file')"
+          data="$(pg -d postgres -c 'SHOW data_directory')"
+          test -n "$cert"; test -n "$data"
+          if [[ "$cert" != /* ]]; then cert="$data/$cert"; fi
+          public="$(sudo docker exec -u postgres "$container" cat "$cert" | openssl x509 -inform PEM -outform PEM | base64 -w 0)"
+          python3 - "$owner" "$public" <<'PY'
+          import json,sys
+          print(json.dumps({"owner_id":sys.argv[1],"certificate_base64":sys.argv[2]}))
+          PY
+          REMOTE
+          chmod 700 "$RUNNER_TEMP/r01-public-certificate-and-own-owner.sh"
+          gcloud compute scp "$RUNNER_TEMP/r01-public-certificate-and-own-owner.sh" \
+            "$HOST:/tmp/" --project=gen-lang-client-0593591102 --zone=us-central1-a \
+            --tunnel-through-iap --quiet
+          gcloud compute ssh "$HOST" --project=gen-lang-client-0593591102 \
+            --zone=us-central1-a --tunnel-through-iap --quiet \
+            --command='sudo bash /tmp/r01-public-certificate-and-own-owner.sh' \
+            > "$RUNNER_TEMP/r01-runtime-private.json"
+          python3 - "$RUNNER_TEMP/r01-runtime-private.json" <<'PY'
+          import json,sys,hashlib,base64,ssl
+          d=json.load(open(sys.argv[1]))
+          assert hashlib.sha256(d["owner_id"].encode()).hexdigest()=="bd46f8f29ba78faaa606f03d6a760c1726ce27a7cd75381d5c04b9525861f70f"
+          der=ssl.PEM_cert_to_DER_cert(base64.b64decode(d["certificate_base64"]).decode())
+          assert len(der)>200
+          print("r01_public_postgres_certificate_and_owner=VERIFIED")
+          PY
+      - name: Deploy one Owner-scoped TLS 0-percent Chat revision, restore original template
+        if: steps.gate.outputs.authorized == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          python3 scripts/r01_tls_canary.py "$RELEASE_SHA" \
+            "$RUNNER_TEMP/r01-runtime-private.json" "$RUNNER_TEMP/r01-canary.json"
+          python3 - "$RUNNER_TEMP/r01-canary.json" "$RUNNER_TEMP/r01-canary-url" <<'PY'
+          import json,sys
+          doc=json.load(open(sys.argv[1]))
+          assert doc["formal_template_restored"] and not doc["production_traffic_modified"]
+          open(sys.argv[2],"w").write(doc["url"])
+          print("r01_formal_template_restore=PASS")
+          PY
+      - name: Prove verified PostgreSQL TLS and budget SQL with tagged Chat GET /ready
+        if: steps.gate.outputs.authorized == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="$(cat "$RUNNER_TEMP/r01-canary-url")"
+          for endpoint in /health /ready; do
+            code="$(curl --max-time 30 -sS -o /dev/null -w '%{http_code}' "$url$endpoint")"
+            echo "r01_tagged_chat_${endpoint#/}=$code"
+            test "$code" = 200
+          done
+          for endpoint in /v1/models /v1/threads; do
+            code="$(curl --max-time 30 -sS -o /dev/null -w '%{http_code}' "$url$endpoint")"
+            echo "r01_anonymous_denial_${endpoint##*/}=$code"
+            test "$code" = 401
+          done
+          echo 'r01_tls_and_chat_budget_ready=PASS_WITH_VERIFIED_CA' >> "$GITHUB_STEP_SUMMARY"
+          echo 'r01_owner_live_provider_call=NOT_PERFORMED' >> "$GITHUB_STEP_SUMMARY"
+      - name: Preflight candidate-only signed caller without provider usage
+        if: steps.gate.outputs.authorized == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/r01_auth_preflight.py "$RELEASE_SHA"
+          echo 'r01_signed_caller_token_preflight=PASS_NO_PROVIDER' >> "$GITHUB_STEP_SUMMARY"
+      - name: Perform at most one real Gemini Chat dispatch after verified TLS ready
+        if: steps.gate.outputs.authorized == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! git log -1 --format=%B | grep -Fq '[r01-real-once]'; then
+            echo 'r01_real_inference=NOOP_NO_ONE_TIME_MARKER' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          umask 077
+          python3 scripts/r01_live_once.py "$RELEASE_SHA" "$RUNNER_TEMP/r01-one-shot.json"
+          python3 - "$RUNNER_TEMP/r01-one-shot.json" <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json,sys
+          d=json.load(open(sys.argv[1]))
+          print("r01_real_backend_inference="+d["status"])
+          print("chat_dispatch_http_attempts="+str(d["chat_dispatch_http_attempts"]))
+          print("db_terminal_status="+d["db_receipt"]["status"])
+          print("db_text_events="+str(d["db_receipt"]["text_events"]))
+          print("provider_usage_readback="+d["provider_usage_readback"])
+          print("formal_traffic_mutated="+d["traffic_mutated"])
+          print("user_ui_e2e=NOT_TESTED")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.gate.outputs.authorized == 'true'
+        with:
+          name: r01-one-real-inference-${{ github.event.workflow_run.head_sha }}
+          path: ${{ runner.temp }}/r01-one-shot.json
+          if-no-files-found: warn
+          retention-days: 90
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.gate.outputs.authorized == 'true'
+        with:
+          name: r01-verified-tls-canary-${{ github.event.workflow_run.head_sha }}
+          path: ${{ runner.temp }}/r01-canary.json
+          if-no-files-found: warn
+          retention-days: 30

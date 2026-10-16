@@ -1,4 +1,5 @@
 import type { PoolConfig } from "pg";
+import { isIP } from "node:net";
 
 export function chatDatabaseUrl(env: { OMNIAGENT_BUNDLE?: string; CHAT_DATABASE_URL?: string }): string {
   // Legacy revisions continue using a pinned direct DSN. New candidates must use
@@ -19,7 +20,32 @@ export function chatDatabaseUrl(env: { OMNIAGENT_BUNDLE?: string; CHAT_DATABASE_
   return env.CHAT_DATABASE_URL ?? "";
 }
 
-export function chatDatabasePoolConfig(dsn: string, tlsMode?: string): PoolConfig {
+/**
+ * A public PostgreSQL trust anchor may be injected as base64 to keep Cloud
+ * Run env values single-line. No cert file or private key is ever committed.
+ * Never fall back to system trust if an operator supplies malformed base64.
+ */
+export function chatDatabaseTrustAnchor(env: { CHAT_DATABASE_CA_PEM?: string;
+  CHAT_DATABASE_CA_BASE64?: string }): string|undefined {
+  const pem=env.CHAT_DATABASE_CA_PEM;
+  const encoded=env.CHAT_DATABASE_CA_BASE64;
+  if(pem!==undefined && encoded!==undefined)
+    throw new Error("conflicting Chat database CA sources");
+  if(encoded===undefined) return pem;
+  if(!encoded || encoded.length>24_000 ||
+     !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(encoded))
+    throw new Error("invalid Chat database trust anchor");
+  const decoded=Buffer.from(encoded,"base64").toString("utf8");
+  if(Buffer.from(decoded,"utf8").toString("base64")!==encoded ||
+     !decoded.includes("-----BEGIN CERTIFICATE-----") ||
+     !decoded.includes("-----END CERTIFICATE-----") ||
+     decoded.length>16_000)
+    throw new Error("invalid Chat database trust anchor");
+  return decoded;
+}
+
+export function chatDatabasePoolConfig(dsn: string, tlsMode?: string,
+  caPem?: string, tlsServername?: string): PoolConfig {
   const base: PoolConfig = {
     max: 5,
     connectionTimeoutMillis: 5_000
@@ -29,7 +55,7 @@ export function chatDatabasePoolConfig(dsn: string, tlsMode?: string): PoolConfi
     return { ...base, connectionString: dsn };
   }
 
-  if (tlsMode !== "private-self-signed") {
+  if (tlsMode !== "private-self-signed" && tlsMode !== "verified-ca") {
     throw new Error("unsupported Chat database TLS mode");
   }
 
@@ -38,16 +64,25 @@ export function chatDatabasePoolConfig(dsn: string, tlsMode?: string): PoolConfi
     throw new Error("Chat database URL must use PostgreSQL");
   }
   if (url.searchParams.get("sslmode") !== "require") {
-    throw new Error("private self-signed database TLS requires sslmode=require");
+    throw new Error("Chat database TLS requires sslmode=require");
   }
 
-  // node-postgres otherwise verifies the self-signed server certificate and
-  // closes the TLS handshake before PostgreSQL authentication. This mode is
-  // intentionally limited to the private dev VPC; traffic remains TLS-encrypted.
+  // node-postgres parses sslmode from the DSN and may override the supplied
+  // ssl object. Remove it so the explicit CA and hostname are authoritative.
   url.searchParams.delete("sslmode");
-  return {
-    ...base,
-    connectionString: url.toString(),
-    ssl: { rejectUnauthorized: false }
-  };
+  if (tlsMode === "verified-ca") {
+    const hostname = tlsServername || url.hostname;
+    if (!caPem?.includes("-----BEGIN CERTIFICATE-----") ||
+        !caPem.includes("-----END CERTIFICATE-----") ||
+        !/^[a-z0-9][a-z0-9.-]{0,252}$/i.test(hostname) ||
+        (isIP(url.hostname) !== 0 && !tlsServername)) {
+      throw new Error("verified CA or database TLS hostname is not configured");
+    }
+    return { ...base, connectionString: url.toString(),
+      ssl: { rejectUnauthorized: true, ca: caPem, servername: hostname } };
+  }
+  // Legacy private-only dev compatibility. This mode does NOT authenticate
+  // the server and must be retired after the active GCP TLS CA is available.
+  return { ...base, connectionString: url.toString(),
+    ssl: { rejectUnauthorized: false } };
 }

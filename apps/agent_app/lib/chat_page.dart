@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'chat_api.dart';
 import 'model_catalog.dart';
@@ -18,7 +19,7 @@ class ChatPage extends StatefulWidget {
 class _ChatPageState extends State<ChatPage> {
   late Future<dynamic> threads = widget.api.get('/v1/threads');
   final input = TextEditingController();
-  final modelInput = TextEditingController(text: 'gemini-2.5-flash');
+  final modelInput = TextEditingController(text: 'gemini-3.5-flash-lite');
   final events = <String, Map<String, dynamic>>{};
   final seenEvents = <String>{};
   final lockedApprovals = <String>{};
@@ -27,10 +28,91 @@ class _ChatPageState extends State<ChatPage> {
   String runtime = 'gemini';
   String connection = 'idle';
   String? queuedTurn;
-  String turnState = 'queued';
+  String turnPhase = 'queued';
+  String? receiptTurnId;
+  String receiptEvidence = 'none'; // No data is proof until a DB readback.
+  String? submittedRequestId;
   int cursor = -1;
   bool busy = false;
-  bool polling = false;
+  int selectionEpoch = 0;
+  int? pollingEpoch;
+  bool pendingUnknown=false;
+  Map<String, List<String>>? entitledModels;
+  String? authenticatedOwnerId;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(loadOwnerModels());
+    unawaited(loadAuthenticatedOwner());
+  }
+
+  Future<void> loadAuthenticatedOwner() async {
+    try {
+      final result = await widget.api.get('/v1/me');
+      final value = result is Map ? result['ownerId'] : null;
+      final valid = value is String &&
+          RegExp(r'^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$')
+              .hasMatch(value);
+      if (mounted && valid) {
+        setState(() => authenticatedOwnerId = value);
+      }
+    } catch (_) {
+      // No Owner ID without a verified OAuth-bound backend response.
+    }
+  }
+
+  Future<void> copyAuthenticatedOwner() async {
+    final current = authenticatedOwnerId;
+    if (current == null) return;
+    await Clipboard.setData(ClipboardData(text: current));
+    if (mounted) _error('已複製此登入帳號的 Owner ID');
+  }
+
+  Future<void> loadOwnerModels() async {
+    try {
+      final raw = await widget.api.get('/v1/models');
+      if (!mounted || raw is! Map || raw['dispatchEnabled'] is! bool) return;
+      final allowed = <String, List<String>>{};
+      if (raw['dispatchEnabled'] == true && raw['items'] is List) {
+        for (final entry in raw['items'] as List) {
+          if (entry is! Map) continue;
+          final mode = entry['runtime'];
+          final name = entry['model'];
+          if (mode is String && name is String && modelCatalog.containsKey(mode) &&
+              mode != 'groq' && name.isNotEmpty &&
+              (mode != 'gemini' || modelCatalog['gemini']!.contains(name))) {
+            allowed.putIfAbsent(mode, () => <String>[]).add(name);
+          }
+        }
+      }
+      for (final entries in allowed.values) { entries.sort(); }
+      setState(() {
+        entitledModels = allowed;
+        if (allowed.isNotEmpty && !allowed.containsKey(runtime)) {
+          runtime = allowed.keys.first;
+          modelInput.text = allowed[runtime]!.first;
+        } else if (allowed.containsKey(runtime) &&
+            !allowed[runtime]!.contains(modelInput.text)) {
+          modelInput.text = allowed[runtime]!.first;
+        }
+      });
+    } catch (_) {
+      // A failed capability lookup must not grant model execution.
+      if (mounted) setState(() => entitledModels = <String, List<String>>{});
+    }
+  }
+
+  bool get modelAllowed {
+    final selected = modelInput.text.trim();
+    if (runtime == 'gemini' && !modelCatalog['gemini']!.contains(selected)) {
+      return false;
+    }
+    return entitledModels == null ||
+        (entitledModels![runtime]?.contains(selected) ?? false);
+  }
+  List<String> get selectableModels => entitledModels == null
+      ? modelCatalog[runtime]! : entitledModels![runtime] ?? <String>[];
 
   @override
   void dispose() {
@@ -43,23 +125,96 @@ class _ChatPageState extends State<ChatPage> {
   void reloadThreads() =>
       setState(() => threads = widget.api.get('/v1/threads'));
 
+  void clearSelection() {
+    poller?.cancel();
+    selectionEpoch++;
+    pollingEpoch = null;
+    setState(() {
+      thread = null;
+      events.clear();
+      seenEvents.clear();
+      lockedApprovals.clear();
+      queuedTurn = null;
+      turnPhase = 'queued';
+      receiptTurnId = null;
+      receiptEvidence = 'none';
+      submittedRequestId = null;
+      cursor = -1;
+      connection = 'idle';
+      pendingUnknown=false;
+    });
+  }
+
   Future<void> select(Map<String, dynamic> value) async {
+    poller?.cancel();
+    final epoch = ++selectionEpoch;
     setState(() {
       thread = value;
       events.clear();
       seenEvents.clear();
       lockedApprovals.clear();
       queuedTurn = null;
+      turnPhase = 'queued';
+      receiptTurnId = null;
+      receiptEvidence = 'none';
+      submittedRequestId = null;
       cursor = -1;
       connection = 'connecting';
+      pendingUnknown=false;
     });
-    poller?.cancel();
     await refresh();
+    // A browser/device with no POST key can still read the newest durable turn
+    // under its verified Owner without re-running the model.
+    try {
+      final result=await widget.api.get(
+          '/v1/threads/${value['thread_id']}/turns/latest');
+      final last=result is Map ? result['latest'] : null;
+      if(mounted && selectionEpoch==epoch &&
+          thread?['thread_id']==value['thread_id'] &&
+          last is Map && last['turnId'] is String &&
+          last['status']=='COMPLETED' &&
+          (receiptTurnId!=last['turnId'] || receiptEvidence=='none')) {
+        final turnId=last['turnId'] as String;
+        setState(() {
+          receiptTurnId=turnId;
+          receiptEvidence='pending';
+        });
+        await verifyTurnReceipt(value['thread_id'] as String,turnId,epoch);
+      }
+    } catch (_) {
+      // No inference or claim of durable completion if recovery fails.
+    }
+    // Recover active status from PostgreSQL after browser reload. Do not
+    // assume an in-memory queuedTurn survived a new session.
+    try {
+      final active = await widget.api.get(
+          '/v1/threads/${value['thread_id']}/turns/active');
+      if (mounted && selectionEpoch == epoch &&
+          thread?['thread_id'] == value['thread_id'] &&
+          active is Map && active['active'] is Map) {
+        final running = active['active'] as Map;
+        if (running['turnId'] is String && running['status'] is String) {
+          setState(() {
+            queuedTurn = running['turnId'] as String;
+            turnPhase = running['status'] as String;
+          });
+        }
+      }
+    } catch (_) {
+      // The SSE cursor remains authoritative; a status lookup outage does
+      // not revive a previous Owner's in-memory state.
+    }
+    // Never re-enable a poller for a thread that was switched or deleted
+    // while its initial SSE replay request was still in flight.
+    if (!mounted || selectionEpoch != epoch ||
+        thread?['thread_id'] != value['thread_id']) {
+      return;
+    }
     poller = Timer.periodic(const Duration(seconds: 2), (_) => refresh());
   }
 
   Future<void> createThread() async {
-    if (busy || runtime == 'groq' || modelInput.text.trim().isEmpty) return;
+    if (busy || runtime == 'groq' || !modelAllowed || modelInput.text.trim().isEmpty) return;
     setState(() => busy = true);
     try {
       final value = await widget.api.post('/v1/threads', {
@@ -68,10 +223,28 @@ class _ChatPageState extends State<ChatPage> {
         'assistantProfile': 'default',
       });
       if (!mounted) return;
-      await select(Map<String, dynamic>.from(value));
+      if (value is! Map || value['thread_id'] is! String) {
+        throw StateError('對話建立回應格式異常，請勿立即重試；先重新整理對話列表');
+      }
+      try {
+        await select(Map<String, dynamic>.from(value));
+      } catch (_) {
+        // A successful POST may already have committed the thread. Never
+        // call that a failed creation or encourage an unsafe second POST.
+        reloadThreads();
+        if (mounted) _error('對話已建立，但開啟時發生錯誤；請從對話列表重新開啟');
+        return;
+      }
       reloadThreads();
-    } catch (_) {
-      if (mounted) _error('無法建立對話');
+    } catch (error) {
+      // The API already returns only safe error categories and a random
+      // request reference. Keep them visible so a failed POST can be traced
+      // without exposing provider payloads or an OAuth credential.
+      if (mounted) {
+        _error(error is StateError
+            ? error.message.toString()
+            : '建立對話時發生網路或載入錯誤，請勿連續重試');
+      }
     } finally {
       if (mounted) setState(() => busy = false);
     }
@@ -109,8 +282,7 @@ class _ChatPageState extends State<ChatPage> {
       await widget.api.delete('/v1/threads/${value['thread_id']}');
       if (!mounted) return;
       if (thread?['thread_id'] == value['thread_id']) {
-        poller?.cancel();
-        setState(() { thread = null; events.clear(); seenEvents.clear(); lockedApprovals.clear(); queuedTurn = null; cursor = -1; connection = 'idle'; });
+        clearSelection();
       }
       reloadThreads();
     } catch (_) {
@@ -122,21 +294,109 @@ class _ChatPageState extends State<ChatPage> {
 
   Future<void> refresh() async {
     final id = thread?['thread_id'];
-    if (id == null || polling) return;
-    polling = true;
+    final epoch = selectionEpoch;
+    if (id == null || pollingEpoch == epoch) return;
+    // Each selected thread gets its own in-flight slot. A delayed request
+    // from an older thread cannot prevent the new thread's initial replay.
+    pollingEpoch = epoch;
     try {
+      final currentTurn = queuedTurn;
+      if (currentTurn != null && turnPhase == 'running') {
+        final result = await widget.api.post(
+            '/v1/threads/$id/turns/$currentTurn/refresh', {});
+        if (!mounted || selectionEpoch != epoch || thread?['thread_id'] != id) return;
+        if (result is Map && result['status'] is String) {
+          setState(() => turnPhase = result['status'] as String);
+        }
+      }
+      // On reload use the Owner's persisted idempotency key only for GET.
+      // Missing DB row is still ambiguous if the original POST is in flight.
+      final recovered=await widget.api.reconcileRecoveredMessage('$id');
+      if(!mounted || selectionEpoch!=epoch || thread?['thread_id']!=id){
+        return;
+      }
+      if(recovered!=null){
+        final turnId=recovered['turnId'] as String;
+        final status=recovered['status'] as String;
+        setState((){
+          receiptTurnId=turnId;
+          receiptEvidence=status=='COMPLETED'?'pending':'none';
+          queuedTurn=['QUEUED','RUNNING'].contains(status)?turnId:null;
+          turnPhase=status.toLowerCase();
+        });
+        if(status=='COMPLETED'){
+          await verifyTurnReceipt('$id',turnId,epoch);
+        }
+      }
+      final unresolved=widget.api.hasPendingMessage('$id');
+      if(pendingUnknown!=unresolved){
+        setState(()=>pendingUnknown=unresolved);
+      }
       final rows = await widget.api.events('$id', cursor);
-      if (!mounted || thread?['thread_id'] != id) return;
+      if (!mounted || selectionEpoch != epoch ||
+          thread?['thread_id'] != id) {
+        return;
+      }
+      final terminalRows = rows.where((row) =>
+          const ['turn_completed', 'turn_cancelled', 'turn_error']
+              .contains(row['event_type']) &&
+          row['turn_id'] is String).toList();
       setState(() {
         for (final row in rows) {
           _merge(row);
         }
+        // After a reload, no in-memory receiptTurnId survives. Recover only
+        // a completed turn identifier from this Owner-scoped SSE replay.
+        // The UI never infers persistence from the response text itself.
+        if (receiptEvidence == 'none' && terminalRows.isNotEmpty) {
+          final latest = terminalRows.last;
+          receiptTurnId = latest['turn_id'] as String;
+          receiptEvidence = latest['event_type'] == 'turn_completed'
+              ? 'pending' : 'not_verified';
+        }
         connection = 'connected';
       });
+      final verifying = receiptTurnId;
+      if (verifying != null && receiptEvidence == 'pending' &&
+          terminalRows.any((row) =>
+              row['turn_id'] == verifying &&
+              row['event_type'] == 'turn_completed')) {
+        await verifyTurnReceipt('$id', verifying, epoch);
+      }
     } catch (_) {
-      if (mounted) setState(() => connection = 'disconnected');
+      if (mounted && selectionEpoch == epoch &&
+          thread?['thread_id'] == id) {
+        setState(() => connection = 'disconnected');
+      }
     } finally {
-      polling = false;
+      if (pollingEpoch == epoch) {
+        pollingEpoch = null;
+      }
+    }
+  }
+
+  /// One bounded read-only receipt request after the terminal SSE event.
+  /// Never claim a durable reply from UI text or a provider status alone.
+  Future<void> verifyTurnReceipt(String threadId,String turnId,int epoch) async {
+    if (receiptEvidence != 'pending') return;
+    setState(() => receiptEvidence = 'checking');
+    try {
+      final proof = await widget.api
+          .get('/v1/threads/$threadId/turns/$turnId/receipt');
+      if (!mounted || selectionEpoch != epoch ||
+          thread?['thread_id'] != threadId || receiptTurnId != turnId) {
+        return;
+      }
+      final confirmed = proof is Map && proof['status'] == 'COMPLETED' &&
+          proof['textPersisted'] == true &&
+          proof['terminalPersisted'] == true &&
+          proof['durableCompleted'] == true;
+      setState(() => receiptEvidence = confirmed ? 'verified' : 'not_verified');
+    } catch (_) {
+      if (mounted && selectionEpoch == epoch &&
+          thread?['thread_id'] == threadId && receiptTurnId == turnId) {
+        setState(() => receiptEvidence = 'not_verified');
+      }
     }
   }
 
@@ -150,42 +410,69 @@ class _ChatPageState extends State<ChatPage> {
         ? '${row['item_id'] ?? eventId}'
         : eventId;
     events[key] = {...?events[key], ...row};
-    final turnId = row['turn_id']?.toString();
-    final type = row['event_type'];
-    final payload = row['payload'] as Map? ?? {};
-    if (turnId != null && type == 'item_upsert' && payload['role'] == 'user') {
-      queuedTurn = turnId;
-      turnState = 'queued';
-    }
-    if (turnId != null && (type == 'approval_request' || type == 'text_delta' || type == 'tool_request' || type == 'approval_resolved')) {
-      queuedTurn = turnId;
-      turnState = type == 'approval_request' ? 'approval' : 'running';
+    if (row['event_type'] == 'approval_request') {
+      if (row['turn_id'] is String) {
+        queuedTurn = row['turn_id'] as String;
+      }
+      turnPhase = 'approval_required';
     }
     if (row['event_type'] == 'turn_cancelled' ||
         row['event_type'] == 'turn_completed' ||
         row['event_type'] == 'turn_error') {
-      if (queuedTurn == turnId) queuedTurn = null;
+      queuedTurn = null;
+      turnPhase = 'queued';
     }
   }
 
   Future<void> send() async {
     final id = thread?['thread_id'];
     final content = input.text.trim();
-    if (id == null || content.isEmpty || busy) return;
+    if (id == null || content.isEmpty || busy || pendingUnknown) return;
     setState(() => busy = true);
     try {
       final value = await widget.api
           .post('/v1/threads/$id/messages', {'content': content});
       if (!mounted) return;
       input.clear();
-        setState(() {
-          queuedTurn = '${value['turn']['turn_id']}';
-          turnState = value['dispatch']?['status'] == 'awaiting_approval' ? 'approval' :
-              value['turn']['status'] == 'QUEUED' ? 'queued' : 'running';
-        });
+      final reference = widget.api.lastRequestId;
+      final phase = value['dispatch'] is Map
+          ? '${value['dispatch']['status']}' : 'queued';
+      final createdTurn = value is Map && value['turn'] is Map
+          ? value['turn']['turn_id'] : null;
+      setState(() {
+        turnPhase = phase;
+        queuedTurn = ['completed','cancelled','error'].contains(phase)
+            ? null : '${value['turn']['turn_id']}';
+        receiptTurnId = createdTurn is String ? createdTurn : null;
+        receiptEvidence = createdTurn is String ? 'pending' : 'none';
+        submittedRequestId = reference;
+      });
       await refresh();
     } catch (error) {
-      if (mounted) _error(error is StateError ? error.message.toString() : '訊息送出失敗，請稍後重試');
+      final recovered=await widget.api.reconcilePendingMessage('$id',content);
+      if(!mounted || thread?['thread_id']!=id)return;
+      if(recovered!=null){
+        input.clear();
+        final turnId=recovered['turnId'] as String;
+        final status=recovered['status'] as String;
+        setState((){
+          queuedTurn=['COMPLETED','CANCELLED','ERROR'].contains(status)?null:turnId;
+          turnPhase=status.toLowerCase();
+          receiptTurnId=turnId;
+          receiptEvidence=status=='COMPLETED'?'pending':'none';
+        });
+        await refresh();
+        if(status=='COMPLETED' && receiptEvidence=='pending' &&
+           mounted && thread?['thread_id']==id){
+          await verifyTurnReceipt('$id',turnId,selectionEpoch);
+        }
+      } else {
+        if(widget.api.hasPendingMessage('$id')){
+          setState(()=>pendingUnknown=true);
+        }
+        _error(error is StateError ? error.message.toString()
+          : '提交結果尚未確認；請先讀回對話狀態，再決定是否重試');
+      }
     } finally {
       if (mounted) setState(() => busy = false);
     }
@@ -197,11 +484,21 @@ class _ChatPageState extends State<ChatPage> {
     if (id == null || turn == null || busy) return;
     setState(() => busy = true);
     try {
-      await widget.api.post('/v1/threads/$id/turns/$turn/cancel', {});
-      if (mounted) setState(() => queuedTurn = null);
+      final result = await widget.api.post('/v1/threads/$id/turns/$turn/cancel', {});
+      if (mounted) {
+        setState(() {
+          if (result is Map && ['CANCELLED','cancelled','completed','error']
+              .contains(result['status'])) {
+            queuedTurn = null;
+            turnPhase = 'queued';
+          } else if (result is Map && result['status'] is String) {
+            turnPhase = result['status'] as String;
+          }
+        });
+      }
       await refresh();
     } catch (_) {
-        if (mounted) _error('無法取消回合，請稍後重試');
+      if (mounted) _error('目前無法取消；執行狀態可能已變更，請重新整理');
     } finally {
       if (mounted) setState(() => busy = false);
     }
@@ -222,9 +519,12 @@ class _ChatPageState extends State<ChatPage> {
     }
     setState(() => lockedApprovals.add('$requestId'));
     try {
-      await widget.api.post(
+      final result = await widget.api.post(
           '/v1/threads/$threadId/turns/$turnId/approvals/$requestId',
           {'approved': approved, 'paramsDigest': digest});
+      if (mounted && result is Map && result['status'] is String) {
+        setState(() => turnPhase = result['status'] as String);
+      }
       await refresh();
     } catch (_) {
       if (mounted) {
@@ -301,6 +601,12 @@ class _ChatPageState extends State<ChatPage> {
           appBar: AppBar(
             title: const Text('omniAgent'),
             actions: [
+              if (authenticatedOwnerId != null)
+                IconButton(
+                  tooltip: '複製 Owner ID',
+                  onPressed: copyAuthenticatedOwner,
+                  icon: const Icon(Icons.badge_outlined),
+                ),
               IconButton(
                 tooltip: '重新載入事件',
                 onPressed: refresh,
@@ -347,7 +653,7 @@ class _ChatPageState extends State<ChatPage> {
             Padding(
               padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
               child: FilledButton.icon(
-                onPressed: () => setState(() => thread = null),
+                onPressed: clearSelection,
                 icon: const Icon(Icons.add_rounded),
                 label: const Text('新對話'),
               ),
@@ -540,7 +846,9 @@ class _ChatPageState extends State<ChatPage> {
                           if (value == null) return;
                           setState(() {
                             runtime = value;
-                            modelInput.text = modelCatalog[value]!.first;
+                            final models = entitledModels == null
+                                ? modelCatalog[value]! : entitledModels![value] ?? <String>[];
+                            modelInput.text = models.isEmpty ? '' : models.first;
                           });
                         },
                       ),
@@ -554,11 +862,16 @@ class _ChatPageState extends State<ChatPage> {
                         menuHeight: 240,
                         label: const Text('模型（可搜尋或手填）'),
                         dropdownMenuEntries: [
-                          for (final model in modelCatalog[runtime]!)
+                          for (final model in selectableModels)
                             DropdownMenuEntry(value: model, label: model),
                         ],
                       ),
-                      if (runtime == 'groq')
+                      if (entitledModels != null && !modelAllowed)
+                         const Padding(
+                           padding: EdgeInsets.only(top: 8),
+                           child: Text('此帳號尚未取得所選模型的執行權限；不會送出付費推論。'),
+                         ),
+                       if (runtime == 'groq')
                         const Padding(
                           padding: EdgeInsets.only(top: 8),
                           child: Text('Groq 尚未接通，目前僅提供型號預覽。'),
@@ -566,7 +879,7 @@ class _ChatPageState extends State<ChatPage> {
                       const SizedBox(height: 16),
                       FilledButton(
                         onPressed:
-                            busy || runtime == 'groq' ? null : createThread,
+                            busy || runtime == 'groq' || !modelAllowed ? null : createThread,
                         child: const Text('建立對話'),
                       ),
                     ],
@@ -606,6 +919,24 @@ class _ChatPageState extends State<ChatPage> {
                     ),
                     const SizedBox(height: 7),
                     _connectionStatus(),
+                    if (submittedRequestId != null) ...[
+                      const SizedBox(height: 5),
+                      SelectableText('請求追蹤碼：$submittedRequestId',
+                          style: Theme.of(context).textTheme.labelSmall),
+                    ],
+                    if (receiptEvidence != 'none') ...[
+                      const SizedBox(height: 5),
+                      Text(
+                        receiptEvidence == 'verified'
+                            ? 'PostgreSQL 已確認回覆持久化'
+                            : receiptEvidence == 'not_verified'
+                                ? '資料庫持久化尚未驗證'
+                                : '等待資料庫持久化證據',
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                              color: OmniColors.mutedCocoa,
+                            ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -670,16 +1001,25 @@ class _ChatPageState extends State<ChatPage> {
                   const Icon(Icons.schedule_rounded, size: 20),
                   const SizedBox(width: 10),
                   Expanded(
-                    child: Text(turnState == 'approval' ? '等待你的核准' :
-                        turnState == 'running' ? 'AI 正在執行' : '訊息已排隊，等待執行環境接手'),
+                    child: Text(turnPhase == 'approval_required'
+                         ? '正在等待核准決策'
+                         : turnPhase == 'running'
+                             ? '模型正在執行，可嘗試中斷'
+                             : '訊息已排隊，等待執行環境接手'),
                   ),
                   TextButton(
                     onPressed: busy ? null : cancelQueued,
-                    child: Text(turnState == 'queued' ? '取消排隊' : '取消執行'),
+                    child: Text(turnPhase == 'running' || turnPhase == 'approval_required'
+                        ? '中斷執行' : '取消排隊'),
                   ),
                 ],
               ),
             ),
+          ),
+        if(pendingUnknown)
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal:16,vertical:8),
+            child: Text('上次訊息仍未確認，已暫停新訊息；將使用原始 Key 自動查詢 PostgreSQL，避免重複執行。'),
           ),
         SafeArea(
           top: false,
@@ -714,7 +1054,7 @@ class _ChatPageState extends State<ChatPage> {
                   ),
                   child: IconButton(
                     tooltip: '送出',
-                    onPressed: busy ? null : send,
+                    onPressed: busy || pendingUnknown ? null : send,
                     icon: const Icon(Icons.send_rounded),
                   ),
                 ),
