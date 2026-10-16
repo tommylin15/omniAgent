@@ -70,6 +70,13 @@
 - 最新驗收鏈：Flutter [#38853888114](https://github.com/tommylin15/omniAgent/actions/runs/38853888114)、GHCR [#38853888080](https://github.com/tommylin15/omniAgent/actions/runs/38853888080)、Cloud Run 0% [#38854466487](https://github.com/tommylin15/omniAgent/actions/runs/38854466487)、Signed Smoke [#38854586006](https://github.com/tommylin15/omniAgent/actions/runs/38854586006)、R05 negative [#38854635306](https://github.com/tommylin15/omniAgent/actions/runs/38854635306) 及 readiness [#38854635332](https://github.com/tommylin15/omniAgent/actions/runs/38854635332) PASS。**不代表正式 100% Revision 已更新或正式 Chat Dispatch 已開啟。**
 - **殘餘缺口**：原 key 僅存在登入期間的 `ChatApi` 記憶體中，跨帳號切換或重載後無 key；前一輪 R08 `/turns/latest` 可讀回最後已提交回合，但不足以證明尚未提交的 request 結果；跨裝置更不能安全推斷 key。R08 仍 PARTIAL，後續須具備合法 Owner 範圍的持久化相關性／受控恢復及故障注入。
 
+## 2026-10-16 R08 sessionStorage Owner 分區與重載故障注入驗收
+
+- 來源 [`be6e7401`](https://github.com/tommylin15/omniAgent/commit/be6e7401a32c7d046450f57c0b4d24b417d358f1)。React/Web native storage 不介入；Flutter 的 `package:web` `sessionStorage` 只保留 Owner 分區下的 Thread UUID / 原 idempotency key / schema version，訊息 prompt、Google Token、reply 不存。驗證 /v1/me 後才綁定 Owner，signout／switch Owner 刪舊 owner metadata；無法讀寫 browser storage 必須先封鎖 POST。
+- MockClient 具體故障情境：lost 202 after durable commit → same-tab reload → GET 原 Key 唯讀恢復且 POST 次數不增加；racing original write → GET null → blocked fresh key → later GET recovers；兩名 Owner session isolation、logout clearing、storage denied/corrupted、明確拒絕模型啟用 503 no-DB-write 均回歸。真實 PostgreSQL idempotency/owner isolation 維持由分離 CI 實測，**沒有合法真人 OAuth token 可供現場注入**，故不得把 fixture 標記為 live E2E。
+- 新版 CI Flutter [#38856472000](https://github.com/tommylin15/omniAgent/actions/runs/38856472000)、GHCR [#38856472014](https://github.com/tommylin15/omniAgent/actions/runs/38856472014)、0% [#38856846223](https://github.com/tommylin15/omniAgent/actions/runs/38856846223)、Smoke [#38856962371](https://github.com/tommylin15/omniAgent/actions/runs/38856962371)、R05 negative [#38857026589](https://github.com/tommylin15/omniAgent/actions/runs/38857026589)、runtime readiness [#38857026582](https://github.com/tommylin15/omniAgent/actions/runs/38857026582)、production audit [#38857026623](https://github.com/tommylin15/omniAgent/actions/runs/38857026623) PASS。
+- **殘餘風險與 release fence**：瀏覽器重新整理／同分頁恢復有 source+CI 可重跑證據；跨分頁、瀏覽器關閉、跨裝置、非 Web persistence、真實授權 UI E2E 仍為 PARTIAL。正式 Chat Dispatch OFF，不能因 candidate PASS 切正式模型或引入未核准資料庫跨 Owner 讀取。
+
 ## 推進與關閉規則
 
 1. **所有 16 項均有單獨的 code/API/infra 入口、測試與驗收退出條件**。原始稽核保留證據和風險判定，本表負責工程執行順序，`doc/todo.md` 負責當前優先級。
