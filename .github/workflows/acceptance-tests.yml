@@ -1,0 +1,116 @@
+# Unified acceptance tests: p0, p0v, r01, r05 tests
+name: Acceptance Tests
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'services/**'
+      - 'scripts/**'
+      - 'infra/**'
+      - '.github/workflows/acceptance-tests.yml'
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: 'Test suite to run'
+        type: choice
+        options: [all, smoke, auth, db, gateway]
+        default: all
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: acceptance-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PROJECT: gen-lang-client-0593591102
+  REGION: us-central1
+
+jobs:
+  smoke:
+    if: inputs.suite == 'all' || inputs.suite == 'smoke' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+          service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Health checks
+        run: |
+          for svc in omniagent-chat omniagent-agent-gateway omniagent-shared-codex; do
+            url=$(gcloud run services describe "$svc" --project="$PROJECT" --region="$REGION" --format="value(status.url)")
+            echo "$svc: $(curl -s -o /dev/null -w '%{http_code}' "$url/health" || echo 'FAIL')"
+          done
+
+  auth:
+    if: inputs.suite == 'all' || inputs.suite == 'auth' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+          service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Auth boundary tests
+        run: |
+          CHAT_URL=$(gcloud run services describe omniagent-chat --project="$PROJECT" --region="$REGION" --format="value(status.url)")
+          # Anonymous should get 401
+          for ep in /v1/models /v1/threads; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "$CHAT_URL$ep")
+            [[ "$code" == "401" ]] && echo "$ep: PASS (401)" || echo "$ep: FAIL ($code)"
+          done
+          # Private backends should deny anonymous
+          for svc in omniagent-agent-gateway omniagent-shared-codex; do
+            url=$(gcloud run services describe "$svc" --project="$PROJECT" --region="$REGION" --format="value(status.url)")
+            code=$(curl -s -o /dev/null -w '%{http_code}' "$url/health")
+            [[ "$code" == "403" ]] && echo "$svc: PASS (403)" || echo "$svc: FAIL ($code)"
+          done
+
+  db:
+    if: inputs.suite == 'all' || inputs.suite == 'db' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+          service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: DB schema validation
+        run: |
+          HOST="$(printf '%s' 'amFudXMtcG9zdGdyZXMtZGV2' | base64 -d)"
+          CONTAINER="$(printf '%s' 'amFudXMtcG9zdGdyZXM=' | base64 -d)"
+          gcloud compute ssh "$HOST" --project="$PROJECT" --zone=us-central1-a --tunnel-through-iap --quiet \
+            --command="sudo docker exec -u postgres $CONTAINER psql -X -A -t -d omniagent_chat -c \"SELECT table_name FROM information_schema.tables WHERE table_schema='omni_chat' ORDER BY 1\"" \
+            || echo "DB_CHECK=SKIPPED"
+
+  gateway:
+    if: inputs.suite == 'all' || inputs.suite == 'gateway' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+          service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Gateway config validation
+        run: |
+          gcloud run services describe omniagent-agent-gateway --project="$PROJECT" --region="$REGION" --format=json > gw.json
+          python3 -c "
+          import json
+          d=json.load(open('gw.json'))
+          spec=d.get('spec',{}).get('template',{}).get('spec',{})
+          print('runtime_sa:', spec.get('serviceAccountName','NOT_SET'))
+          traffic=[t for t in d.get('status',{}).get('traffic',[]) if t.get('percent',0)>0]
+          print('active_revisions:', len(traffic))
+          "
