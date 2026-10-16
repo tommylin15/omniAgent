@@ -1,4 +1,5 @@
 import { GoogleAuth, OAuth2Client } from "google-auth-library";
+import { verifyGoogleBrowserUserClaims } from "./google_user_identity.js";
 import { ChatDispatcher, makeSignedGatewayInvoker } from "./gateway_dispatch.js";
 import { parseModelEntitlements } from "./model_entitlements.js";
 import { Pool } from "pg";
@@ -83,6 +84,7 @@ const server = makeChatServer(store,
   async (token) => {
     try {
       const claims = await verify(token,userAudience);
+      verifyGoogleBrowserUserClaims(claims);
       return { issuer: claims.iss, subject: claims.sub };
     } catch { throw new Error("unauthorized"); }
   },

@@ -45,10 +45,26 @@ jobs:
           grep -qx 'r05_model_provider_calls=ZERO' "$RUNNER_TEMP/r05-live-negative.txt"
           grep -qx 'r05_valid_two_user_oauth_e2e=NOT_VERIFIED_NO_DELEGATED_USER_TOKENS' "$RUNNER_TEMP/r05-live-negative.txt"
           cat "$RUNNER_TEMP/r05-live-negative.txt" >> "$GITHUB_STEP_SUMMARY"
+      - name: Genuine Google-signed service account may NOT authenticate as browser user
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          python3 -m unittest discover -s tests -p test_r05_service_account_denial.py -v
+          python3 scripts/r05_service_account_denial.py "$SOURCE_SHA" > "$RUNNER_TEMP/r05-signed-sa.txt" || {
+            cat "$RUNNER_TEMP/r05-signed-sa.txt" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          }
+          grep -qx 'r05_signed_sa_user_boundary=PASS' "$RUNNER_TEMP/r05-signed-sa.txt"
+          grep -qx 'r05_no_model_inference=PASS' "$RUNNER_TEMP/r05-signed-sa.txt"
+          grep -qx 'r05_real_two_google_users=NOT_VERIFIED_NO_DELEGATED_USER_TOKENS' "$RUNNER_TEMP/r05-signed-sa.txt"
+          cat "$RUNNER_TEMP/r05-signed-sa.txt" >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: r05-live-auth-negative-${{ github.event.workflow_run.head_sha }}
-          path: ${{ runner.temp }}/r05-live-negative.txt
+          path: |
+            ${{ runner.temp }}/r05-live-negative.txt
+            ${{ runner.temp }}/r05-signed-sa.txt
           if-no-files-found: warn
           retention-days: 30

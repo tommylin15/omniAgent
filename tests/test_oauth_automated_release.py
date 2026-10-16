@@ -15,6 +15,10 @@ class AutomatedOauthGate(unittest.TestCase):
                       "claims.email_verified !== true"):
             self.assertIn(value,src)
         self.assertIn('if (process.env.CHAT_DISPATCH_ENABLED === "true")',src)
+        self.assertIn('verifyGoogleBrowserUserClaims(claims)',src)
+        guard=(ROOT/"services/chat-api/google_user_identity.ts").read_text()
+        self.assertIn("gserviceaccount",guard)
+        self.assertIn("email_verified",guard)
 
     def test_negative_coverage_remains_in_exact_sha_ci(self):
         wf=(ROOT/".github/workflows/omniagent-ghcr-publish.yml").read_text()

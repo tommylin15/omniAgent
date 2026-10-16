@@ -42,3 +42,26 @@ BYOK management 不得啟用。Chat 本身經 Google 憑證簽章驗證並從
   Provider 端到端屬其他 gates，本 workflow 不擅自宣稱 PASS。
 - 真正長期無人值守的合法 Google user token 取得機制尚待授權。
   **不得偷用其它專案的使用者 token、Secret 或 OAuth 帳戶。**
+
+## 2026-10-16 R05 強化：Google IAM signed SA 必須拒絕真人身份
+
+Google IAM Credentials 的 `generateIdToken` 所簽發服務帳號 Token 可能有
+`iss=https://accounts.google.com`、真 Google 簽章、合法 email_verified
+和**呼叫端可選的 audience**。此 Token **不是**真人 Google OAuth 身分。
+因此單驗簽章、issuer、audience、sub 不足以排除服務帳號誤列為
+一般 Chat 使用者。
+
+- `verifyGoogleBrowserUserClaims` 在已完成 Google 簽章／audience／效期
+  驗證後，另外要求已驗證 email、不可為 `*.gserviceaccount.com`；
+  `azp` 若出現則必須為 Google OAuth client 格式，拒絕 IAM
+  服務帳號數字 ID。僅套用在 browser user verifier；
+  不改動合法 Cloud Run internal service IAM 或其它專案。
+- `scripts/r05_service_account_denial.py` 透過**既有受控** GitHub WIF
+  及狹義 `iam.serviceAccounts.getOpenIdToken` 向 IAMCredentials
+  發行綁定 Chat Google OAuth client audience 的服務帳號 ID Token；
+  選 `omniagent-codex-chat-client` 測試帳號，驗證 0% 候選服務
+  `/v1/me`、模型、threads、events、latest **全部 HTTP 401**。
+  試驗不得呼叫模型、儲存 Secret payload、列印 Token、異動正式流量。
+  若簽發權限不存在，一律 BLOCKED，不當作 PASS。
+- 這是**服務帳號拒絕的實際負向驗收**，不可替代仍缺兩個合法真人
+  Google 使用者 ID Token 的 R05 正向＋跨 Owner E2E。
