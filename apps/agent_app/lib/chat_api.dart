@@ -101,7 +101,9 @@ class ChatApi {
     final intent=jsonEncode([path,jsonEncode({'content':content})]);
     final key=_unconfirmedPosts[intent];
     final origin=_baseOverride ?? base;
-    if(key==null || token.isEmpty || origin.isEmpty)return null;
+    if (key==null || token.isEmpty || origin.isEmpty) {
+      return null;
+    }
     try {
       final req=http.Request('GET',
           Uri.parse('$origin/v1/threads/$threadId/turns/reconcile'))

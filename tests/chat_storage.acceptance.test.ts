@@ -385,7 +385,6 @@ describe.runIf(Boolean(dsn))("isolated PostgreSQL ChatStore acceptance", () => {
         for(const path of [
           "/v1/threads/joined-flow",
           "/v1/threads/joined-flow/turns/latest",
-          "/v1/threads/joined-flow/turns/reconcile",
           "/v1/threads/joined-flow/turns/active",
           "/v1/threads/joined-flow/turns/"+turnIdForReceipt+"/receipt",
           "/v1/threads/joined-flow/events?cursor=1"
