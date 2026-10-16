@@ -8,7 +8,7 @@
 - [x] **三服務正式 Cloud Run／IAM 讀回**：[獨立驗收 #38498845455 attempt 3](https://github.com/tommylin15/omniAgent/actions/runs/38498845455/attempts/3)：Chat `00069-tep`、Gateway `00076-pog`、Shared Codex `00046-naj` 各 Ready 且有單一 100% 正式流量；Gateway／Shared 不開放匿名。
 - [x] **每個服務保留 10 個 Revision**：[實際清理 #38574373341](https://github.com/tommylin15/omniAgent/actions/runs/38574373341) 刪除 31 個舊 revisions 和 31 個舊 tagged routes；獨立 readback 10／10／10。這是當次快照，不代表後續新候選永遠維持 10。
 - [x] **Owner Chat Preview 單回合 Gemini**：Owner 回報正常回覆及重整後歷史保留；[PostgreSQL readback #38381669212](https://github.com/tommylin15/omniAgent/actions/runs/38381669212) 一筆 durable COMPLETED。**只在單 Owner Preview 範圍 PASS**。
-- [x] **Life、market-mart P0-V 技術交接**：各消費端回報串接通路成功（`CONSUMER_REPORTED_PASS`）。**2026-10-16 Life 再次由使用者回報 Life → omniAgent 連線成功**，屬 consumer-reported connectivity evidence；尚無本次 requestId、Gateway response 與 Life 端 DB/schema receipt，不能將成功連線擴大宣稱為完整推論／資料回寫 E2E PASS。
+- [x] **Life Assistant → omniAgent → Gemini → Life DB／業務流程完整 E2E：使用者確認 PASS（2026-10-16）**。使用者明確確認 Life 連線、Gemini 真實推論、Life 資料庫回寫及完整業務流程均已通過；這是 **USER_CONFIRMED_E2E_PASS**，不再將 Life 的業務鏈視為待修復阻塞。此輪沒有提供可由 omniAgent 獨立讀回的 requestId、Life release／DB receipt，證據層級是使用者確認，非 omniAgent 自有的獨立 runtime audit。market-mart 的驗收證據仍獨立追蹤。
 - [x] **Gateway 限額與失敗分類**：market-mart 32 KiB Prompt／2,048 輸出 tokens；Chat／Life 8 KiB／512；上游 429／503／504 分類，不自動付費重試。
 
 ## 2026-10-15 R01 受控實測（僅限候選後端）
@@ -75,7 +75,7 @@
 | 03 | 兩個 Owner 的權限隔離 | **CI fixture PASS／LIVE USER E2E NOT_VERIFIED** | 合法雙 Google 使用者自動化 OAuth token 的正向與跨 Owner thread/event/credential/SSE 負向測試 |
 | 04 | SSE、Approval、Cancel、重連、冪等及崩潰恢復 | **PARTIAL** | 具故障注入、同 SHA source/test/live E2E |
 | 05 | Codex Owner 專屬 session/workspace/authorization/terminal | **PARTIAL** | 真實 Owner 隔離與 provider→DB 回路，預算內受控驗收 |
-| 06 | Life 與 market-mart 正式消費端證據核對 | **PARTIAL** | 消費端自行提供 release/requestId/schema/DB receipt，不越界讀別專案 DB |
+| 06 | Life／market-mart 消費端驗收 | **Life USER_CONFIRMED_E2E_PASS；market-mart 獨立收據 PARTIAL** | Life 2026-10-16 已由使用者確認連線→Gemini 推論→Life DB 回寫→完整業務流程，毋須重跑業務流程；僅在跨專案稽核需要時補對應 requestId／release／DB receipt。market-mart 證據由自身消費端管理，不越界讀其它專案 DB |
 | 07 | Flutter 桌機／手機／長對話／錯誤與無限 loading | **PARTIAL** | 實際部署／響應式／回歸驗收 |
 | 08 | 全套 CI/CD、正式發布與恢復驗收 | **PARTIAL** | exact SHA→Node/Python/Flutter→GHCR→0% candidate→live gate→production readback |
 
