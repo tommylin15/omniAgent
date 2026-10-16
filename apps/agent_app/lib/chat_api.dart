@@ -93,6 +93,31 @@ class ChatApi {
     return decoded;
   }
 
+  /// After a lost POST response, query PostgreSQL with the *same* key.
+  /// A missing row may be a racing write; preserve key and do not auto-POST.
+  Future<Map<String,dynamic>?> reconcilePendingMessage(
+      String threadId,String content) async {
+    final path='/v1/threads/$threadId/messages';
+    final intent=jsonEncode([path,jsonEncode({'content':content})]);
+    final key=_unconfirmedPosts[intent];
+    final origin=_baseOverride ?? base;
+    if(key==null || token.isEmpty || origin.isEmpty)return null;
+    try {
+      final req=http.Request('GET',
+          Uri.parse('$origin/v1/threads/$threadId/turns/reconcile'))
+        ..headers.addAll({'Authorization':'Bearer $token','Idempotency-Key':key});
+      final response=await http.Response.fromStream(await client.send(req));
+      if(response.statusCode!=200)return null;
+      final decoded=jsonDecode(utf8.decode(response.bodyBytes));
+      final turn=decoded is Map ? decoded['turn'] : null;
+      if(turn is! Map || turn['turnId'] is! String ||
+          !const ['QUEUED','RUNNING','COMPLETED','CANCELLED','ERROR']
+             .contains(turn['status']))return null;
+      _unconfirmedPosts.remove(intent);
+      return {'turnId':turn['turnId'],'status':turn['status']};
+    } catch (_){return null;}
+  }
+
   Future<List<Map<String, dynamic>>> events(String threadId, int cursor) async {
     final origin = _baseOverride ?? base;
     if (origin.isEmpty || token.isEmpty) throw StateError('omniAgent API 未設定');

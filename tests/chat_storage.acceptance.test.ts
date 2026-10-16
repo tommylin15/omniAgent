@@ -80,6 +80,11 @@ describe.runIf(Boolean(dsn))("isolated PostgreSQL ChatStore acceptance", () => {
       expect((await store.message(a,"thread-a","hello","message-1")).turn.turn_id).toBe(turnId);
       await expect(store.message(a,"thread-a","different","message-1")).rejects.toBeInstanceOf(ChatConflict);
       await expect(store.message(b,"thread-a","hello","message-1")).rejects.toBeInstanceOf(ChatNotFound);
+      expect(await store.turnByMessageKey(a,"thread-a","message-1"))
+        .toEqual({turnId,status:"QUEUED"});
+      expect(await store.turnByMessageKey(a,"thread-a","missing")).toBeNull();
+      await expect(store.turnByMessageKey(b,"thread-a","message-1"))
+        .rejects.toBeInstanceOf(ChatNotFound);
       const appended = await store.appendEvent(a,"thread-a",turnId,"event-1","text_delta",{ text:"world" });
       expect(Number(appended.seq)).toBe(1);
       expect((await store.events(a,"thread-a",-1,200)).map((row) => Number(row.seq))).toEqual([0,1]);
@@ -333,6 +338,17 @@ describe.runIf(Boolean(dsn))("isolated PostgreSQL ChatStore acceptance", () => {
         const latest=(await (await fetch(latestUrl,{headers:auth("alice")})).json()).latest;
         expect(latest).toEqual({turnId:turnIdForReceipt,status:"COMPLETED"});
         expect(JSON.stringify(latest)).not.toContain("owner-only fixture prompt");
+        const reconcileUrl=url+"/v1/threads/joined-flow/turns/reconcile";
+        expect((await fetch(reconcileUrl)).status).toBe(401);
+        expect((await fetch(reconcileUrl,{headers:{
+          ...auth("bob"),"Idempotency-Key":"joined-message-1"}})).status).toBe(404);
+        const reconciled=await fetch(reconcileUrl,{headers:{
+          ...auth("alice"),"Idempotency-Key":"joined-message-1",
+          "X-OmniAgent-Owner-Id":b}});
+        expect(reconciled.status).toBe(200);
+        expect(await reconciled.json()).toEqual({
+          turn:{turnId:turnIdForReceipt,status:"COMPLETED"}});
+        expect(requests).toBe(1);
         const urlForReceipt=url+"/v1/threads/joined-flow/turns/"+turnIdForReceipt+"/receipt";
         expect((await fetch(urlForReceipt)).status).toBe(401);
         expect((await fetch(urlForReceipt,{headers:auth("bob")})).status).toBe(404);
@@ -369,6 +385,7 @@ describe.runIf(Boolean(dsn))("isolated PostgreSQL ChatStore acceptance", () => {
         for(const path of [
           "/v1/threads/joined-flow",
           "/v1/threads/joined-flow/turns/latest",
+          "/v1/threads/joined-flow/turns/reconcile",
           "/v1/threads/joined-flow/turns/active",
           "/v1/threads/joined-flow/turns/"+turnIdForReceipt+"/receipt",
           "/v1/threads/joined-flow/events?cursor=1"

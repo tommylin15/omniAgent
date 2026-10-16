@@ -252,6 +252,10 @@ export function makeChatServer(store: ChatStore, verifyUser: VerifyUser, verifyS
         auditRequest(requestId,"dispatch_settled",outcome.status);
         return send(response,202,{ ...result, dispatch:outcome });
       }
+      // Read-only uncertain POST readback: never triggers provider execution.
+      const reconcile=/^\/v1\/threads\/([A-Za-z0-9][A-Za-z0-9._:-]{0,127})\/turns\/reconcile$/.exec(url.pathname);
+      if(request.method==="GET" && reconcile)
+        return send(response,200,{turn:await store.turnByMessageKey(ownerId,reconcile[1],key(request))});
       const lastTurn = /^\/v1\/threads\/([A-Za-z0-9][A-Za-z0-9._:-]{0,127})\/turns\/latest$/.exec(url.pathname);
       if(request.method==="GET" && lastTurn)
         return send(response,200,{latest:await store.latestTurn(ownerId,lastTurn[1])});

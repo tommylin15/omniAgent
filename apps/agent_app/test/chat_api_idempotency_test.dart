@@ -78,6 +78,47 @@ void main() {
     api.close();
   });
 
+  test('reconciles uncertain POST without resending original message',() async{
+    String? sentKey,readKey;
+    var sends=0;
+    final client=MockClient((req) async{
+      if(req.method=='POST'){
+        sends++;
+        sentKey=req.headers['idempotency-key'];
+        if(sends==1)throw StateError('lost 202');
+        return http.Response('{"turn":{"turn_id":"new-turn"}}',202);
+      }
+      readKey=req.headers['idempotency-key'];
+      return http.Response('{"turn":{"turnId":"durable-turn","status":"COMPLETED"}}',200);
+    });
+    final api=ChatApi('owner-a',client:client,baseUrl:'https://example.test');
+    const path='/v1/threads/t/messages',content='hello';
+    await expectLater(api.post(path,{'content':content}),throwsStateError);
+    expect(await api.reconcilePendingMessage('t',content),
+      {'turnId':'durable-turn','status':'COMPLETED'});
+    expect(readKey,sentKey);
+    expect(sends,1);
+    await api.post(path,{'content':content});
+    expect(sends,2);
+    api.close();
+  });
+  test('missing readback row retains original key for safe retry',() async{
+    final keys=<String?>[];
+    final client=MockClient((req) async{
+      if(req.method=='GET')return http.Response('{"turn":null}',200);
+      keys.add(req.headers['idempotency-key']);
+      if(keys.length==1)throw StateError('network');
+      return http.Response('{"turn":{"turn_id":"confirmed"}}',202);
+    });
+    final api=ChatApi('owner-a',client:client,baseUrl:'https://example.test');
+    const path='/v1/threads/t/messages',content='hello';
+    await expectLater(api.post(path,{'content':content}),throwsStateError);
+    expect(await api.reconcilePendingMessage('t',content),isNull);
+    await api.post(path,{'content':content});
+    expect(keys.first,keys.last);
+    api.close();
+  });
+
   test('different bodies use different IDs; GET has no POST key',() async {
     final keys=<String?>[];
     final client=MockClient((req) async {

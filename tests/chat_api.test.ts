@@ -15,6 +15,10 @@ async function app(dispatcher?: Pick<ChatDispatcher,"runOnce">,
                    credentials?: Pick<CredentialManager,"create" | "list" | "revoke">) {
   const store = {
     ready: vi.fn(async () => undefined),
+    turnByMessageKey:vi.fn(async(ownerId:string,threadId:string,key:string)=>{
+      if(ownerId!=="owner-alice" || threadId!=="thread-1")throw new ChatNotFound("not found");
+      return key==="original-key"?{turnId:"turn-1",status:"COMPLETED"}:null;
+    }),
     latestTurn:vi.fn(async (ownerId:string,threadId:string)=>{
       if(ownerId!=="owner-alice"||threadId!=="thread-1")throw new ChatNotFound("not found");
       return {turnId:"turn-1",status:"COMPLETED"};
@@ -111,6 +115,22 @@ describe("omniAgent Chat API ownership boundary", () => {
       expect(observed.join("\n")).not.toContain("owner-alice");
       expect(observed.join("\n")).not.toContain("Bearer alice");
     } finally { spy.mockRestore(); }
+  });
+
+  it("reconciles by original key and denies foreign Owner",async()=>{
+    const {base,store}=await app();
+    const path="/v1/threads/thread-1/turns/reconcile";
+    expect((await fetch(base+path)).status).toBe(401);
+    expect((await fetch(base+path,{headers:{Authorization:"Bearer bob",
+      "Idempotency-Key":"original-key"}})).status).toBe(404);
+    const absent=await fetch(base+path,{headers:{Authorization:"Bearer alice",
+      "Idempotency-Key":"missing"}});
+    expect(await absent.json()).toEqual({turn:null});
+    const own=await fetch(base+path,{headers:{Authorization:"Bearer alice",
+      "Idempotency-Key":"original-key","X-OmniAgent-Owner-Id":"owner-bob"}});
+    expect(own.status).toBe(200);
+    expect(await own.json()).toEqual({turn:{turnId:"turn-1",status:"COMPLETED"}});
+    expect(store.message).not.toHaveBeenCalled();
   });
 
   it("returns latest persisted turn to Owner only, without re-dispatch",async()=>{

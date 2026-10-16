@@ -423,7 +423,27 @@ class _ChatPageState extends State<ChatPage> {
       });
       await refresh();
     } catch (error) {
-      if (mounted) _error(error is StateError ? error.message.toString() : '訊息送出失敗，請稍後重試');
+      final recovered=await widget.api.reconcilePendingMessage('$id',content);
+      if(!mounted || thread?['thread_id']!=id)return;
+      if(recovered!=null){
+        input.clear();
+        final turnId=recovered['turnId'] as String;
+        final status=recovered['status'] as String;
+        setState((){
+          queuedTurn=['COMPLETED','CANCELLED','ERROR'].contains(status)?null:turnId;
+          turnPhase=status.toLowerCase();
+          receiptTurnId=turnId;
+          receiptEvidence=status=='COMPLETED'?'pending':'none';
+        });
+        await refresh();
+        if(status=='COMPLETED' && receiptEvidence=='pending' &&
+           mounted && thread?['thread_id']==id){
+          await verifyTurnReceipt('$id',turnId,selectionEpoch);
+        }
+      } else {
+        _error(error is StateError ? error.message.toString()
+          : '提交結果尚未確認；請先讀回對話狀態，再決定是否重試');
+      }
     } finally {
       if (mounted) setState(() => busy = false);
     }
