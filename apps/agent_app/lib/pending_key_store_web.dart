@@ -1,5 +1,3 @@
-import 'dart:js_interop';
-
 import 'package:web/web.dart' as web;
 
 import 'pending_key_store.dart';
@@ -10,14 +8,14 @@ class SessionPendingKeyStore implements PendingKeyStore {
   static const prefix='omniagent:r08:pending:v1:';
   @override
   String? read(String ownerId) =>
-      web.window.sessionStorage.getItem((prefix+ownerId).toJS)?.toDart;
+      web.window.sessionStorage.getItem(prefix+ownerId);
   @override
   void write(String ownerId,String serialized){
-    web.window.sessionStorage.setItem((prefix+ownerId).toJS,serialized.toJS);
+    web.window.sessionStorage.setItem(prefix+ownerId,serialized);
   }
   @override
   void clear(String ownerId){
-    web.window.sessionStorage.removeItem((prefix+ownerId).toJS);
+    web.window.sessionStorage.removeItem(prefix+ownerId);
   }
 }
 
