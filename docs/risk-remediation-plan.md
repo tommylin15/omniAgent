@@ -52,6 +52,12 @@
 - [`93f14edb`](https://github.com/tommylin15/omniAgent/commit/93f14edb86425e18986904992089d1386a417cf7) 為本階段唯一通過 CI／GHCR／Cloud Run 的來源（先前 `a6766bff` Flutter lint FAIL，未拿它宣告發布）。新增 Owner-bound `/v1/threads/:id/turns/latest` 僅回傳 turnId/status、跨 Owner 404，Flutter 重新登入／新裝置只查 latest + DB receipt，**不呼叫 provider**。
 - 驗收：Flutter [#38821023496](https://github.com/tommylin15/omniAgent/actions/runs/38821023496)、GHCR [#38821023533](https://github.com/tommylin15/omniAgent/actions/runs/38821023533)、0% candidate [#38821656675](https://github.com/tommylin15/omniAgent/actions/runs/38821656675)、Signed Smoke [#38821797192](https://github.com/tommylin15/omniAgent/actions/runs/38821797192)、runtime denial [#38821885123](https://github.com/tommylin15/omniAgent/actions/runs/38821885123)、readiness audit [#38821885173](https://github.com/tommylin15/omniAgent/actions/runs/38821885173) 均 PASS。沒有真實雙 user Token、跨裝置 durable idempotency key 同步或完整 E2E；R05/R08 保持 PARTIAL、正式 Dispatch OFF。
 
+## 2026-10-16 R05 真實雙 Owner OAuth 驗收執行收據
+
+- [`380cbf89`](https://github.com/tommylin15/omniAgent/commit/380cbf8900edccf8d511d97acd54b6514246a9fb) 新增合法雙 Google User ID Token 的隔離 E2E harness、獨立 GitHub workflow、五項測試、安全與清理策略。完整 Quality／GHCR／候選／Signed Smoke PASS（[#38826887271](https://github.com/tommylin15/omniAgent/actions/runs/38826887271)、[#38827183809](https://github.com/tommylin15/omniAgent/actions/runs/38827183809)、[#38827335254](https://github.com/tommylin15/omniAgent/actions/runs/38827335254)），舊有無效 JWT 負向驗收 [#38827442185](https://github.com/tommylin15/omniAgent/actions/runs/38827442185) 亦 PASS。
+- **真實雙人 OAuth 仍 NOT_VERIFIED**：[獨立 E2E gate #38826887437](https://github.com/tommylin15/omniAgent/actions/runs/38826887437) 的原始 artifact 明確阻擋為 `NO_TWO_DELEGATED_GOOGLE_USER_TOKENS_CONFIGURED`；不能拿三筆 DB Owner mapping、CI fixture 或 GCP SA 身分替代。未做真人手動 OAuth 驗收、正式流量切換或模型推論；R05 仍 OPEN。
+- 此工作流程只對 0% Cloud Run Chat 候選執行讀寫試驗 Thread、跨 Owner 拒絕與清理；測試 /v1/me 仍會更新 Owner `last_seen_at`，不能誤稱 PostgreSQL 零寫入。後續由獲授權的雙 Google ID Token 完成真實 E2E 收據之前，維持正式 Dispatch OFF。
+
 ## 推進與關閉規則
 
 1. **所有 16 項均有單獨的 code/API/infra 入口、測試與驗收退出條件**。原始稽核保留證據和風險判定，本表負責工程執行順序，`doc/todo.md` 負責當前優先級。
