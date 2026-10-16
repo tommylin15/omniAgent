@@ -39,7 +39,7 @@ void main() {
         throwsStateError);
     expect(messages,1);
     expect(api.hasPendingMessage('t'),isFalse);
-    expect(storage.records[ownerA],isNot(contains('t')));
+    expect(storage.records[ownerA],contains('"items":[]'));
     api.close();
   });
 
