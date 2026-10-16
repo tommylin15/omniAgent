@@ -36,6 +36,7 @@ class _ChatPageState extends State<ChatPage> {
   bool busy = false;
   int selectionEpoch = 0;
   int? pollingEpoch;
+  bool pendingUnknown=false;
   Map<String, List<String>>? entitledModels;
   String? authenticatedOwnerId;
 
@@ -140,6 +141,7 @@ class _ChatPageState extends State<ChatPage> {
       submittedRequestId = null;
       cursor = -1;
       connection = 'idle';
+      pendingUnknown=false;
     });
   }
 
@@ -158,6 +160,7 @@ class _ChatPageState extends State<ChatPage> {
       submittedRequestId = null;
       cursor = -1;
       connection = 'connecting';
+      pendingUnknown=false;
     });
     await refresh();
     // A browser/device with no POST key can still read the newest durable turn
@@ -306,6 +309,29 @@ class _ChatPageState extends State<ChatPage> {
           setState(() => turnPhase = result['status'] as String);
         }
       }
+      // On reload use the Owner's persisted idempotency key only for GET.
+      // Missing DB row is still ambiguous if the original POST is in flight.
+      final recovered=await widget.api.reconcileRecoveredMessage('$id');
+      if(!mounted || selectionEpoch!=epoch || thread?['thread_id']!=id){
+        return;
+      }
+      if(recovered!=null){
+        final turnId=recovered['turnId'] as String;
+        final status=recovered['status'] as String;
+        setState((){
+          receiptTurnId=turnId;
+          receiptEvidence=status=='COMPLETED'?'pending':'none';
+          queuedTurn=['QUEUED','RUNNING'].contains(status)?turnId:null;
+          turnPhase=status.toLowerCase();
+        });
+        if(status=='COMPLETED'){
+          await verifyTurnReceipt('$id',turnId,epoch);
+        }
+      }
+      final unresolved=widget.api.hasPendingMessage('$id');
+      if(pendingUnknown!=unresolved){
+        setState(()=>pendingUnknown=unresolved);
+      }
       final rows = await widget.api.events('$id', cursor);
       if (!mounted || selectionEpoch != epoch ||
           thread?['thread_id'] != id) {
@@ -401,7 +427,7 @@ class _ChatPageState extends State<ChatPage> {
   Future<void> send() async {
     final id = thread?['thread_id'];
     final content = input.text.trim();
-    if (id == null || content.isEmpty || busy) return;
+    if (id == null || content.isEmpty || busy || pendingUnknown) return;
     setState(() => busy = true);
     try {
       final value = await widget.api
@@ -441,6 +467,9 @@ class _ChatPageState extends State<ChatPage> {
           await verifyTurnReceipt('$id',turnId,selectionEpoch);
         }
       } else {
+        if(widget.api.hasPendingMessage('$id')){
+          setState(()=>pendingUnknown=true);
+        }
         _error(error is StateError ? error.message.toString()
           : '提交結果尚未確認；請先讀回對話狀態，再決定是否重試');
       }
@@ -987,6 +1016,11 @@ class _ChatPageState extends State<ChatPage> {
               ),
             ),
           ),
+        if(pendingUnknown)
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal:16,vertical:8),
+            child: Text('上次訊息仍未確認，已暫停新訊息；將使用原始 Key 自動查詢 PostgreSQL，避免重複執行。'),
+          ),
         SafeArea(
           top: false,
           child: Container(
@@ -1020,7 +1054,7 @@ class _ChatPageState extends State<ChatPage> {
                   ),
                   child: IconButton(
                     tooltip: '送出',
-                    onPressed: busy ? null : send,
+                    onPressed: busy || pendingUnknown ? null : send,
                     icon: const Icon(Icons.send_rounded),
                   ),
                 ),

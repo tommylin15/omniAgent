@@ -356,6 +356,7 @@ void main() {
     final controller = AuthSessionController(
       onSession: (api) => sessions.add(api?.token),
       onError: () => failures++,
+      bindApi: (_) async {},
     );
     await controller.update(() async => 'alice-token');
     expect(controller.current?.token, 'alice-token');
@@ -372,6 +373,7 @@ void main() {
     final controller = AuthSessionController(
       onSession: (api) => changes.add(api?.token),
       onError: () => fail('unexpected token error'),
+      bindApi: (_) async {},
     );
     final alice = controller.update(() => pendingAlice.future);
     await controller.update(() async => 'bob-token');
@@ -388,6 +390,7 @@ void main() {
     final controller = AuthSessionController(
       onSession: (api) => changes.add(api?.token),
       onError: () => errors++,
+      bindApi: (_) async {},
     );
     await controller.update(() async => 'alice-token');
     await controller.update(() async => null);
