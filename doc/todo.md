@@ -49,6 +49,13 @@
 - **GitHub Action artifact 原始 401 收據**：`r05_signed_sa_user_me/models/threads/events/latest=PASS_401` 全 5 項；此外原有匿名／無效 JWT 8 項 PASS_401、`r05_formal_traffic_unchanged=PASS`、`r05_model_provider_calls=ZERO`。IAM minted token 的 subject 不是合法真人 Google OAuth，不得偽稱雙 Owner 已驗收。
 - **正式雙 Google user E2E：NOT_VERIFIED**。`R05_OWNER_A_GOOGLE_ID_TOKEN` 與 `R05_OWNER_B_GOOGLE_ID_TOKEN` 仍無合法可用的自動化授權來源（上一輪獨立 Gate [#38826887437](https://github.com/tommylin15/omniAgent/actions/runs/38826887437) 明確 fail-closed）。真人操作驗收政策維持取消；保留自動 JWT/Owner 隔離 gate。正式 Chat Dispatch OFF，無正式 traffic promotion，也沒有觸發 Gemini 推論。
 
+## 2026-10-16 R08 原始訊息 Idempotency-Key／PostgreSQL 唯讀回合核對
+
+- **增量成果：CI／0% 候選 PASS；完整 R08 仍 PARTIAL**。實作 [`ceada71b`](https://github.com/tommylin15/omniAgent/commit/ceada71bd93028f6d6c7425d2f94a369e4ca2c3b) 與修正後合格 SHA [`1ed7b379`](https://github.com/tommylin15/omniAgent/commit/1ed7b37923be7d6e30e3a7a91f8a59292985d67c)。新增 `GET /v1/threads/{threadId}/turns/reconcile`，讀取原始 `Idempotency-Key` 請求標頭，依已驗證 Owner 從 PostgreSQL `omni_chat.turns` 回傳僅 `turnId,status`，無提示詞或 provider payload。回合不存在只代表 **目前尚未查到**，不表示先前 POST 一定失敗。
+- Flutter 在原登入／原 ChatApi session 的 `/messages` POST 回應不確定時，改先唯讀呼叫 reconcile；若有已提交回合，恢復 turnID、階段、Owner SSE 和 DB receipt，不重送訊息；若查無或讀取失敗則保留原 Key，不以新 Key 自動推論。不能把此項認定為跨重新登入／跨裝置共享原 Key：`ChatApi` 的 pending Key 目前僅在記憶體中，登出清除。
+- **可重跑驗收**：Node Core [#38853748160](https://github.com/tommylin15/omniAgent/actions/runs/38853748160) PASS（該次早期 SHA）；最終來源 `1ed7b379` 的 Flutter [#38853888114](https://github.com/tommylin15/omniAgent/actions/runs/38853888114) PASS、Quality/3 GHCR [#38853888080](https://github.com/tommylin15/omniAgent/actions/runs/38853888080) PASS、0% Cloud Run [#38854466487](https://github.com/tommylin15/omniAgent/actions/runs/38854466487) PASS、Signed Smoke [#38854586006](https://github.com/tommylin15/omniAgent/actions/runs/38854586006) PASS、R05 runtime negative [#38854635306](https://github.com/tommylin15/omniAgent/actions/runs/38854635306) PASS、production readiness [#38854635332](https://github.com/tommylin15/omniAgent/actions/runs/38854635332) PASS。沒有新 Gemini 實測，也未切正式流量。
+- **後續 R08**：需明確設計不留 raw prompt/token、Owner 分區且登出銷毀的瀏覽器／裝置 pending-Key 狀態，必要時可用安全的裝置復原流程；別假設新裝置知道舊裝置的 Key。驗收必須涵蓋跨重新整理、換裝置、對同一內容有意重送的區分及網路競態。R05 兩合法 Google user Token 同樣未補齊。
+
 ## P0 — 最優先待辦
 
 **R01–R16 風險已逐項轉為工程包與驗收退出條件**：[風險修復計畫](../docs/risk-remediation-plan.md)。規劃已完成 ≠ 修復已完成；P0 工作必須依安全、成本、兩 Owner E2E 及正式發布 gate 分批執行。

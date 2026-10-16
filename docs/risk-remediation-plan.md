@@ -64,6 +64,12 @@
 - [R05 signed SA runtime #38851741897](https://github.com/tommylin15/omniAgent/actions/runs/38851741897) 的成功收據經 Artifact 讀回：`r05_signed_sa_user_me/models/threads/events/latest=PASS_401`（5 項）；匿名／無效 JWT 8 項 PASS，無 provider call／正式 traffic promotion。部署證據：GHCR [#38851175290](https://github.com/tommylin15/omniAgent/actions/runs/38851175290)、0% 候選 [#38851581074](https://github.com/tommylin15/omniAgent/actions/runs/38851581074)、Smoke [#38851688846](https://github.com/tommylin15/omniAgent/actions/runs/38851688846) 均 PASS。
 - **範圍限制**：不保證目前 100% 正式流量已套用新版本（只推 0% 候選）；兩組真實 Google User ID Token 的合法自動化授權尚缺，所以 R05 雙 Owner 仍 PARTIAL。未核准開啟 formal Dispatch，不移除 Google login，也不以任意 GCP SA 作假的真人使用者。
 
+## 2026-10-16 R08 POST 不確定狀態的 Owner-key readback
+
+- [`1ed7b379`](https://github.com/tommylin15/omniAgent/commit/1ed7b37923be7d6e30e3a7a91f8a59292985d67c) 增加 Owner-verified `/v1/threads/:id/turns/reconcile` + `Idempotency-Key` 的唯讀 PostgreSQL 回合識別查詢，客戶端在 ambiguous POST 後只 GET 查詢，查到已提交回合才清除 pending key；not found、timeout、回傳格式錯誤時**仍保留原 key**，不可做新模型 dispatch 或推論成功判斷。HTTP/PG mock+真資料庫跨 Owner 拒絕、Flutter key reuse/unknown tests 已納 CI。
+- 最新驗收鏈：Flutter [#38853888114](https://github.com/tommylin15/omniAgent/actions/runs/38853888114)、GHCR [#38853888080](https://github.com/tommylin15/omniAgent/actions/runs/38853888080)、Cloud Run 0% [#38854466487](https://github.com/tommylin15/omniAgent/actions/runs/38854466487)、Signed Smoke [#38854586006](https://github.com/tommylin15/omniAgent/actions/runs/38854586006)、R05 negative [#38854635306](https://github.com/tommylin15/omniAgent/actions/runs/38854635306) 及 readiness [#38854635332](https://github.com/tommylin15/omniAgent/actions/runs/38854635332) PASS。**不代表正式 100% Revision 已更新或正式 Chat Dispatch 已開啟。**
+- **殘餘缺口**：原 key 僅存在登入期間的 `ChatApi` 記憶體中，跨帳號切換或重載後無 key；前一輪 R08 `/turns/latest` 可讀回最後已提交回合，但不足以證明尚未提交的 request 結果；跨裝置更不能安全推斷 key。R08 仍 PARTIAL，後續須具備合法 Owner 範圍的持久化相關性／受控恢復及故障注入。
+
 ## 推進與關閉規則
 
 1. **所有 16 項均有單獨的 code/API/infra 入口、測試與驗收退出條件**。原始稽核保留證據和風險判定，本表負責工程執行順序，`doc/todo.md` 負責當前優先級。
