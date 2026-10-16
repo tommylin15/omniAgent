@@ -1,20 +1,23 @@
-// ignore_for_file: avoid_web_libraries_in_flutter
-import 'dart:html' as html;
+import 'dart:js_interop';
+
+import 'package:web/web.dart' as web;
 
 import 'pending_key_store.dart';
 
-/// Browser sessionStorage survives reload in this tab, not cross-device.
+/// Browser sessionStorage survives reload in the same tab, not cross-device.
+/// Fail closed when storage access is denied; no token or prompt is persisted.
 class SessionPendingKeyStore implements PendingKeyStore {
   static const prefix='omniagent:r08:pending:v1:';
   @override
-  String? read(String ownerId)=>html.window.sessionStorage[prefix+ownerId];
+  String? read(String ownerId) =>
+      web.window.sessionStorage.getItem((prefix+ownerId).toJS)?.toDart;
   @override
   void write(String ownerId,String serialized){
-    html.window.sessionStorage[prefix+ownerId]=serialized;
+    web.window.sessionStorage.setItem((prefix+ownerId).toJS,serialized.toJS);
   }
   @override
   void clear(String ownerId){
-    html.window.sessionStorage.remove(prefix+ownerId);
+    web.window.sessionStorage.removeItem((prefix+ownerId).toJS);
   }
 }
 

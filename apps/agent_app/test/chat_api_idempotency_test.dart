@@ -28,7 +28,7 @@ void main() {
     var messages=0;
     final api=ChatApi('a',pendingKeyStore:storage,
       client:MockClient((req) async{
-        if(req.uri.path=='/v1/me'){
+        if(req.url.path=='/v1/me'){
           return http.Response('{"ownerId":"$ownerA"}',200);
         }
         messages++;
@@ -48,7 +48,7 @@ void main() {
     final keys=<String>[];
     final first=ChatApi('google-owner-a',pendingKeyStore:storage,
       client:MockClient((request) async{
-        if(request.uri.path=='/v1/me'){
+        if(request.url.path=='/v1/me'){
           return http.Response('{"ownerId":"$ownerA"}',200);
         }
         keys.add(request.headers['idempotency-key']!);
@@ -67,7 +67,7 @@ void main() {
     var getCount=0;
     final next=ChatApi('reloaded-google-token',pendingKeyStore:storage,
       client:MockClient((request) async{
-        if(request.uri.path=='/v1/me'){
+        if(request.url.path=='/v1/me'){
           return http.Response('{"ownerId":"$ownerA"}',200);
         }
         if(request.method=='POST'){postCount++;return http.Response('{}',202);}
@@ -92,7 +92,7 @@ void main() {
     var created=0;
     final first=ChatApi('a',pendingKeyStore:storage,
       client:MockClient((request) async{
-        if(request.uri.path=='/v1/me'){
+        if(request.url.path=='/v1/me'){
           return http.Response('{"ownerId":"$ownerA"}',200);
         }
         created++;
@@ -106,7 +106,7 @@ void main() {
     var lookup=0;
     final second=ChatApi('a-again',pendingKeyStore:storage,
       client:MockClient((request) async{
-        if(request.uri.path=='/v1/me'){
+        if(request.url.path=='/v1/me'){
           return http.Response('{"ownerId":"$ownerA"}',200);
         }
         if(request.method=='POST'){created++;return http.Response('{}',202);}
@@ -131,7 +131,7 @@ void main() {
     Future<ChatApi> bind(String id) async{
       final api=ChatApi(id,pendingKeyStore:store,
         client:MockClient((req) async{
-          if(req.uri.path=='/v1/me'){
+          if(req.url.path=='/v1/me'){
             return http.Response('{"ownerId":"${id=='a'?ownerA:ownerB}"}',200);
           }
           throw StateError('dropped response');
@@ -157,7 +157,7 @@ void main() {
     var messageCalls=0;
     final api=ChatApi('a',pendingKeyStore:store,
       client:MockClient((req) async{
-        if(req.uri.path=='/v1/me'){
+        if(req.url.path=='/v1/me'){
           return http.Response('{"ownerId":"$ownerA"}',200);
         }
         messageCalls++;
@@ -176,7 +176,7 @@ void main() {
     var posts=0;
     final api=ChatApi('a',pendingKeyStore:store,
       client:MockClient((req) async{
-        if(req.uri.path=='/v1/me'){
+        if(req.url.path=='/v1/me'){
           return http.Response('{"ownerId":"$ownerA"}',200);
         }
         posts++;
