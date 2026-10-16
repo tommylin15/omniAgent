@@ -15,6 +15,7 @@ WORKDIR /app
 ENV NODE_ENV=production PORT=8080 OMNIAGENT_WEB_ROOT=/app/public
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/services/chat-api/dist ./services/chat-api/dist
+COPY infra/postgres/migrations/003_runtime_bindings.sql ./infra/postgres/migrations/003_runtime_bindings.sql
 COPY --from=ui /ui/build/web ./public
 USER node
 EXPOSE 8080

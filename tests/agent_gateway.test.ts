@@ -2,7 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AppServerClient, GcsCheckpointStore, ManagedAuthStore, OwnerAuthRegistry, OwnerSessionRegistry, type Json, type RpcMessage } from "../services/agent-gateway/server.js";
+import { AppServerClient, CodexTurnRegistry, GcsCheckpointStore, ManagedAuthStore, OwnerAuthRegistry, OwnerSessionRegistry, type Json, type RpcMessage } from "../services/agent-gateway/server.js";
 import { CodexBridge } from "../services/agent-gateway/codex_bridge.js";
 import { McpHost } from "../services/agent-gateway/mcp_host.js";
 
@@ -14,6 +14,18 @@ function response(body: unknown, status = 200): Response {
 }
 
 describe("agent gateway cloud runtime POC", () => {
+  it("preserves the handle and advances native polling before approval replay",async()=>{
+    const registry=new CodexTurnRegistry();
+    const rows=[{seq:1,turnId:"native-turn",type:"approval_request",payload:{}},
+      {seq:2,turnId:"native-turn",type:"text_delta",payload:{delta:"中文"}}];
+    const bridge={eventsAfter:(cursor:number)=>({cursor:rows.at(-1)!.seq,events:rows.filter(row=>row.seq>cursor)}),
+      resolveApproval:vi.fn(()=>rows.push({seq:3,turnId:"native-turn",type:"approval_request",payload:{}}))};
+    (registry as unknown as {sessions:Map<string,unknown>}).sessions.set("handle",{ownerId:"owner",threadId:"chat-thread",turnId:"chat-turn",
+      nativeThreadId:"native-thread",nativeTurnId:"native-turn",lastReturnedSeq:1,bridge});
+    expect(await registry.events("handle","owner","chat-thread","native-thread","chat-turn","native-turn",1)).toMatchObject({turnHandle:"handle",cursor:2,events:[expect.objectContaining({seq:2})]});
+    await expect(registry.events("handle","other-owner","chat-thread","native-thread","chat-turn","native-turn",1)).rejects.toThrow("binding");
+    expect(await registry.resolve("handle","owner","chat-thread","native-thread","chat-turn","native-turn","request","digest","accept")).toMatchObject({cursor:3,events:[expect.objectContaining({seq:3})]});
+  });
   it("maps Codex threads, items, approvals, cancellation, and MCP tools", async () => {
     let handler: (message: RpcMessage) => Promise<Json | undefined> | Json | undefined = () => undefined;
     const responses: Array<[number, unknown]> = [];

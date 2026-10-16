@@ -16,6 +16,9 @@ export type DispatchClaim = {
   content: string;
 };
 
+export type RuntimeContext = { ownerId:string; threadId:string; turnId:string;
+  turnHandle:string; nativeThreadId:string; nativeTurnId:string; cursor:number; operationId?:string };
+
 export type ThreadInput = { threadId?: string; runtime: "openrouter" | "gemini" | "codex";
   model: string; assistantProfile: string; skillProfile?: string; parentThreadId?: string };
 export type ApprovalInput = { ownerId: string; threadId: string; turnId: string; requestId: string;
@@ -153,7 +156,7 @@ export class ChatStore {
         [ownerId,threadId])).rows;
       if (turns.some(turn => turn.status === "RUNNING")) throw new ChatConflict("running thread cannot be deleted");
       await client.query(`UPDATE omni_chat.threads SET parent_thread_id=NULL WHERE owner_id=$1 AND parent_thread_id=$2`,[ownerId,threadId]);
-      for (const table of ["approvals","events","turns","threads"]) {
+      for (const table of ["approvals","runtime_bindings","events","turns","threads"]) {
         await client.query(`DELETE FROM omni_chat.${table} WHERE owner_id=$1 AND thread_id=$2`,[ownerId,threadId]);
       }
       await client.query("COMMIT");
@@ -273,6 +276,70 @@ export class ChatStore {
       `SELECT event_id,turn_id,seq,event_type,payload,item_id,provider_ids,created_at
        FROM omni_chat.events WHERE owner_id=$1 AND thread_id=$2 AND seq>$3 ORDER BY seq LIMIT $4`,
       [ownerId,threadId,cursor,limit])).rows;
+  }
+
+  async saveRuntimeBinding(binding: RuntimeContext): Promise<void> {
+    const {ownerId,threadId,turnId,cursor,operationId,...native}=binding;
+    const context=JSON.stringify({ownerId,threadId,turnId,...native});
+    const result=await this.pool.query(
+      `INSERT INTO omni_chat.runtime_bindings(owner_id,thread_id,turn_id,context,cursor,operation_id,operation_until)
+       VALUES($1,$2,$3,$4,-1,$5,CASE WHEN $5::uuid IS NOT NULL THEN now()+interval '130 seconds' END)
+       ON CONFLICT DO NOTHING RETURNING turn_id`,[ownerId,threadId,turnId,context,operationId??null]);
+    if (!result.rows.length) {
+      const row=(await this.pool.query(`SELECT context FROM omni_chat.runtime_bindings WHERE owner_id=$1 AND thread_id=$2 AND turn_id=$3`,[ownerId,threadId,turnId])).rows[0];
+      if (!row || Object.entries(JSON.parse(context)).some(([key,value])=>row.context[key]!==value)) throw new ChatConflict("runtime binding changed");
+    }
+  }
+
+  async runtimeTurns(ownerId:string,threadId:string):Promise<DispatchClaim[]> {
+    await this.thread(ownerId,threadId);
+    return (await this.pool.query(
+      `SELECT r.owner_id AS "ownerId",r.thread_id AS "threadId",r.turn_id AS "turnId",th.runtime,th.model,'' AS content
+       FROM omni_chat.runtime_bindings r JOIN omni_chat.turns t USING(owner_id,thread_id,turn_id)
+       JOIN omni_chat.threads th USING(owner_id,thread_id)
+       WHERE r.owner_id=$1 AND r.thread_id=$2 AND t.status='RUNNING' ORDER BY t.created_at LIMIT 20`,[ownerId,threadId])).rows;
+  }
+
+  async acquireRuntimeBinding(ownerId:string,threadId:string,turnId:string):Promise<RuntimeContext|null> {
+    const operationId=randomUUID();
+    const row=(await this.pool.query(
+      `UPDATE omni_chat.runtime_bindings SET operation_id=$4,operation_until=now()+interval '130 seconds'
+       WHERE owner_id=$1 AND thread_id=$2 AND turn_id=$3 AND operation_id IS NULL RETURNING context,cursor`,
+      [ownerId,threadId,turnId,operationId])).rows[0];
+    if (row) return {...row.context,cursor:Number(row.cursor),operationId};
+    const existing=(await this.pool.query(`SELECT operation_until<now() AS expired FROM omni_chat.runtime_bindings WHERE owner_id=$1 AND thread_id=$2 AND turn_id=$3`,[ownerId,threadId,turnId])).rows[0];
+    if (!existing) throw new ChatNotFound("runtime binding not found");
+    if (existing.expired) throw new ChatConflict("runtime outcome needs reconciliation");
+    return null;
+  }
+
+  async releaseRuntimeBinding(binding:RuntimeContext,cursor:number):Promise<void> {
+    const result=await this.pool.query(
+      `UPDATE omni_chat.runtime_bindings SET cursor=GREATEST(cursor,$5),operation_id=NULL,operation_until=NULL
+       WHERE owner_id=$1 AND thread_id=$2 AND turn_id=$3 AND operation_id=$4 RETURNING turn_id`,
+      [binding.ownerId,binding.threadId,binding.turnId,binding.operationId,cursor]);
+    if (!result.rows.length) throw new ChatConflict("runtime operation changed");
+  }
+
+  async approvalDecision(ownerId:string,threadId:string,turnId:string,requestId:string):Promise<Record<string,unknown>> {
+    const row=(await this.pool.query(`SELECT * FROM omni_chat.approvals WHERE owner_id=$1 AND thread_id=$2 AND turn_id=$3 AND request_id=$4`,[ownerId,threadId,turnId,requestId])).rows[0];
+    if (!row) throw new ChatNotFound("approval not found");
+    return row;
+  }
+
+  async unforwardedApprovals(ownerId:string,threadId:string,turnId:string):Promise<string[]> {
+    return (await this.pool.query(
+      `SELECT request_id FROM omni_chat.approvals WHERE owner_id=$1 AND thread_id=$2 AND turn_id=$3
+       AND status IN ('APPROVED','DENIED') AND forward_attempted_at IS NULL AND expires_at>now()`,
+      [ownerId,threadId,turnId])).rows.map(row=>String(row.request_id));
+  }
+
+  async markApprovalForwarded(ownerId:string,threadId:string,turnId:string,requestId:string):Promise<void> {
+    const result=await this.pool.query(
+      `UPDATE omni_chat.approvals SET forward_attempted_at=now() WHERE owner_id=$1 AND thread_id=$2 AND turn_id=$3 AND request_id=$4
+       AND status IN ('APPROVED','DENIED') AND forward_attempted_at IS NULL AND expires_at>now() RETURNING request_id`,
+      [ownerId,threadId,turnId,requestId]);
+    if (!result.rows.length) throw new ChatConflict("approval forwarding unavailable");
   }
 
   async cancelQueuedTurn(ownerId: string, threadId: string, turnId: string): Promise<Record<string, unknown>> {

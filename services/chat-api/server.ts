@@ -4,6 +4,7 @@ import { stat } from "node:fs/promises";
 import { extname, isAbsolute, relative, resolve } from "node:path";
 import { ChatConflict, ChatNotFound, type ChatStore, type ThreadInput } from "./storage.js";
 import type { ChatDispatcher } from "./gateway_dispatch.js";
+import type {ChatMcp,McpOperation} from "./mcp_dispatch.js";
 
 export type Principal = { issuer: string; subject: string };
 export type VerifyUser = (token: string) => Promise<Principal>;
@@ -90,7 +91,7 @@ function threadInput(value: Record<string, unknown>): ThreadInput {
 }
 
 export function makeChatServer(store: ChatStore, verifyUser: VerifyUser, verifyService: VerifyService,
-                               dispatcher?: Pick<ChatDispatcher,"runOnce"> & Partial<Pick<ChatDispatcher,"canDispatch">>) {
+                               dispatcher?: Pick<ChatDispatcher,"runOnce"> & Partial<Pick<ChatDispatcher,"canDispatch"|"native">>,mcp?:ChatMcp) {
   return createServer(async (request, response) => {
     const url = new URL(request.url ?? "/", "http://localhost");
     if (request.method === "GET" && url.pathname === "/health") return send(response,200,{ status: "ok" });
@@ -133,6 +134,11 @@ export function makeChatServer(store: ChatStore, verifyUser: VerifyUser, verifyS
       }
       const principal = await verifyUser(token);
       const ownerId = await store.owner(principal.issuer,principal.subject);
+      const mcpRoute=/^\/v1\/mcp\/([A-Za-z0-9][A-Za-z0-9._-]{0,63})\/(discover|call|cancel|disconnect)$/.exec(url.pathname);
+      if (request.method==="POST" && mcpRoute) {
+        if (!mcp) return send(response,404,{error:"not_found"});
+        return send(response,200,await mcp.execute(ownerId,mcpRoute[1],mcpRoute[2] as McpOperation,await body(request)));
+      }
       if (request.method === "POST" && url.pathname === "/v1/threads") {
         return send(response,201,await store.createThread(ownerId,threadInput(await body(request)),key(request)));
       }
@@ -164,6 +170,8 @@ export function makeChatServer(store: ChatStore, verifyUser: VerifyUser, verifyS
           throw new InvalidRequest("message content is invalid");
         }
         if (!dispatcher?.canDispatch?.(ownerId)) return send(response,503,{ error:"dispatch_unavailable" });
+        const targetThread=await store.thread(ownerId,messages[1]);
+        if (!dispatcher.canDispatch(ownerId,String(targetThread.runtime),String(targetThread.model))) return send(response,503,{error:"dispatch_unavailable"});
         const result = await store.message(ownerId,messages[1],value.content,key(request));
         // Keep the request alive during inference; Cloud Run can suspend work after a response.
         const outcome = await dispatcher.runOnce({ ownerId,threadId:messages[1],turnId:String((result.turn as Record<string,unknown>).turn_id) });
@@ -176,6 +184,7 @@ export function makeChatServer(store: ChatStore, verifyUser: VerifyUser, verifyS
         if (!Number.isInteger(cursor) || cursor < -1 || !Number.isInteger(limit) || limit < 1 || limit > 200) {
           throw new InvalidRequest("event cursor or limit is invalid");
         }
+        await dispatcher?.native?.refreshThread(ownerId,events[1]);
         const rows = await store.events(ownerId,events[1],cursor,limit);
         response.writeHead(200,{ "Content-Type":"text/event-stream; charset=utf-8", "Cache-Control":"no-cache", "X-Accel-Buffering":"no" });
         for (const row of rows) response.write("id: " + row.seq + "\nevent: " + row.event_type + "\ndata: " + JSON.stringify(row) + "\n\n");
@@ -185,14 +194,20 @@ export function makeChatServer(store: ChatStore, verifyUser: VerifyUser, verifyS
       const approval = /^\/v1\/threads\/([A-Za-z0-9][A-Za-z0-9._:-]{0,127})\/turns\/([A-Za-z0-9][A-Za-z0-9._:-]{0,127})\/approvals\/([A-Za-z0-9][A-Za-z0-9._:-]{0,127})$/.exec(url.pathname);
       const cancel = /^\/v1\/threads\/([A-Za-z0-9][A-Za-z0-9._:-]{0,127})\/turns\/([A-Za-z0-9][A-Za-z0-9._:-]{0,127})\/cancel$/.exec(url.pathname);
       if (request.method === "POST" && cancel) {
-        return send(response,200,await store.cancelQueuedTurn(ownerId,cancel[1],cancel[2]));
+        try { return send(response,200,await store.cancelQueuedTurn(ownerId,cancel[1],cancel[2])); }
+        catch (error) {
+          if (!(error instanceof ChatConflict) || !dispatcher?.native) throw error;
+          return send(response,200,await dispatcher.native.cancel(ownerId,cancel[1],cancel[2]));
+        }
       }
       if (request.method === "POST" && approval) {
         const value = await body(request);
         if (typeof value.approved !== "boolean" || typeof value.paramsDigest !== "string" || !DIGEST.test(value.paramsDigest)) {
           throw new InvalidRequest("approval decision is invalid");
         }
-        return send(response,200,await store.decideApproval(ownerId,approval[1],approval[2],approval[3],value.paramsDigest,value.approved));
+        const decision=await store.decideApproval(ownerId,approval[1],approval[2],approval[3],value.paramsDigest,value.approved);
+        if (dispatcher?.native) return send(response,200,await dispatcher.native.resolve(ownerId,approval[1],approval[2],approval[3]));
+        return send(response,200,decision);
       }
       send(response,404,{ error:"not_found" });
     } catch (error) {

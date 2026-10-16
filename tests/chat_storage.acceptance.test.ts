@@ -15,7 +15,7 @@ describe.runIf(Boolean(dsn))("isolated PostgreSQL ChatStore acceptance", () => {
     try {
       expect((await pool.query("SELECT current_database() AS name")).rows[0].name).toBe("omniagent_acceptance");
       expect((await pool.query("SELECT to_regclass('omni_chat.owners') AS present")).rows[0].present).toBeNull();
-      for (const filename of ["001_chat_ownership.sql", "002_skill_storage.sql"]) {
+      for (const filename of ["001_chat_ownership.sql", "002_skill_storage.sql", "003_runtime_bindings.sql"]) {
         const sql = readFileSync("infra/postgres/migrations/" + filename,"utf8");
         await pool.query(sql);
         await pool.query(sql);
@@ -63,6 +63,11 @@ describe.runIf(Boolean(dsn))("isolated PostgreSQL ChatStore acceptance", () => {
       await expect(store.decideApproval(b,"thread-a",turnId,"approval-1",digest,true)).rejects.toBeInstanceOf(ChatConflict);
       await expect(store.decideApproval(a,"thread-a",turnId,"approval-1","sha256:"+"c".repeat(64),true)).rejects.toBeInstanceOf(ChatConflict);
       expect((await store.decideApproval(a,"thread-a",turnId,"approval-1",digest,true)).status).toBe("APPROVED");
+      expect(await store.unforwardedApprovals(a,"thread-a",turnId)).toEqual(["approval-1"]);
+      await expect(store.markApprovalForwarded(b,"thread-a",turnId,"approval-1")).rejects.toBeInstanceOf(ChatConflict);
+      await store.markApprovalForwarded(a,"thread-a",turnId,"approval-1");
+      expect(await store.unforwardedApprovals(a,"thread-a",turnId)).toEqual([]);
+      await expect(store.markApprovalForwarded(a,"thread-a",turnId,"approval-1")).rejects.toBeInstanceOf(ChatConflict);
       const queued = await store.message(a,"thread-a","second","message-2");
       expect((await store.cancelQueuedTurn(a,"thread-a",queued.turn.turn_id as string)).status).toBe("CANCELLED");
       await expect(store.cancelQueuedTurn(b,"thread-a",queued.turn.turn_id as string)).rejects.toBeInstanceOf(ChatNotFound);
@@ -123,6 +128,21 @@ describe.runIf(Boolean(dsn))("isolated PostgreSQL ChatStore acceptance", () => {
       await store.message(a,String(disposable.thread_id),"永久刪除測試","delete-message");
       const running = await store.claimNextQueuedTurn([a], {ownerId:a,threadId:"delete-me",turnId:String((await store.message(a,"delete-me","永久刪除測試","delete-message")).turn.turn_id)});
       expect(running?.threadId).toBe("delete-me");
+      const native={ownerId:a,threadId:"delete-me",turnId:running!.turnId,turnHandle:"test-handle",
+        nativeThreadId:"native-thread",nativeTurnId:"native-turn",cursor:-1};
+      await store.saveRuntimeBinding(native);
+      await store.saveRuntimeBinding(native);
+      await expect(store.saveRuntimeBinding({...native,turnHandle:"different"})).rejects.toBeInstanceOf(ChatConflict);
+      await expect(store.acquireRuntimeBinding(b,"delete-me",running!.turnId)).rejects.toBeInstanceOf(ChatNotFound);
+      const leased=await store.acquireRuntimeBinding(a,"delete-me",running!.turnId);
+      expect(leased?.turnHandle).toBe("test-handle");
+      expect(await store.acquireRuntimeBinding(a,"delete-me",running!.turnId)).toBeNull();
+      await pool.query(`UPDATE omni_chat.runtime_bindings SET operation_until=now()-interval '1 second' WHERE owner_id=$1 AND thread_id='delete-me'`,[a]);
+      await expect(store.acquireRuntimeBinding(a,"delete-me",running!.turnId)).rejects.toThrow("reconciliation");
+      await store.releaseRuntimeBinding(leased!,4);
+      const resumed=await store.acquireRuntimeBinding(a,"delete-me",running!.turnId);
+      expect(resumed?.cursor).toBe(4);
+      await store.releaseRuntimeBinding(resumed!,4);
       await expect(store.deleteThread(a,"delete-me")).rejects.toBeInstanceOf(ChatConflict);
       await store.appendEvent(a,"delete-me",running!.turnId,"delete-completed","turn_completed",{status:"complete"});
       await store.createThread(a,{...input,threadId:"kept-fork",parentThreadId:"delete-me"},"fork-create");
@@ -130,7 +150,7 @@ describe.runIf(Boolean(dsn))("isolated PostgreSQL ChatStore acceptance", () => {
       await store.deleteThread(a,"delete-me");
       await expect(store.thread(a,"delete-me")).rejects.toBeInstanceOf(ChatNotFound);
       expect((await store.thread(a,"kept-fork")).parent_thread_id).toBeNull();
-      for (const table of ["threads","turns","events","approvals"]) {
+      for (const table of ["threads","turns","events","approvals","runtime_bindings"]) {
         expect((await pool.query(`SELECT count(*) AS n FROM omni_chat.${table} WHERE owner_id=$1 AND thread_id=$2`,[a,"delete-me"])).rows[0].n).toBe("0");
       }
 

@@ -1,0 +1,87 @@
+name: omniAgent protected GHCR release and rollback
+on:
+  workflow_dispatch:
+    inputs:
+      acceptance_run_id:
+        description: Successful current-main P0 acceptance run containing p0-acceptance artifact
+        required: true
+        type: string
+permissions:
+  contents: read
+  actions: read
+  id-token: write
+concurrency:
+  group: omniagent-ghcr-deployment
+  cancel-in-progress: false
+jobs:
+  release:
+    if: github.repository == 'tommylin15/omniAgent' && github.ref == 'refs/heads/main'
+    environment: production
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate acceptance source and download exact release evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ACCEPTANCE_RUN_ID: ${{ inputs.acceptance_run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$ACCEPTANCE_RUN_ID" =~ ^[0-9]+$ ]]
+          mkdir -p "$RUNNER_TEMP/p0-acceptance"
+          gh api "repos/tommylin15/omniAgent/actions/runs/$ACCEPTANCE_RUN_ID" > "$RUNNER_TEMP/acceptance-run.json"
+          python3 - <<'PY'
+          import json,os,subprocess
+          from pathlib import Path
+          row=json.loads((Path(os.environ['RUNNER_TEMP'])/'acceptance-run.json').read_text())
+          if row.get('conclusion')!='success' or row.get('head_branch')!='main' or row.get('head_repository',{}).get('full_name')!='tommylin15/omniAgent' or row.get('head_sha')!=os.environ['GITHUB_SHA']:
+              raise SystemExit('acceptance provenance rejected')
+          PY
+          gh run download "$ACCEPTANCE_RUN_ID" --repo tommylin15/omniAgent --name p0-acceptance --dir "$RUNNER_TEMP/p0-acceptance"
+          python3 - <<'PY'
+          import json,os,sys,subprocess
+          from pathlib import Path
+          sys.path.insert(0,'scripts')
+          from ghcr_release import validate
+          root=Path(os.environ['RUNNER_TEMP'])/'p0-acceptance'
+          manifest=json.loads((root/'manifest.json').read_text())
+          acceptance=json.loads((root/'acceptance.json').read_text())
+          validate(manifest,acceptance)
+          if manifest['source_sha']!=os.environ['GITHUB_SHA']:
+              raise SystemExit('release source mismatch')
+          for gate in acceptance['gates'].values():
+              run_id=gate['run_url'].rsplit('/',1)[1]
+              row=json.loads(subprocess.check_output(['gh','api','repos/tommylin15/omniAgent/actions/runs/'+run_id],text=True))
+              if row.get('conclusion')!='success' or row.get('head_sha')!=manifest['source_sha'] or row.get('head_repository',{}).get('full_name')!='tommylin15/omniAgent':
+                  raise SystemExit('gate provenance rejected')
+          PY
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+          service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Rehearse GHCR fallback and promote accepted batch
+        run: >-
+          python3 scripts/ghcr_release.py
+          --manifest "$RUNNER_TEMP/p0-acceptance/manifest.json"
+          --acceptance "$RUNNER_TEMP/p0-acceptance/acceptance.json"
+          --evidence "$RUNNER_TEMP/release-evidence.json"
+      - name: Write evidence when release preflight failed
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          path=Path(os.environ['RUNNER_TEMP'])/'release-evidence.json'
+          if not path.exists():
+              path.write_text(json.dumps({'source_sha':os.environ['GITHUB_SHA'],'validation':'BLOCKED','recovery':'NOT_ATTEMPTED','steps':[]}))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: release-evidence-${{ github.run_id }}
+          path: ${{ runner.temp }}/release-evidence.json
+          if-no-files-found: error

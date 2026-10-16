@@ -263,6 +263,8 @@ void main() {
     await tester.tap(find.text('gemini · test-model').first);
     await tester.pumpAndSettle();
     expect(find.text('需要核准的操作'), findsOneWidget);
+    expect(find.text('等待你的核准'), findsOneWidget);
+    expect(find.text('取消執行'), findsOneWidget);
     expect(find.textContaining('事件已同步'), findsOneWidget);
     await tester.tap(find.text('允許'));
     await tester.pumpAndSettle();

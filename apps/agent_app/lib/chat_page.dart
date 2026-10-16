@@ -27,6 +27,7 @@ class _ChatPageState extends State<ChatPage> {
   String runtime = 'gemini';
   String connection = 'idle';
   String? queuedTurn;
+  String turnState = 'queued';
   int cursor = -1;
   bool busy = false;
   bool polling = false;
@@ -149,10 +150,21 @@ class _ChatPageState extends State<ChatPage> {
         ? '${row['item_id'] ?? eventId}'
         : eventId;
     events[key] = {...?events[key], ...row};
+    final turnId = row['turn_id']?.toString();
+    final type = row['event_type'];
+    final payload = row['payload'] as Map? ?? {};
+    if (turnId != null && type == 'item_upsert' && payload['role'] == 'user') {
+      queuedTurn = turnId;
+      turnState = 'queued';
+    }
+    if (turnId != null && (type == 'approval_request' || type == 'text_delta' || type == 'tool_request' || type == 'approval_resolved')) {
+      queuedTurn = turnId;
+      turnState = type == 'approval_request' ? 'approval' : 'running';
+    }
     if (row['event_type'] == 'turn_cancelled' ||
         row['event_type'] == 'turn_completed' ||
         row['event_type'] == 'turn_error') {
-      queuedTurn = null;
+      if (queuedTurn == turnId) queuedTurn = null;
     }
   }
 
@@ -166,7 +178,11 @@ class _ChatPageState extends State<ChatPage> {
           .post('/v1/threads/$id/messages', {'content': content});
       if (!mounted) return;
       input.clear();
-      setState(() => queuedTurn = '${value['turn']['turn_id']}');
+        setState(() {
+          queuedTurn = '${value['turn']['turn_id']}';
+          turnState = value['dispatch']?['status'] == 'awaiting_approval' ? 'approval' :
+              value['turn']['status'] == 'QUEUED' ? 'queued' : 'running';
+        });
       await refresh();
     } catch (error) {
       if (mounted) _error(error is StateError ? error.message.toString() : '訊息送出失敗，請稍後重試');
@@ -185,7 +201,7 @@ class _ChatPageState extends State<ChatPage> {
       if (mounted) setState(() => queuedTurn = null);
       await refresh();
     } catch (_) {
-      if (mounted) _error('只有尚未執行的回合可以取消');
+        if (mounted) _error('無法取消回合，請稍後重試');
     } finally {
       if (mounted) setState(() => busy = false);
     }
@@ -653,12 +669,13 @@ class _ChatPageState extends State<ChatPage> {
                 children: [
                   const Icon(Icons.schedule_rounded, size: 20),
                   const SizedBox(width: 10),
-                  const Expanded(
-                    child: Text('訊息已排隊，等待執行環境接手'),
+                  Expanded(
+                    child: Text(turnState == 'approval' ? '等待你的核准' :
+                        turnState == 'running' ? 'AI 正在執行' : '訊息已排隊，等待執行環境接手'),
                   ),
                   TextButton(
                     onPressed: busy ? null : cancelQueued,
-                    child: const Text('取消排隊'),
+                    child: Text(turnState == 'queued' ? '取消排隊' : '取消執行'),
                   ),
                 ],
               ),

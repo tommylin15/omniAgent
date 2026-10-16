@@ -1,0 +1,121 @@
+{
+  "deletion_executed": false,
+  "cleanup_dry_run": [
+    "us-central1-docker.pkg.dev/gen-lang-client-0593591102/omniagent/omniagent-chat@sha256:02887db0e1b2fedf252c810095974fca3574e66da5b44e30115e72fe8e61aa3c",
+    "us-central1-docker.pkg.dev/gen-lang-client-0593591102/omniagent/omniagent-chat@sha256:6f6aa4d04ea0c0a0d81f451dab3eb4af14619d0bffe6eab383f3d408ea98c2ff",
+    "us-central1-docker.pkg.dev/gen-lang-client-0593591102/omniagent/omniagent-chat@sha256:c3ad0468d21d2160022147b9867605d7f6d76341ae8ba248e6812473c13527ec",
+    "us-central1-docker.pkg.dev/gen-lang-client-0593591102/omniagent/omniagent-chat@sha256:c5e812db8090490a6223fb317056859656190e343b1a3da499221b3e63aa3d23",
+    "us-central1-docker.pkg.dev/gen-lang-client-0593591102/omniagent/omniagent-chat@sha256:c7f7fb8f89dbbb4591d589f49afd43e408fe38c7d8fd7edce2c0b918b303c90b",
+    "us-central1-docker.pkg.dev/gen-lang-client-0593591102/omniagent/omniagent-chat@sha256:e1e28e4743e851da55eec6ed033fad959d2f7cbc3fc7015c1a29d765a6333d35",
+    "us-central1-docker.pkg.dev/gen-lang-client-0593591102/omniagent/omniagent-shared-codex@sha256:55212af1496c3b0f284779f9c3f6a752f2eda1c469b7c2deec08fa52cd0cecbd"
+  ],
+  "runtimes": [
+    {
+      "traffic": [
+        {
+          "revisionName": "omniagent-agent-gateway-00001-wav",
+          "tag": "phase6b-candidate",
+          "url": "https://phase6b-candidate---omniagent-agent-gateway-2oo7qbkd5q-uc.a.run.app"
+        },
+        {
+          "latestRevision": true,
+          "percent": 100,
+          "revisionName": "omniagent-agent-gateway-00003-k6t"
+        }
+      ],
+      "region": "us-central1",
+      "service": "omniagent-agent-gateway",
+      "revisions": [
+        {
+          "name": "omniagent-agent-gateway-00003-k6t",
+          "digest": "us-central1-docker.pkg.dev/gen-lang-client-0593591102/janusai-poc/omniagent-agent-gateway@sha256:8278561a8ba5eaeaa3e209a151699391044530646d1498396724b00516afc773"
+        },
+        {
+          "name": "omniagent-agent-gateway-00002-k7m",
+          "digest": "us-central1-docker.pkg.dev/gen-lang-client-0593591102/janusai-poc/omniagent-agent-gateway@sha256:8278561a8ba5eaeaa3e209a151699391044530646d1498396724b00516afc773"
+        },
+        {
+          "name": "omniagent-agent-gateway-00001-wav",
+          "digest": "us-central1-docker.pkg.dev/gen-lang-client-0593591102/janusai-poc/omniagent-agent-gateway@sha256:8278561a8ba5eaeaa3e209a151699391044530646d1498396724b00516afc773"
+        }
+      ]
+    },
+    {
+      "traffic": [
+        {
+          "revisionName": "omniagent-chat-00002-hig",
+          "tag": "phase6b-candidate",
+          "url": "https://phase6b-candidate---omniagent-chat-2oo7qbkd5q-uc.a.run.app"
+        },
+        {
+          "percent": 100,
+          "revisionName": "omniagent-chat-00004-dzs"
+        },
+        {
+          "revisionName": "omniagent-chat-00006-ron",
+          "tag": "candidate-27b2809",
+          "url": "https://candidate-27b2809---omniagent-chat-2oo7qbkd5q-uc.a.run.app"
+        }
+      ],
+      "region": "us-central1",
+      "service": "omniagent-chat",
+      "revisions": [
+        {
+          "name": "omniagent-chat-00006-ron",
+          "digest": "us-central1-docker.pkg.dev/gen-lang-client-0593591102/omniagent/omniagent-chat@sha256:46151aef4af6db98ef0cdadfbe65b8a56b1a0178371a780014231340a8834d8f"
+        },
+        {
+          "name": "omniagent-chat-00005-siq",
+          "digest": "us-central1-docker.pkg.dev/gen-lang-client-0593591102/omniagent/omniagent-chat@sha256:46151aef4af6db98ef0cdadfbe65b8a56b1a0178371a780014231340a8834d8f"
+        },
+        {
+          "name": "omniagent-chat-00004-dzs",
+          "digest": "us-central1-docker.pkg.dev/gen-lang-client-0593591102/janusai-poc/omniagent-chat@sha256:957268d36bd1e0825757fc678ce58f8184dda806892a7e2567c54fa59b16342c"
+        },
+        {
+          "name": "omniagent-chat-00003-t42",
+          "digest": "us-central1-docker.pkg.dev/gen-lang-client-0593591102/janusai-poc/omniagent-chat@sha256:957268d36bd1e0825757fc678ce58f8184dda806892a7e2567c54fa59b16342c"
+        },
+        {
+          "name": "omniagent-chat-00002-hig",
+          "digest": "us-central1-docker.pkg.dev/gen-lang-client-0593591102/janusai-poc/omniagent-chat@sha256:957268d36bd1e0825757fc678ce58f8184dda806892a7e2567c54fa59b16342c"
+        },
+        {
+          "name": "omniagent-chat-00001-muk",
+          "digest": "us-central1-docker.pkg.dev/gen-lang-client-0593591102/janusai-poc/omniagent-chat@sha256:ceda5c1cac842758018433f7e2de1b74c46cd23b76bd4159f3c170b8f70747b5"
+        }
+      ]
+    },
+    {
+      "traffic": [
+        {
+          "latestRevision": true,
+          "percent": 100,
+          "revisionName": "omniagent-shared-codex-00004-xmq"
+        }
+      ],
+      "region": "us-central1",
+      "service": "omniagent-shared-codex",
+      "revisions": [
+        {
+          "name": "omniagent-shared-codex-00004-xmq",
+          "digest": "us-central1-docker.pkg.dev/gen-lang-client-0593591102/omniagent/omniagent-shared-codex@sha256:b37b50f33329f29e400d5ca870310f48ae93c02ff2f44fc13235ca37784ad2bf"
+        },
+        {
+          "name": "omniagent-shared-codex-00003-zz5",
+          "digest": "us-central1-docker.pkg.dev/gen-lang-client-0593591102/omniagent/omniagent-shared-codex@sha256:b37b50f33329f29e400d5ca870310f48ae93c02ff2f44fc13235ca37784ad2bf"
+        },
+        {
+          "name": "omniagent-shared-codex-00002-6th",
+          "digest": "us-central1-docker.pkg.dev/gen-lang-client-0593591102/omniagent/omniagent-shared-codex@sha256:9a4c44310f0e96cf09d47633d3f0275c06f1b61259ba23f7053033bdc24cc112"
+        },
+        {
+          "name": "omniagent-shared-codex-00001-b59",
+          "digest": "us-central1-docker.pkg.dev/gen-lang-client-0593591102/omniagent/omniagent-shared-codex@sha256:9a4c44310f0e96cf09d47633d3f0275c06f1b61259ba23f7053033bdc24cc112"
+        }
+      ]
+    }
+  ],
+  "scanning_enabled": false,
+  "measured_at": "2026-10-08T11:17:42.2127978+08:00"
+}

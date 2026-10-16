@@ -2,7 +2,7 @@ import { createHmac } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import { makeServer, type Json } from "../services/agent-gateway/server.js";
 import { describe, expect, it, vi } from "vitest";
-import { ChatDispatcher, makeSignedGatewayInvoker } from "../services/chat-api/gateway_dispatch.js";
+import { ChatDispatcher, makeSignedGatewayInvoker,modelGrants } from "../services/chat-api/gateway_dispatch.js";
 import type { DispatchClaim } from "../services/chat-api/storage.js";
 
 const claim: DispatchClaim = { ownerId:"owner-a", threadId:"thread-a", turnId:"turn-a",
@@ -17,6 +17,15 @@ function store() {
 }
 
 describe("Chat -> Gateway durable one-shot dispatch", () => {
+  it("requires the exact approved owner/provider/model before provider effects",async()=>{
+    const db=store();const invoke=vi.fn();
+    const grants=modelGrants(JSON.stringify([{ownerId:"owner-a",runtime:"openrouter",model:"openrouter/free"}]),["owner-a"]);
+    const worker=new ChatDispatcher(db,invoke,["owner-a"],undefined,grants);
+    expect(worker.canDispatch("owner-a","gemini","gemini-2.5-flash")).toBe(false);
+    expect((await worker.runOnce()).status).toBe("error");
+    expect(invoke).not.toHaveBeenCalled();
+    expect(()=>modelGrants(JSON.stringify([{ownerId:"owner-b",runtime:"gemini",model:"test"}]),["owner-a"])).toThrow("grants");
+  });
   it("persists only the claimed owner turn and does not repeat provider effects", async () => {
     const db=store();
     const invoke=vi.fn(async () => response());

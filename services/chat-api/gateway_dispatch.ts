@@ -1,10 +1,18 @@
 import { createHmac } from "node:crypto";
 import { safeRecord, type ChatStore, type DispatchClaim } from "./storage.js";
 
-export type DispatchOutcome = { status: "idle" | "completed" | "cancelled" | "error"; turnId?: string; reason?: string };
+export type DispatchOutcome = { status: "idle" | "completed" | "cancelled" | "error" | "running" | "awaiting_approval"; turnId?: string; reason?: string };
 type TurnEvent = { type: string; payload: unknown };
 type Invoke = (claim: DispatchClaim) => Promise<unknown>;
 type Store = Pick<ChatStore, "claimNextQueuedTurn" | "appendEvent">;
+export type ModelGrant=Pick<DispatchClaim,"ownerId"|"runtime"|"model">;
+export function modelGrants(raw:string,owners:readonly string[]):ModelGrant[] {
+  const rows:unknown=JSON.parse(raw);
+  if (!Array.isArray(rows) || !rows.length || rows.some(row=>!row || typeof row!=="object" ||
+      !owners.includes(row.ownerId) || !["codex","gemini","openrouter"].includes(row.runtime) ||
+      typeof row.model!=="string" || row.model.length>128 || !/^[A-Za-z0-9][A-Za-z0-9._:/-]*$/.test(row.model))) throw new Error("invalid model grants");
+  return rows as ModelGrant[];
+}
 
 const types = new Set(["text_delta", "item_upsert", "tool_request", "tool_result",
   "approval_request", "approval_resolved", "citation", "usage",
@@ -13,10 +21,15 @@ const terminal = new Set(["turn_completed", "turn_cancelled", "turn_error"]);
 
 export class ChatDispatcher {
   constructor(private readonly store: Store, private readonly invoke: Invoke,
-              private readonly approvedOwners: readonly string[]) {}
+              private readonly approvedOwners: readonly string[],
+              readonly native?: {start:(claim:DispatchClaim)=>Promise<DispatchOutcome>;refreshThread:(ownerId:string,threadId:string)=>Promise<void>;
+                resolve:(ownerId:string,threadId:string,turnId:string,requestId:string)=>Promise<DispatchOutcome>;
+                  cancel:(ownerId:string,threadId:string,turnId:string)=>Promise<DispatchOutcome>},
+              private readonly grants?:readonly ModelGrant[]) {}
 
-  canDispatch(ownerId: string): boolean {
-    return this.approvedOwners.includes(ownerId);
+  canDispatch(ownerId: string,runtime?:string,model?:string): boolean {
+    return this.approvedOwners.includes(ownerId) && (!this.grants || runtime===undefined ||
+      this.grants.some(grant=>grant.ownerId===ownerId && grant.runtime===runtime && grant.model===model));
   }
 
   async runOnce(target?: { ownerId: string; threadId: string; turnId: string }): Promise<DispatchOutcome> {
@@ -24,6 +37,11 @@ export class ChatDispatcher {
     if (target && !this.canDispatch(target.ownerId)) throw new Error("dispatch owner not approved");
     const claim = await this.store.claimNextQueuedTurn(this.approvedOwners, target);
     if (!claim) return { status: "idle" };
+    if (!this.canDispatch(claim.ownerId,claim.runtime,claim.model)) return this.fail(claim);
+    if (claim.runtime === "codex" && this.native) {
+      try { return await this.native.start(claim); }
+      catch { return this.fail(claim); }
+    }
     let events: TurnEvent[];
     try {
       events = validateEvents(await this.invoke(claim), claim);
@@ -56,10 +74,10 @@ export class ChatDispatcher {
   }
 }
 
-function validateEvents(value: unknown, claim: DispatchClaim): TurnEvent[] {
+export function validateEvents(value: unknown, claim: DispatchClaim, requireTerminal=true): TurnEvent[] {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("invalid response");
   const rows = (value as Record<string, unknown>).events;
-  if (!Array.isArray(rows) || rows.length < 1 || rows.length > 200) throw new Error("invalid event count");
+  if (!Array.isArray(rows) || (requireTerminal && rows.length < 1) || rows.length > 200) throw new Error("invalid event count");
   const events: TurnEvent[] = [];
   for (const row of rows) {
     if (!row || typeof row !== "object" || Array.isArray(row)) throw new Error("invalid event");
@@ -81,8 +99,9 @@ function validateEvents(value: unknown, claim: DispatchClaim): TurnEvent[] {
       typeof clean.delta === "string" && typeof clean.text !== "string"
       ? { ...clean, text: clean.delta } : clean });
   }
-  if (events.filter(e => terminal.has(e.type)).length !== 1 ||
-      !terminal.has(events.at(-1)!.type)) throw new Error("missing terminal");
+  const terminals=events.filter(e=>terminal.has(e.type)).length;
+  if ((requireTerminal && terminals!==1) || terminals>1 ||
+      (terminals===1 && !terminal.has(events.at(-1)!.type))) throw new Error("missing terminal");
   return events;
 }
 
@@ -90,6 +109,15 @@ export function makeSignedGatewayInvoker(options: {
   url: string; audience: string; signingKey: string;
   idToken: () => Promise<string>; fetcher?: typeof fetch;
 }): Invoke {
+  const rpc=makeSignedGatewayRpc(options);
+  return claim=>rpc("turn",{ownerId:claim.ownerId,threadId:claim.threadId,turnId:claim.turnId,
+    runtime:claim.runtime,model:claim.model,messages:[{role:"user",content:claim.content}]});
+}
+
+export type GatewayOperation="turn"|"turn:start"|"turn:events"|"approval"|"turn:cancel"|"mcp/discover"|"mcp/call"|"mcp/cancel"|"mcp/disconnect";
+export function makeSignedGatewayRpc(options: {
+  url:string;audience:string;signingKey:string;idToken:()=>Promise<string>;fetcher?:typeof fetch;
+}): (operation:GatewayOperation,value:Record<string,unknown>)=>Promise<unknown> {
   const target = new URL(options.url);
   const audience = new URL(options.audience);
   if (target.protocol !== "https:" || audience.protocol !== "https:" ||
@@ -98,16 +126,15 @@ export function makeSignedGatewayInvoker(options: {
       target.pathname !== "/" || audience.pathname !== "/" ||
       options.signingKey.length < 32) throw new Error("unsafe Gateway configuration");
   const fetcher = options.fetcher ?? fetch;
-  return async claim => {
+  return async (operation,value) => {
     const token = await options.idToken();
     if (!token) throw new Error("Gateway identity unavailable");
     const timestamp = String(Date.now());
-    const body = JSON.stringify({ ownerId: claim.ownerId, threadId: claim.threadId,
-      turnId: claim.turnId, runtime: claim.runtime, model: claim.model,
-      messages: [{ role: "user", content: claim.content }] });
+    const body = JSON.stringify(value);
     const signature = createHmac("sha256", options.signingKey)
       .update(timestamp).update(".").update(body).digest("hex");
-    const response = await fetcher(new URL("/internal/v1/assistant/turn", target), {
+    const path=operation.startsWith("mcp/") ? "/internal/v1/"+operation : "/internal/v1/assistant/"+operation;
+    const response = await fetcher(new URL(path, target), {
       method: "POST", signal: AbortSignal.timeout(100_000),
       headers: { Authorization: "Bearer " + token, "Content-Type": "application/json",
         "X-OmniAgent-Timestamp": timestamp, "X-OmniAgent-Signature": "v1=" + signature },
