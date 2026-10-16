@@ -8,7 +8,7 @@
 - [Controlled retention #38574373341](https://github.com/tommylin15/omniAgent/actions/runs/38574373341): removed 31 revisions and retired 31 old tagged URLs.
 - [Independent GCP runtime readback attempt 3](https://github.com/tommylin15/omniAgent/actions/runs/38498845455/attempts/3): Chat `00069-tep` 100%, Gateway `00076-pog` 100%, Shared `00046-naj` 100%, all Ready and 10 revisions each. Gateway and Shared have private invoker IAM. Gateway `GEMINI_SHARED_EXECUTION_ENABLED=true`; Chat `CHAT_DISPATCH_ENABLED=false`.
 - [Owner single-turn Preview DB receipt](https://github.com/tommylin15/omniAgent/actions/runs/38381669212): one durable Gemini terminal reply; user observed the historical response after browser refresh. Single-owner Preview only.
-- Life and market-mart report their technical integrations PASS, but their independent production DB/schema/release receipts are not held in this repo.
+- Life and market-mart report their technical integrations PASS. On **2026-10-16**, the user reconfirmed a successful Life → omniAgent connection, recorded as **CONSUMER_REPORTED_PASS for connectivity only**; this message did not include a requestId, response/provider usage, or Life-side DB/schema/release receipt. Do not infer complete Gemini inference, persistence or consumer acceptance from the connection report.
 
 ## API and trust boundary
 

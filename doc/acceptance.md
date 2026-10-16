@@ -8,7 +8,7 @@
 | Formal Chat/Gateway/Shared traffic and IAM | PASS | https://github.com/tommylin15/omniAgent/actions/runs/38498845455/attempts/3 |
 | Three services, 10 revisions each | PASS at snapshot | https://github.com/tommylin15/omniAgent/actions/runs/38574373341 |
 | Owner Gemini single-turn Preview | PASS, Preview only | https://github.com/tommylin15/omniAgent/actions/runs/38381669212 |
-| Life / market-mart consumer integrations | CONSUMER_REPORTED_PASS | Consumer-owned artifacts not independently reviewed here |
+| Life / market-mart consumer integrations | **CONSUMER_REPORTED_PASS** (Life reconfirmed 2026-10-16) | User reports successful Life → omniAgent connection on 2026-10-16. No matching request ID, Gateway execution receipt or Life DB/schema writeback evidence supplied for this new run; model inference and full consumer E2E are not independently verified. |
 | R01 verified-TLS single-Owner Chat→Gateway→Gemini→PostgreSQL backend | **PASS for 0%-traffic canary only** | https://github.com/tommylin15/omniAgent/actions/runs/38742807230 ; source `67cabc2dec6474453c9d9000fcc29290c75e4bd5`; one provider attempt; terminal events and provider usage readback validated |
 | Production Chat model dispatch | OPEN / OFF | No formal enablement; 0%-traffic canary does not promote production |
 | Two-Owner CI HTTP/PostgreSQL isolation | **PASS (synthetic verifier only)** | https://github.com/tommylin15/omniAgent/commit/ceb591e8160371041638d730af3a8fe276adda6a ; candidate source `17be5669` Quality/Flutter PASS |

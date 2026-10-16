@@ -8,7 +8,7 @@
 - [x] **三服務正式 Cloud Run／IAM 讀回**：[獨立驗收 #38498845455 attempt 3](https://github.com/tommylin15/omniAgent/actions/runs/38498845455/attempts/3)：Chat `00069-tep`、Gateway `00076-pog`、Shared Codex `00046-naj` 各 Ready 且有單一 100% 正式流量；Gateway／Shared 不開放匿名。
 - [x] **每個服務保留 10 個 Revision**：[實際清理 #38574373341](https://github.com/tommylin15/omniAgent/actions/runs/38574373341) 刪除 31 個舊 revisions 和 31 個舊 tagged routes；獨立 readback 10／10／10。這是當次快照，不代表後續新候選永遠維持 10。
 - [x] **Owner Chat Preview 單回合 Gemini**：Owner 回報正常回覆及重整後歷史保留；[PostgreSQL readback #38381669212](https://github.com/tommylin15/omniAgent/actions/runs/38381669212) 一筆 durable COMPLETED。**只在單 Owner Preview 範圍 PASS**。
-- [x] **Life、market-mart P0-V 技術交接**：各消費端回報串接通路成功（`CONSUMER_REPORTED_PASS`）；不是 omniAgent 獨立讀取其 production DB/schema receipt。
+- [x] **Life、market-mart P0-V 技術交接**：各消費端回報串接通路成功（`CONSUMER_REPORTED_PASS`）。**2026-10-16 Life 再次由使用者回報 Life → omniAgent 連線成功**，屬 consumer-reported connectivity evidence；尚無本次 requestId、Gateway response 與 Life 端 DB/schema receipt，不能將成功連線擴大宣稱為完整推論／資料回寫 E2E PASS。
 - [x] **Gateway 限額與失敗分類**：market-mart 32 KiB Prompt／2,048 輸出 tokens；Chat／Life 8 KiB／512；上游 429／503／504 分類，不自動付費重試。
 
 ## 2026-10-15 R01 受控實測（僅限候選後端）
