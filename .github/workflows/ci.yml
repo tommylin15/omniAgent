@@ -1,0 +1,79 @@
+# Unified CI: Node + Flutter + Python tests
+name: CI
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'services/**'
+      - 'apps/agent_app/**'
+      - 'tests/**'
+      - 'scripts/**'
+      - 'infra/**'
+      - 'package*.json'
+      - 'tsconfig.json'
+      - 'setup-omniagent-db-dev.sh'
+      - '.github/workflows/ci.yml'
+  pull_request:
+    paths:
+      - 'services/**'
+      - 'apps/agent_app/**'
+      - 'tests/**'
+      - 'scripts/**'
+      - 'infra/**'
+      - 'package*.json'
+      - 'tsconfig.json'
+      - 'setup-omniagent-db-dev.sh'
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  node:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.20.0'
+          cache: npm
+      - run: npm ci && npm run build && npm test
+      - run: python3 -m unittest discover -s tests -p 'test_*.py' -v
+      - run: bash -n setup-omniagent-db-dev.sh && for f in infra/gcp/*.sh; do bash -n "$f"; done
+
+  flutter:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: apps/agent_app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get && flutter analyze lib test && flutter test && flutter build web
+
+  acceptance:
+    needs: [node, flutter]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.20.0'
+          cache: npm
+      - run: npm ci && npm run build
+      - name: Postgres acceptance
+        run: |
+          docker run -d --name pg -p 5432:5432 \
+            -e POSTGRES_USER=test -e POSTGRES_PASSWORD=test -e POSTGRES_DB=test postgres:16-alpine
+          for i in $(seq 1 30); do docker exec pg pg_isready -U test && break || sleep 1; done
+          PG_TEST_URL=postgres://test:test@127.0.0.1:5432/test \
+            npx vitest run tests/chat_storage.acceptance.test.ts tests/shared_gemini_quota.acceptance.test.ts
+          docker rm -f pg

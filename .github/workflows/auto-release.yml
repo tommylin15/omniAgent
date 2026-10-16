@@ -1,0 +1,107 @@
+# Auto release: promotes candidate to production after smoke passes
+# NO manual approval required - AI/automation can deploy directly
+name: Auto Release
+on:
+  workflow_run:
+    workflows: ['omniAgent GHCR current candidate auto smoke']
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      force_sha:
+        description: 'Force release specific SHA (leave empty for current main)'
+        type: string
+        required: false
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: auto-release
+  cancel-in-progress: false
+
+env:
+  PROJECT: gen-lang-client-0593591102
+  REGION: us-central1
+
+jobs:
+  release:
+    if: >-
+      github.repository == 'tommylin15/omniAgent' &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.head_branch == 'main' &&
+        github.event.workflow_run.head_repository.full_name == 'tommylin15/omniAgent'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      released: ${{ steps.promote.outputs.released }}
+      sha: ${{ steps.verify.outputs.sha }}
+    steps:
+      - name: Determine release SHA
+        id: verify
+        run: |
+          if [[ -n "${{ inputs.force_sha }}" ]]; then
+            SHA="${{ inputs.force_sha }}"
+          elif [[ "${{ github.event_name }}" == "workflow_run" ]]; then
+            SHA="${{ github.event.workflow_run.head_sha }}"
+          else
+            SHA="$(git ls-remote https://github.com/tommylin15/omniAgent.git refs/heads/main | cut -f1)"
+          fi
+          [[ "$SHA" =~ ^[a-f0-9]{40}$ ]] || exit 1
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.verify.outputs.sha }}
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+          service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Verify candidates ready
+        run: python3 scripts/ghcr_release_readiness.py "${{ steps.verify.outputs.sha }}" readiness.json
+
+      - name: Promote to production
+        id: promote
+        run: |
+          python3 scripts/ghcr_one_shot_promotion.py \
+            --release-sha "${{ steps.verify.outputs.sha }}" \
+            --report-file release.json \
+            --apply
+          echo "released=true" >> "$GITHUB_OUTPUT"
+
+      - name: Cleanup old revisions
+        run: |
+          for svc in omniagent-shared-codex omniagent-agent-gateway omniagent-chat; do
+            read promoted fallback < <(python3 -c "
+          import json
+          d=json.load(open('release.json'))
+          s=next(x for x in d['steps'] if x['service']=='$svc')
+          print(s['candidate'],s['fallback'])")
+            python3 scripts/cloudrun_revision_retention.py --service "$svc" \
+              --promoted-revision "$promoted" --rollback-revision "$fallback" --apply
+          done
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: release-${{ steps.verify.outputs.sha }}
+          path: "*.json"
+          retention-days: 90
+
+  notify:
+    needs: release
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Summary
+        run: |
+          if [[ "${{ needs.release.outputs.released }}" == "true" ]]; then
+            echo "✅ Released ${{ needs.release.outputs.sha }}" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "❌ Release failed or skipped" >> "$GITHUB_STEP_SUMMARY"
+          fi

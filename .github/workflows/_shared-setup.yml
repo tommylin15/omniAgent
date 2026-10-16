@@ -1,0 +1,52 @@
+# Reusable workflow: common setup for Node, Flutter, GCP auth
+name: Shared Setup
+on:
+  workflow_call:
+    inputs:
+      node:
+        type: boolean
+        default: true
+      flutter:
+        type: boolean
+        default: false
+      gcp-auth:
+        type: boolean
+        default: false
+      checkout-ref:
+        type: string
+        default: ''
+    outputs:
+      sha:
+        value: ${{ jobs.setup.outputs.sha }}
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.checkout.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        id: checkout
+        with:
+          ref: ${{ inputs.checkout-ref || github.sha }}
+          persist-credentials: false
+      - run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+        id: sha
+      - uses: actions/setup-node@v4
+        if: inputs.node
+        with:
+          node-version: '22.20.0'
+          cache: npm
+      - run: npm ci
+        if: inputs.node
+      - uses: subosito/flutter-action@v2
+        if: inputs.flutter
+        with:
+          channel: stable
+          cache: true
+      - uses: google-github-actions/auth@v2
+        if: inputs.gcp-auth
+        with:
+          workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+          service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+        if: inputs.gcp-auth
