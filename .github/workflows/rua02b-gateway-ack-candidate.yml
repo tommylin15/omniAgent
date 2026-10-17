@@ -1,3 +1,4 @@
+# Follow-up: Gateway SQL now uses ON CONFLICT DO NOTHING (verified with real DB role).
 # RUA-02B recovery from the first failed 100%-traffic canary.
 # Deploy Gateway image with bounded acknowledged usage receipt, at ZERO
 # traffic; do NOT modify other service traffic or declare usage live.
