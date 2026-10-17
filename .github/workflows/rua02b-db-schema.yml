@@ -93,11 +93,12 @@ jobs:
           echo 'rua02b_stage=grants_migrated'
           PG -d omniagent_gateway -c "SELECT
             (to_regclass('omni_gateway.router_usage_events') IS NOT NULL)::text || ':' ||
-            has_table_privilege('omniagent_usage_writer','omni_gateway.router_usage_events','INSERT')::text || ':' ||
+            has_column_privilege('omniagent_usage_writer','omni_gateway.router_usage_events','execution_id','INSERT')::text || ':' ||
             has_table_privilege('omniagent_usage_writer','omni_gateway.router_usage_events','SELECT')::text || ':' ||
             has_table_privilege('omniagent_usage_reader','omni_gateway.router_usage_events','SELECT')::text || ':' ||
             has_table_privilege('omniagent_usage_reader','omni_gateway.router_usage_events','INSERT')::text" |
             grep -qx 'true:true:false:true:false'
+          echo 'rua02b_stage=column_level_grants_verified'
           [[ "$(PG -d omniagent_gateway -c 'SELECT count(*) FROM omni_gateway.router_usage_events')" == 0 ]] ||
             { echo 'rua02b_unexpected_existing_rows=BLOCKED'; exit 10; }
           echo 'rua02b_dedicated_db_schema=PASS'
