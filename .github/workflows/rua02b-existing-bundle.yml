@@ -2,12 +2,8 @@
 # This deliberately does not enable PostgreSQL role LOGIN, update pg_hba,
 # set Cloud Run env flags, or promote any formal service traffic.
 name: RUA-02B existing bundle merge
-# One-shot controlled run after verified secret-scoped IAM grant.
-# Push path is restricted to this workflow; restore manual-only after readback.
+# Guarded against accidental repeat; append-only bundle migration has been completed.
 on:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/rua02b-existing-bundle.yml']
   workflow_dispatch:
 permissions:
   contents: read
