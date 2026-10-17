@@ -1,0 +1,45 @@
+# One-time remediation of a verified release artifact containing a transient
+# Google WIF credential configuration JSON. No GCP or production mutations.
+# Retire this workflow after its receipt is verified; Git history is the audit.
+name: Retire unsafe release artifact
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/retire-unsafe-release-artifact.yml'
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: omniagent-artifact-remediation
+  cancel-in-progress: false
+
+jobs:
+  retire:
+    if: github.repository == 'tommylin15/omniAgent' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify exact artifact and delete it
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          id=12085157906
+          expected=release-6bf1c2876f1ad07a51f0a0a384e372bf0c7c31af
+          name="$(gh api "repos/$REPO/actions/artifacts/$id" --jq '.name')"
+          if [[ "$name" != "$expected" ]]; then
+            echo "::error::Unexpected artifact identity; refusing deletion"
+            exit 1
+          fi
+          gh api --method DELETE "repos/$REPO/actions/artifacts/$id" >/dev/null
+          if gh api "repos/$REPO/actions/artifacts/$id" >/dev/null 2>&1; then
+            echo "::error::Artifact still exists after DELETE"
+            exit 1
+          fi
+          echo "verified_unsafe_release_artifact_retired=PASS"
+          echo "artifact_id=$id"

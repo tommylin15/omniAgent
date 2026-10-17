@@ -90,7 +90,12 @@ jobs:
         if: always()
         with:
           name: release-${{ steps.verify.outputs.sha }}
-          path: "*.json"
+          # Never archive the runner's Google WIF credential configuration
+          # or unrelated checked-out JSON files.
+          path: |
+            readiness.json
+            release.json
+          if-no-files-found: warn
           retention-days: 90
 
   notify:

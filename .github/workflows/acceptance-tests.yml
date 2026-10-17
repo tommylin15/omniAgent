@@ -60,17 +60,27 @@ jobs:
       - uses: google-github-actions/setup-gcloud@v2
       - name: Auth boundary tests
         run: |
+          set -euo pipefail
           CHAT_URL=$(gcloud run services describe omniagent-chat --project="$PROJECT" --region="$REGION" --format="value(status.url)")
-          # Anonymous should get 401
-          for ep in /v1/models /v1/threads; do
-            code=$(curl -s -o /dev/null -w '%{http_code}' "$CHAT_URL$ep")
-            [[ "$code" == "401" ]] && echo "$ep: PASS (401)" || echo "$ep: FAIL ($code)"
+          # Admin analytics must not bypass the same authenticated user gate.
+          # Fail the Action if any denial is not independently verified.
+          for ep in /v1/models /v1/threads /v1/admin/router-usage; do
+            code=$(curl --silent --show-error --max-time 15 -o /dev/null -w '%{http_code}' "$CHAT_URL$ep")
+            if [[ "$code" != "401" ]]; then
+              echo "::error::anonymous $ep expected HTTP 401, got $code"
+              exit 1
+            fi
+            echo "$ep: PASS (401)"
           done
-          # Private backends should deny anonymous
+          # Gateway/Shared private Cloud Run IAM must deny anonymous callers.
           for svc in omniagent-agent-gateway omniagent-shared-codex; do
             url=$(gcloud run services describe "$svc" --project="$PROJECT" --region="$REGION" --format="value(status.url)")
-            code=$(curl -s -o /dev/null -w '%{http_code}' "$url/health")
-            [[ "$code" == "403" ]] && echo "$svc: PASS (403)" || echo "$svc: FAIL ($code)"
+            code=$(curl --silent --show-error --max-time 15 -o /dev/null -w '%{http_code}' "$url/health")
+            if [[ "$code" != "403" ]]; then
+              echo "::error::private $svc expected HTTP 403, got $code"
+              exit 1
+            fi
+            echo "$svc: PASS (403)"
           done
 
   db:
