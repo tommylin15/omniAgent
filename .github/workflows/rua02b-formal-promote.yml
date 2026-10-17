@@ -1,4 +1,4 @@
-# Second controlled attempt: use acknowledged-write candidate 00110-neq.
+# Third controlled attempt: use SQL-verified target-free ON CONFLICT candidate 00113-zuh.
 # Explicit owner authorization: move only omniagent-agent-gateway to the
 # already deployed RUA-02B candidate, before signed model usage readback.
 # Fail closed and restore old 100% revision on missing DB/provider evidence.
