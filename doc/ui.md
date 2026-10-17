@@ -542,4 +542,4 @@ Known gaps:
 
 ## AI Router 管理員戰情室（RUA，後續 UI 範圍）
 
-在既有 Chat AppBar 以小型「統計」圖示進入，不新增獨立複雜導覽；僅 `/v1/me.routerStatsEnabled=true` 才顯示入口，所有 API 仍由後端獨立執行 Owner allowlist 驗證。手機優先，頁面由上到下為：日期（今天／7天／30天）、專案／Provider／狀態篩選與 Owner 搜尋、Gateway 請求／Chat 回合／活躍 Owner／Gateway Token 四個統計塊、前十模型的簡短用量長條、可點查的明細卡及複製 CSV。沿用奶油杏桃主題與易讀文字；任何未連接資料來源要醒目顯示「尚未設定／不可讀」，不是 0。Gateway 呼叫和 Chat 回合不可相加；成本不造假；桌機支援較寬佈局，但不犧牲手機可操作性。詳見 [數據與驗收契約](../docs/ai-router-analytics.md)。
+在既有 Chat AppBar 以小型「統計」圖示進入，不新增獨立複雜導覽；僅 `/v1/me.routerStatsEnabled=true` 才顯示入口，所有 API 仍由後端獨立執行 Owner allowlist 驗證。手機優先，頁面由上到下為：日期（今天／7天／30天）、專案／Provider／狀態篩選與 Owner 搜尋、Gateway 請求／Chat 回合／活躍 Owner／Gateway Token／已結算成功率五個統計塊、前十模型的簡短用量長條、各來源分開的前十 Owner 使用排行（點選可篩選專案＋Owner）、明細卡及複製 CSV。沿用奶油杏桃主題與易讀文字；任何未連接資料來源要醒目顯示「尚未設定／不可讀」，不是 0。Gateway 呼叫和 Chat 回合不可相加；成本不造假；桌機支援較寬佈局，但不犧牲手機可操作性。詳見 [數據與驗收契約](../docs/ai-router-analytics.md)。

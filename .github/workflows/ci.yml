@@ -71,9 +71,15 @@ jobs:
       - run: npm ci && npm run build
       - name: Postgres acceptance
         run: |
-          docker run -d --name pg -p 5432:5432 \
-            -e POSTGRES_USER=test -e POSTGRES_PASSWORD=test -e POSTGRES_DB=test postgres:16-alpine
-          for i in $(seq 1 30); do docker exec pg pg_isready -U test && break || sleep 1; done
-          PG_TEST_URL=postgres://test:test@127.0.0.1:5432/test \
+          set -euo pipefail
+          docker run -d --name pg -p 127.0.0.1:5432:5432 \
+            -e POSTGRES_USER=test -e POSTGRES_PASSWORD=test \
+            -e POSTGRES_DB=omniagent_acceptance postgres:16-alpine
+          trap 'docker rm -f pg >/dev/null 2>&1 || :' EXIT
+          for i in $(seq 1 30); do
+            if docker exec pg pg_isready -U test -d omniagent_acceptance >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          docker exec pg pg_isready -U test -d omniagent_acceptance
+          PG_TEST_URL=postgres://test:test@127.0.0.1:5432/omniagent_acceptance \
             npx vitest run tests/chat_storage.acceptance.test.ts tests/shared_gemini_quota.acceptance.test.ts
-          docker rm -f pg

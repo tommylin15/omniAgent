@@ -7,8 +7,9 @@ Authoritative actual state is GitHub `main`, CI and Cloud Run/DB readback, not t
 
 Admin-only, read-only Flutter **AI Router 戰情室**, reachable from Chat's AppBar for an
 explicitly authorized Google OAuth Owner. Mobile first: 1 / 7 / 30 UTC-day window,
-project/provider/status dropdown filters, Owner UUID substring search, four summary
-tiles, top-ten model bars, compact detail rows, clipboard CSV of the currently
+project/provider/status dropdown filters, Owner UUID substring search, five summary
+tiles (including settled success rate), top-ten model bars, separate project+Owner rankings
+with tap-to-filter, compact detail rows, clipboard CSV of the currently
 filtered rows. Never expose prompts or credentials. No cross-owner capability
 for ordinary Chat users. UI must state a missing data source as unavailable,
 not zero use; provide timestamps, UTC definition and provenance.

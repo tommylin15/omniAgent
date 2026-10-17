@@ -20,7 +20,14 @@ class _RouterUsagePageState extends State<RouterUsagePage> {
   String provider = 'all';
   String status = 'all';
   String ownerQuery = '';
+  final ownerController = TextEditingController();
   late Future<dynamic> report = load();
+
+  @override
+  void dispose() {
+    ownerController.dispose();
+    super.dispose();
+  }
 
   Future<dynamic> load() => widget.api.get('/v1/admin/router-usage?days=$days');
 
@@ -129,6 +136,39 @@ class _RouterUsagePageState extends State<RouterUsagePage> {
     ]);
   }
 
+
+  /// Separate provider invocations from Chat turns: an Owner may appear in
+  /// both sources, but their counts must never be added as if one metric.
+  Widget ownerRanking(String label,List<Map<String,dynamic>> rows) {
+    final counts=<String,int>{};
+    for(final row in rows) {
+      final key="${row['project']}|${row['ownerId']}";
+      counts[key]=(counts[key]??0)+((row['calls'] as num?)?.toInt()??0);
+    }
+    final ordered=counts.entries.toList()..sort((a,b)=>b.value.compareTo(a.value));
+    return Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+      Text(label,style:Theme.of(context).textTheme.titleMedium),
+      const SizedBox(height:6),
+      if(ordered.isEmpty) const Text('目前無符合紀錄'),
+      for(final item in ordered.take(10)) ListTile(
+        dense:true,
+        contentPadding:EdgeInsets.zero,
+        title:Text(item.key.replaceFirst('|',' · '),
+          maxLines:1,overflow:TextOverflow.ellipsis),
+        trailing:Text('${number(item.value)} 次'),
+        onTap:(){
+          final parts=item.key.split('|');
+          ownerController.text=parts.last;
+          setState((){
+            project=parts.first;
+            ownerQuery=parts.last;
+          });
+        },
+      ),
+      const SizedBox(height:12),
+    ]);
+  }
+
   Widget content(dynamic data) {
     final all=items(data);
     final projects=<String>{'all',...all.map((r)=>'${r['project']}')}.toList()..sort();
@@ -145,6 +185,10 @@ class _RouterUsagePageState extends State<RouterUsagePage> {
     final sources=data is Map?data['sources']:null;
     final sourceState=sources is Map?sources['sharedGemini']:'unknown';
     final owners=filtered.map((r)=>"${r['project']}:${r['ownerId']}").toSet().length;
+    final settled=filtered.where((r)=>r['source']=='shared_gemini' &&
+        (r['status']=='completed'||r['status']=='failed')).toList();
+    final success=calls(settled.where((r)=>r['status']=='completed'));
+    final settledCalls=calls(settled);
     return ListView(padding:const EdgeInsets.all(16),children:[
       Text('AI Router 戰情室',style:Theme.of(context).textTheme.headlineSmall),
       const SizedBox(height:4),
@@ -156,9 +200,17 @@ class _RouterUsagePageState extends State<RouterUsagePage> {
         dropdown('AI',provider,providers,(v)=>setState(()=>provider=v)),
         dropdown('狀態',status,statuses,(v)=>setState(()=>status=v)),
         SizedBox(width:210,child:TextField(
-          decoration:const InputDecoration(labelText:'搜尋 Owner UUID',
-            prefixIcon:Icon(Icons.search),isDense:true,
-            border:OutlineInputBorder()),
+          controller:ownerController,
+          decoration:InputDecoration(labelText:'搜尋 Owner UUID',
+            prefixIcon:const Icon(Icons.search),isDense:true,
+            suffixIcon:ownerQuery.isEmpty?null:IconButton(
+              tooltip:'清除 Owner 篩選',
+              onPressed:()=>setState((){
+                ownerController.clear();
+                ownerQuery='';
+              }),
+              icon:const Icon(Icons.close)),
+            border:const OutlineInputBorder()),
           onChanged:(v)=>setState(()=>ownerQuery=v.trim()),
         )),
       ]),
@@ -168,6 +220,9 @@ class _RouterUsagePageState extends State<RouterUsagePage> {
         stat('Chat 對話回合',number(calls(chat)),'不可等同實際 API 呼叫'),
         stat('活躍 Owner',number(owners),'依專案＋Owner 去重'),
         stat('Gateway Tokens',tokens(gateway),'缺一筆即標示未完整提供'),
+        stat('Gateway 成功率',settledCalls==0?'—':
+          '${(success*100/settledCalls).toStringAsFixed(1)}%',
+          '僅計已結算 completed／failed'),
       ]),
       const SizedBox(height:16),
       if(sourceState!='available') Text(
@@ -179,6 +234,8 @@ class _RouterUsagePageState extends State<RouterUsagePage> {
       const SizedBox(height:20),
       breakdown('Gateway 實際執行紀錄（獨立計數）',gateway),
       breakdown('Chat 回合紀錄（獨立計數）',chat),
+      ownerRanking('Gateway Owner 使用排行（請求次數）',gateway),
+      ownerRanking('Chat Owner 使用排行（回合次數）',chat),
       Row(children:[
         Text('明細',style:Theme.of(context).textTheme.titleMedium),
         const Spacer(),
