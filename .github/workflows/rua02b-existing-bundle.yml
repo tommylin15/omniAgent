@@ -5,7 +5,7 @@ name: RUA-02B existing bundle merge
 on:
   push:
     branches: [main]
-    paths: ['.github/workflows/rua02b-existing-bundle.yml']
+    paths: ['.github/workflows/rua02b-existing-bundle.yml', 'infra/gcp/merge-router-usage-bundle.py', 'infra/gcp/rua02b-existing-bundle.sh']
 permissions:
   contents: read
   id-token: write
