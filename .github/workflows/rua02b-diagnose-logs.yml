@@ -1,0 +1,51 @@
+# RUA-02B: read-only, narrow structured log evidence on the specific 0% candidate.
+name: RUA-02B telemetry failure diagnosis
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/rua02b-diagnose-logs.yml']
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  diagnose:
+    if: github.repository == 'tommylin15/omniAgent' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+          service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Read only bounded Gateway usage-capture diagnostics
+        shell: bash
+        run: |
+          set -euo pipefail
+          gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="omniagent-agent-gateway" AND resource.labels.revision_name="omniagent-agent-gateway-00107-doy"' \
+            --project=gen-lang-client-0593591102 --freshness=2h --limit=100 --format=json > "$RUNNER_TEMP/logs.json"
+          python3 - "$RUNNER_TEMP/logs.json" <<'PY'
+          import json,sys
+          rows=json.load(open(sys.argv[1]))
+          counts={}
+          for row in rows:
+              payload=row.get('jsonPayload') or {}
+              text=row.get('textPayload') or ''
+              if not payload and isinstance(text,str) and text.startswith('{'):
+                  try:payload=json.loads(text)
+                  except ValueError:payload={}
+              kind=payload.get('kind')
+              if kind not in ('gateway_usage_capture','shared_gemini_call'):
+                  continue
+              status=payload.get('state',payload.get('status','other'))
+              project=payload.get('project','unknown')
+              if project not in ('life-assistant','market-mart','omniagent'):project='unknown'
+              if status not in ('deferred','unavailable','completed','failed'):status='other'
+              key=(kind,project,status)
+              counts[key]=counts.get(key,0)+1
+          for (kind,project,status),count in sorted(counts.items()):
+              print('rua02b_log='+kind+':'+project+':'+status+':'+str(count))
+          print('rua02b_log_entries_examined='+str(len(rows)))
+          print('rua02b_logs_have_capture_signal='+str(any(k[0]=='gateway_usage_capture' for k in counts)).upper())
+          PY
