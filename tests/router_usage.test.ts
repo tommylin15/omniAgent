@@ -57,6 +57,8 @@ describe("router usage aggregation contract",()=>{
       project:"market-mart",ownerId:BOB,calls:1,tokens:35});
     const sql=gateway.query.mock.calls[0][0];
     expect(sql).toContain("omni_gateway.router_usage_events");
+    expect(sql).toContain("owner_id <> '00000000-0000-4000-8000-000000000001'::uuid");
+    // Keep provider-side audit receipts, exclude P0-V synthetic Owner from UI.
     expect(sql).toContain("::timestamp AT TIME ZONE 'UTC'");
     expect(sql).not.toContain("model_execution_ledger");
     expect(sql).not.toContain("prompt");
