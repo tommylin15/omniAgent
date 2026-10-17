@@ -1,5 +1,6 @@
-# RUA-02B: examine public PostgreSQL server certificate ONLY.
-# Never read server private key, root secret, application DB data, or other DBs.
+# RUA-02B: verify actual PostgreSQL server TLS identity with the existing
+# public self-signed certificate. Never touch the shared DB certificate/key,
+# database contents, HBA rules, or production Cloud Run traffic.
 name: RUA-02B server TLS cert audit
 on:
   push:
@@ -20,7 +21,7 @@ jobs:
           workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
           service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
       - uses: google-github-actions/setup-gcloud@v2
-      - name: Verify public certificate subject, SAN and expiration without private keys
+      - name: Verify actual PostgreSQL TLS handshake, pinned CN, and a negative host check
         shell: bash
         run: |
           set -euo pipefail
@@ -28,14 +29,43 @@ jobs:
           cat > "$RUNNER_TEMP/rua02b-cert-inspect.sh" <<'REMOTE'
           #!/usr/bin/env bash
           set -euo pipefail
+          umask 077
           c=janus-postgres
-          pgcert="$(sudo docker exec -u postgres "$c" psql -X -A -t -d postgres -c 'SHOW ssl_cert_file')"
-          pgdata="$(sudo docker exec -u postgres "$c" psql -X -A -t -d postgres -c 'SHOW data_directory')"
+          expected_name=janus-postgres-dev
+          expected_fingerprint=5F:16:D1:58:31:AA:50:FA:4A:EF:09:08:7F:1A:70:5D:96:DA:90:CF:23:3C:FF:AE:16:7B:D7:CD:E9:47:25:56
+          cert="$(mktemp)"
+          good="$(mktemp)"
+          bad="$(mktemp)"
+          trap 'rm -f "$cert" "$good" "$bad"' EXIT
+          pgcert="$(sudo docker exec -u postgres "$c" psql -X -A -t -v ON_ERROR_STOP=1 -d postgres -c 'SHOW ssl_cert_file')"
+          pgdata="$(sudo docker exec -u postgres "$c" psql -X -A -t -v ON_ERROR_STOP=1 -d postgres -c 'SHOW data_directory')"
           [[ "$pgcert" =~ ^[A-Za-z0-9_./-]+$ && "$pgdata" =~ ^/[A-Za-z0-9_./-]+$ ]] || exit 4
           if [[ "$pgcert" != /* ]]; then pgcert="$pgdata/$pgcert"; fi
           [[ "$pgcert" == "$pgdata/"* ]] || exit 5
-          sudo docker exec -u postgres "$c" cat "$pgcert" | openssl x509 -noout -subject -issuer -dates -ext subjectAltName -fingerprint -sha256
-          echo "rua_public_tls_cert_metadata=PASS"
+          # Only the public X.509 certificate is transferred from the container.
+          sudo docker exec -u postgres "$c" cat "$pgcert" > "$cert"
+          openssl x509 -in "$cert" -noout >/dev/null
+          fingerprint="$(openssl x509 -in "$cert" -noout -fingerprint -sha256 | sed 's/^.*=//')"
+          [[ "$fingerprint" == "$expected_fingerprint" ]] || { echo "rua_tls_fingerprint=DRIFT"; exit 6; }
+          openssl x509 -in "$cert" -noout -checkhost "$expected_name" | grep -q 'does match'
+          # The historical certificate has CN but no SAN. OpenSSL/Node TLS
+          # can still verify its DNS CN when servername is supplied explicitly.
+          # Verify the live TLS handshake, not just a static certificate.
+          timeout 15 openssl s_client -starttls postgres -connect 127.0.0.1:5432 \
+            -CAfile "$cert" -verify_return_error -verify_hostname "$expected_name" \
+            < /dev/null > "$good" 2>&1 || { echo "rua_tls_verified_handshake=BLOCKED"; exit 7; }
+          grep -Eq 'Verify return code: 0 \(ok\)|Verification: OK' "$good" ||
+            { echo "rua_tls_verified_handshake=BLOCKED"; exit 8; }
+          if timeout 15 openssl s_client -starttls postgres -connect 127.0.0.1:5432 \
+            -CAfile "$cert" -verify_return_error -verify_hostname "invalid.rua02.example" \
+            < /dev/null > "$bad" 2>&1; then
+            echo "rua_tls_wrong_hostname_rejected=FAIL"
+            exit 9
+          fi
+          echo "rua_tls_public_cert_pinned=PASS"
+          echo "rua_tls_verified_handshake=PASS"
+          echo "rua_tls_wrong_hostname_rejected=PASS"
+          echo "rua_tls_needs_san_rotation=DEFERRED_NO_SHARED_SERVICE_MUTATION"
           REMOTE
           sed -i 's/^          //' "$RUNNER_TEMP/rua02b-cert-inspect.sh"
           chmod 700 "$RUNNER_TEMP/rua02b-cert-inspect.sh"
