@@ -223,9 +223,9 @@ export function makeSharedGeminiHandler(options: Configuration = {}) {
     running++;
     const started = Date.now();
     const executionId = usage ? randomUUID() : "";
-    // A 125ms fire-and-forget timeout silently lost the first production
-    // signed usage canary after Cloud Run suspended CPU. Wait for the DB
-    // acknowledgement, bounded to 1800ms, before responding. Provider output
+    // The former 125ms fire-and-forget timeout may lose writes when Cloud Run
+    // throttles CPU, but the first missing real DB receipt's root cause is
+    // not yet proven. Await a bounded DB acknowledgement. Provider output
     // still succeeds if telemetry is unavailable; the status is explicit.
     const capture = async (status:"completed"|"failed",providerTokens:number|null):
       Promise<"persisted"|"unavailable"> => {
