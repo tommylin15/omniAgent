@@ -22,7 +22,7 @@ PROJECT = "gen-lang-client-0593591102"
 REGION = "us-central1"
 GATEWAY = "omniagent-agent-gateway"
 OTHERS = ("omniagent-chat", "omniagent-shared-codex")
-CANDIDATE = "omniagent-agent-gateway-00107-doy"
+CANDIDATE = "omniagent-agent-gateway-00110-neq"
 TAG = "rua02b-usage"
 PROBE_OWNER = "00000000-0000-4000-8000-000000000001"
 PROJECTS = ("life-assistant", "market-mart", "omniagent")
@@ -119,6 +119,7 @@ def smoke_canonical(audience:str):
         if (http!=200 or response.get("status")!="completed"
             or response.get("project")!=project or response.get("requestId")!=request_id
             or response.get("model")!=MODEL
+            or response.get("usageCapture")!="persisted"
             or not isinstance(response.get("result",{}).get("text"),str)
             or not response["result"]["text"].strip()):
             raise Blocked("signed_provider_"+project+"_failed")
