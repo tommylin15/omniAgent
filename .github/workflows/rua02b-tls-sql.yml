@@ -3,7 +3,7 @@ name: RUA-02B verified TLS and scoped SQL
 on:
   push:
     branches: [main]
-    paths: ['.github/workflows/rua02b-tls-sql.yml']
+    paths: ['.github/workflows/rua02b-tls-sql.yml', 'infra/gcp/rua02b-tls-sql-probe.sh']
 permissions:
   contents: read
   id-token: write
