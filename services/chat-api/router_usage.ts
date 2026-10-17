@@ -68,7 +68,11 @@ const PASSIVE_SQL = `
          CASE WHEN count(provider_tokens)=count(*) THEN sum(provider_tokens)::bigint
               ELSE NULL::bigint END AS tokens
   FROM omni_gateway.router_usage_events
-  WHERE created_at >= (((now() AT TIME ZONE 'UTC')::date - ($1::integer - 1))::timestamp AT TIME ZONE 'UTC')
+  -- Reserved historical P0-V/RUA integration-probe Owner UUID. These are
+  -- legitimate *technical* model calls, not authenticated human usage.
+  -- Leave audit rows in DB but exclude from human-facing war-room totals.
+  WHERE owner_id <> '00000000-0000-4000-8000-000000000001'::uuid
+    AND created_at >= (((now() AT TIME ZONE 'UTC')::date - ($1::integer - 1))::timestamp AT TIME ZONE 'UTC')
   GROUP BY 1,2,3,4,5,6
   ORDER BY 1 DESC,2,3,4,5,6 LIMIT 5001`;
 
