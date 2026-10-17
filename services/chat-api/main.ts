@@ -11,6 +11,7 @@ import { GoogleSecretManagerVault } from "./credential_vault.js";
 import { chatDatabasePoolConfig, chatDatabaseUrl, chatDatabaseTrustAnchor } from "./database.js";
 import { parseChatDispatchBudget } from "./dispatch_budget.js";
 import { RouterUsageStats,parseUsageAdmins } from "./router_usage.js";
+import { routerUsageBundleConnection } from "../agent-gateway/router_usage_bundle.js";
 
 const dsn = chatDatabaseUrl(process.env);
 const userAudience = process.env.OMNIAGENT_GOOGLE_CLIENT_ID;
@@ -90,13 +91,23 @@ if(usageMode!=="quota" && usageMode!=="passive")
 const usageEnabled=process.env.ROUTER_USAGE_ENABLED==="true";
 const usageAdmins=usageEnabled
   ? parseUsageAdmins(process.env.ROUTER_USAGE_ADMIN_OWNER_IDS??"") : undefined;
-const ledgerDsn=process.env.ROUTER_USAGE_GATEWAY_DATABASE_URL;
-const ledgerCa=process.env.ROUTER_USAGE_GATEWAY_CA_PEM;
+// The Chat and Gateway runtime read the same existing omniagent-bundle.
+// Select ONLY the reader PostgreSQL role for this process. The two roles
+// remain SQL-privilege separated, not Secret-payload separated.
+const usageBundle=usageEnabled && usageMode==="passive"
+  ? routerUsageBundleConnection(process.env.OMNIAGENT_BUNDLE,"reader") : undefined;
+if(usageBundle && (process.env.ROUTER_USAGE_GATEWAY_DATABASE_URL ||
+   process.env.ROUTER_USAGE_GATEWAY_CA_PEM ||
+   process.env.ROUTER_USAGE_GATEWAY_TLS_SERVERNAME))
+  throw new Error("router usage gateway conflicting configuration");
+const ledgerDsn=usageBundle?.databaseUrl ?? process.env.ROUTER_USAGE_GATEWAY_DATABASE_URL;
+const ledgerCa=usageBundle?.caPem ?? process.env.ROUTER_USAGE_GATEWAY_CA_PEM;
+const ledgerTlsName=usageBundle?.tlsServername ?? process.env.ROUTER_USAGE_GATEWAY_TLS_SERVERNAME;
 if(usageEnabled && Boolean(ledgerDsn)!==Boolean(ledgerCa))
   throw new Error("router usage gateway read-only connection is incomplete");
 const ledgerPool=usageEnabled && ledgerDsn && ledgerCa
   ? new Pool(chatDatabasePoolConfig(ledgerDsn,"verified-ca",ledgerCa,
-      process.env.ROUTER_USAGE_GATEWAY_TLS_SERVERNAME)) : undefined;
+      ledgerTlsName)) : undefined;
 const usage=usageAdmins?{admins:usageAdmins,stats:new RouterUsageStats(
   {query:(sql,params)=>pool.query(sql,params)},
   ledgerPool?{query:(sql,params)=>ledgerPool.query(sql,params)}:undefined,usageMode)}:undefined;
