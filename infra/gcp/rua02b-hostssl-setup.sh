@@ -31,8 +31,8 @@ hba="$(pg 'SHOW hba_file')"
 [[ "$hba" == /* && "$hba" =~ ^/[A-Za-z0-9_./-]+$ ]] || exit 7
 sudo docker cp "$c:$hba" "$tmp/old"
 mapfile -t nets < <(awk '$1=="hostssl" && $2=="omniagent_chat" && $3=="omniagent_chat_app" && $5=="scram-sha-256" {print $4}' "$tmp/old")
-[[ "\${#nets[@]}" == 1 ]] || exit 8
-cidr="\${nets[0]}"
+[[ "${#nets[@]}" == 1 ]] || exit 8
+cidr="${nets[0]}"
 python3 - "$cidr" <<'PY'
 import ipaddress,sys
 ip=ipaddress.ip_network(sys.argv[1],strict=True)
