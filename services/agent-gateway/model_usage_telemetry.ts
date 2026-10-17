@@ -59,7 +59,7 @@ export class PgGatewayUsageRecorder implements GatewayUsageRecorder {
       INSERT INTO omni_gateway.router_usage_events
         (execution_id,project,owner_id,request_id,model,status,provider_tokens,duration_ms)
       VALUES ($1::uuid,$2,$3::uuid,$4::uuid,$5,$6,$7,$8)
-      ON CONFLICT (execution_id) DO NOTHING
+      ON CONFLICT DO NOTHING
     `,[row.executionId,row.project,row.ownerId,row.requestId,
        row.model,row.status,row.providerTokens,row.durationMs]);
   }
