@@ -69,6 +69,10 @@ observed="$(openssl x509 -in "$work/public-ca.pem" -noout -fingerprint -sha256 |
 [[ "$observed" == '5F:16:D1:58:31:AA:50:FA:4A:EF:09:08:7F:1A:70:5D:96:DA:90:CF:23:3C:FF:AE:16:7B:D7:CD:E9:47:25:56' ]] ||
   { echo "rua02b_public_ca_fingerprint=DRIFT"; exit 3; }
 openssl x509 -in "$work/public-ca.pem" -noout -checkhost janus-postgres-dev | grep -q 'does match'
+# The shared server cert file may contain a PEM chain or introductory text.
+# Normalize to the one audited public X.509 cert, excluding all non-cert data.
+openssl x509 -in "$work/public-ca.pem" -out "$work/normalized-public-ca.pem"
+mv "$work/normalized-public-ca.pem" "$work/public-ca.pem"
 python3 "$ROOT/infra/gcp/merge-router-usage-bundle.py" \
   "$work/bundle.json" "$work/writer-dsn" "$work/reader-dsn" \
   "$work/public-ca.pem" "$work/host" "$work/new-bundle.json"
