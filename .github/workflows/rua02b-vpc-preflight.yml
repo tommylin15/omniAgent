@@ -1,0 +1,50 @@
+# Read-only selection of Gateway direct VPC target in same VPC as DB VM.
+name: RUA-02B Gateway VPC preflight
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/rua02b-vpc-preflight.yml']
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  inspect:
+    if: github.repository == 'tommylin15/omniAgent'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+          service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Inspect VM VPC and regional subnet candidates without writes
+        shell: bash
+        run: |
+          set -euo pipefail
+          P=gen-lang-client-0593591102
+          gcloud compute instances describe janus-postgres-dev --project="$P" --zone=us-central1-a --format=json > "$RUNNER_TEMP/vm.json"
+          gcloud compute networks subnets list --project="$P" --format=json > "$RUNNER_TEMP/subnets.json"
+          python3 - "$RUNNER_TEMP/vm.json" "$RUNNER_TEMP/subnets.json" <<'PY'
+          import json,sys
+          vm=json.load(open(sys.argv[1]))
+          subs=json.load(open(sys.argv[2]))
+          nics=vm.get('networkInterfaces') or []
+          if len(nics)!=1:
+              raise SystemExit('rua02b_vm_network_ambiguous=BLOCKED')
+          vmnet=nics[0].get('network','')
+          matches=[s for s in subs if s.get('network')==vmnet and
+              s.get('region','').endswith('/us-central1') and
+              s.get('purpose') in (None,'PRIVATE')]
+          print('rua02b_vm_network_identity='+('PRESENT' if vmnet else 'ABSENT'))
+          print('rua02b_same_vpc_regional_subnets='+str(len(matches)))
+          for s in matches:
+              print('rua02b_candidate_subnet='+s.get('name','UNKNOWN'))
+              print('rua02b_candidate_ip_range='+s.get('ipCidrRange','UNKNOWN'))
+              print('rua02b_candidate_network='+vmnet.rsplit('/',1)[-1])
+          if len(matches)==0:
+              print('rua02b_direct_vpc_target=BLOCKED')
+          else:
+              print('rua02b_direct_vpc_target=DISCOVERED_NOT_CONFIGURED')
+          PY
