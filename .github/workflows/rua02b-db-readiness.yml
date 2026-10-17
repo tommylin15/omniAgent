@@ -1,4 +1,5 @@
 # RUA-02B sensitive configuration readiness WITHOUT secret payloads or DB writes.
+# RUA-02B post-merge no-traffic boundary readback; safe on shared DB VM.
 name: RUA-02B DB readiness
 on:
   push:
