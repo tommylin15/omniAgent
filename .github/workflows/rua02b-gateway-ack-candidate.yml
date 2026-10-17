@@ -1,0 +1,93 @@
+# RUA-02B recovery from the first failed 100%-traffic canary.
+# Deploy Gateway image with bounded acknowledged usage receipt, at ZERO
+# traffic; do NOT modify other service traffic or declare usage live.
+name: RUA-02B Gateway acknowledged telemetry candidate
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/rua02b-gateway-ack-candidate.yml']
+permissions:
+  contents: read
+  id-token: write
+  packages: write
+concurrency:
+  group: omniagent-rua02b-gateway-candidate
+  cancel-in-progress: false
+jobs:
+  candidate:
+    if: github.repository == 'tommylin15/omniAgent' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Freeze current main and verify acknowledged write tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git ls-remote https://github.com/tommylin15/omniAgent.git refs/heads/main | cut -f1)" = "$GITHUB_SHA"
+          npm ci
+          npm run build
+          npx vitest run tests/shared_gemini.test.ts tests/model_usage_telemetry.test.ts
+      - name: Build and publish only immutable Gateway GHCR candidate
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin >/dev/null
+          docker build -f services/agent-gateway/Dockerfile -t "ghcr.io/tommylin15/omniagent-agent-gateway:$GITHUB_SHA" .
+          docker push "ghcr.io/tommylin15/omniagent-agent-gateway:$GITHUB_SHA" >/dev/null
+          echo 'rua02b_v2_gateway_image=PASS'
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+          service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Check reverted formal revision before candidate deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          gcloud run services describe omniagent-agent-gateway --project=gen-lang-client-0593591102 --region=us-central1 --format=json > "$RUNNER_TEMP/before.json"
+          gcloud run revisions describe omniagent-agent-gateway-00105-keq --project=gen-lang-client-0593591102 --region=us-central1 --format=json > "$RUNNER_TEMP/prior.json"
+          python3 - "$RUNNER_TEMP/before.json" "$RUNNER_TEMP/prior.json" <<'PY'
+          import json,sys
+          service,prior=(json.load(open(x)) for x in sys.argv[1:])
+          active=[x for x in service['status']['traffic'] if x.get('percent',0)>0]
+          if len(active)!=1 or active[0].get('revisionName')!='omniagent-agent-gateway-00105-keq' or active[0].get('percent')!=100:
+              raise SystemExit('rua02b_reverted_formal_traffic=BLOCKED')
+          env={x['name']:x for x in prior['spec']['containers'][0].get('env',[])}
+          if env.get('GEMINI_SHARED_USAGE_ENABLED',{}).get('value')=='true':
+              raise SystemExit('rua02b_old_formal_telemetry_enabled=BLOCKED')
+          print('rua02b_original_formal_revision_verified=PASS')
+          PY
+      - name: Deploy acknowledged telemetry Gateway at zero percent only
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git ls-remote https://github.com/tommylin15/omniAgent.git refs/heads/main | cut -f1)" = "$GITHUB_SHA"
+          gcloud run deploy omniagent-agent-gateway \
+            --project=gen-lang-client-0593591102 --region=us-central1 \
+            --image="ghcr.io/tommylin15/omniagent-agent-gateway:$GITHUB_SHA" \
+            --no-traffic --tag=rua02b-usage \
+            --network=janusai-lake-poc --subnet=janusai-lake-poc-uscentral1 \
+            --vpc-egress=private-ranges-only \
+            --update-env-vars=GEMINI_SHARED_USAGE_ENABLED=true \
+            --set-secrets=OMNIAGENT_PROVIDER_BUNDLE=omniagent-bundle:latest --quiet >/dev/null
+          gcloud run services describe omniagent-agent-gateway --project=gen-lang-client-0593591102 --region=us-central1 --format=json > "$RUNNER_TEMP/after.json"
+          python3 - "$RUNNER_TEMP/before.json" "$RUNNER_TEMP/after.json" <<'PY'
+          import json,sys
+          before,after=(json.load(open(x)) for x in sys.argv[1:])
+          def formal(o):
+              return [(t['revisionName'],t['percent']) for t in o['status']['traffic'] if t.get('percent',0)>0]
+          if formal(before)!=formal(after):
+              raise SystemExit('rua02b_formal_traffic_changed=BLOCKED')
+          tags=[t for t in after['status']['traffic'] if t.get('tag')=='rua02b-usage' and t.get('percent',0)==0]
+          if len(tags)!=1 or tags[0]['revisionName']!='omniagent-agent-gateway-00105-keq' and tags[0]['revisionName']==formal(after)[0][0]:
+              raise SystemExit('rua02b_candidate_not_separate=BLOCKED')
+          if after['status'].get('latestReadyRevisionName')!=tags[0]['revisionName']:
+              raise SystemExit('rua02b_candidate_not_ready=BLOCKED')
+          print('rua02b_v2_candidate_revision='+tags[0]['revisionName'])
+          print('rua02b_v2_candidate_0_percent=PASS')
+          print('rua02b_formal_gateway_100_percent=UNCHANGED')
+          PY
