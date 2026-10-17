@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { Pool } from "pg";
+import { RouterUsageStats } from "../services/chat-api/router_usage.js";
 import { describe,expect,it } from "vitest";
 import { PgModelQuotaLedger,ModelQuotaDenied,parseQuotaLimits,createQuotaPool } from
   "../services/agent-gateway/model_quota_ledger.js";
@@ -57,6 +58,13 @@ describe.runIf(Boolean(dsn))("isolated gateway cross-instance quota ledger",()=>
       const global=await poolA.query(
         "SELECT attempts FROM omni_gateway.model_daily_budget WHERE scope='global'");
       expect(global.rows[0].attempts).toBe(3);
+      const usage=await new RouterUsageStats({query:async()=>({rows:[]})},
+        {query:(sql,params)=>poolA.query(sql,params)}).read(1);
+      const gateway=usage.rows.filter(r=>r.source==="shared_gemini");
+      expect(usage.sources.sharedGemini).toBe("available");
+      expect(gateway.reduce((n,r)=>n+r.calls,0)).toBe(3);
+      expect(gateway.some(r=>r.tokens===null)).toBe(true);
+      expect(gateway.every(r=>r.project==="omniagent")).toBe(true);
     }finally{await Promise.all([poolA.end(),poolB.end()]);}
   });
 });

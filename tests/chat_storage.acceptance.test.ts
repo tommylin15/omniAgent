@@ -10,6 +10,7 @@ import type { AddressInfo } from "node:net";
 import { CredentialRegistry } from "../services/chat-api/credential_management.js";
 import { CodexSessionStore, parseCodexPhase } from "../services/chat-api/codex_session_store.js";
 import { parseChatDispatchBudget } from "../services/chat-api/dispatch_budget.js";
+import { RouterUsageStats } from "../services/chat-api/router_usage.js";
 
 const dsn = process.env.PG_TEST_URL;
 describe.runIf(Boolean(dsn))("isolated PostgreSQL ChatStore acceptance", () => {
@@ -22,7 +23,7 @@ describe.runIf(Boolean(dsn))("isolated PostgreSQL ChatStore acceptance", () => {
     try {
       expect((await pool.query("SELECT current_database() AS name")).rows[0].name).toBe("omniagent_acceptance");
       expect((await pool.query("SELECT to_regclass('omni_chat.owners') AS present")).rows[0].present).toBeNull();
-      for (const filename of ["001_chat_ownership.sql", "002_skill_storage.sql", "003_credential_metadata.sql", "004_codex_live_turns.sql", "005_codex_trial_3_turn_budget.sql", "007_chat_model_dispatch_budget.sql"]) {
+      for (const filename of ["001_chat_ownership.sql", "002_skill_storage.sql", "003_credential_metadata.sql", "003_runtime_bindings.sql", "004_codex_live_turns.sql", "005_codex_trial_3_turn_budget.sql", "007_chat_model_dispatch_budget.sql"]) {
         const sql = readFileSync("infra/postgres/migrations/" + filename,"utf8");
         await pool.query(sql);
         await pool.query(sql);
@@ -592,6 +593,10 @@ describe.runIf(Boolean(dsn))("isolated PostgreSQL ChatStore acceptance", () => {
       expect((await pool.query(
         "SELECT count(*)::int AS count FROM omni_chat.codex_trial_budgets",
         [])).rows[0].count).toBe(1);
+      const report=await new RouterUsageStats({query:(sql,params)=>pool.query(sql,params)}).read(1);
+      expect(report.sources.sharedGemini).toBe("not_configured");
+      expect(report.rows.some(r=>r.source==="chat_turns" && r.calls>=1)).toBe(true);
+      expect(report.rows.every(r=>r.tokens===null)).toBe(true);
     } finally { await pool.end(); }
   },60_000);
   it("enforces durable cross-instance Chat-model Owner/global cap, without touching other Owners",async()=>{
