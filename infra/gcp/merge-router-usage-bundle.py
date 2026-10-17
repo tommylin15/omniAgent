@@ -75,7 +75,19 @@ def main():
         print("rua02b_existing_bundle_merge=PASS")
         print("secret_contents_logged=NO")
     except (ValueError, OSError, json.JSONDecodeError) as e:
-        raise SystemExit("rua02b_existing_bundle_merge=BLOCKED") from None
+        # Only fixed local contract categories can enter CI logs, NEVER raw DSN.
+        categories = {
+            "existing bundle must be an object",
+            "existing RUA-02B bundle section must not be overwritten",
+            "existing Chat database contract is unavailable",
+            "existing Chat DB endpoint mismatch",
+            "existing bundle key missing",
+            "invalid scoped usage DSN",
+            "invalid public PostgreSQL certificate",
+            "unverified TLS server identity",
+        }
+        category = str(e) if str(e) in categories else "invalid_input"
+        raise SystemExit("rua02b_existing_bundle_merge=BLOCKED:" + category.replace(" ", "_")) from None
 
 
 if __name__ == "__main__":
