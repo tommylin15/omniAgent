@@ -1,0 +1,116 @@
+# Isolated Gateway-only RUA-02B candidate; NEVER promotes formal traffic.
+# Requires completed DB verify-full and writer/reader privilege receipt.
+name: RUA-02B Gateway passive telemetry candidate
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/rua02b-gateway-candidate.yml']
+permissions:
+  contents: read
+  id-token: write
+  packages: write
+concurrency:
+  group: omniagent-rua02b-gateway-candidate
+  cancel-in-progress: false
+jobs:
+  candidate:
+    if: github.repository == 'tommylin15/omniAgent' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      P: gen-lang-client-0593591102
+      REGION: us-central1
+      SVC: omniagent-agent-gateway
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pin current main, compile and test telemetry
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git ls-remote https://github.com/tommylin15/omniAgent.git refs/heads/main | cut -f1)" = "$GITHUB_SHA"
+          npm ci && npm run build && npx vitest run tests/model_usage_telemetry.test.ts tests/shared_gemini.test.ts
+      - name: Build only immutable Gateway GHCR image
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          test "$(git ls-remote https://github.com/tommylin15/omniAgent.git refs/heads/main | cut -f1)" = "$GITHUB_SHA"
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin >/dev/null
+          docker build -f services/agent-gateway/Dockerfile -t "ghcr.io/tommylin15/omniagent-agent-gateway:$GITHUB_SHA" .
+          docker push "ghcr.io/tommylin15/omniagent-agent-gateway:$GITHUB_SHA" >/dev/null
+          echo 'rua02b_gateway_ghcr_pushed=PASS'
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+          service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Freeze Gateway formal revision and validate same-VPC scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          gcloud run services describe "$SVC" --project="$P" --region="$REGION" --format=json > "$RUNNER_TEMP/before.json"
+          gcloud compute instances describe janus-postgres-dev --project="$P" --zone=us-central1-a --format=json > "$RUNNER_TEMP/dbvm.json"
+          gcloud compute networks subnets describe janusai-lake-poc-uscentral1 --project="$P" --region="$REGION" --format=json > "$RUNNER_TEMP/subnet.json"
+          python3 - "$RUNNER_TEMP/before.json" "$RUNNER_TEMP/dbvm.json" "$RUNNER_TEMP/subnet.json" <<'PY'
+          import json,sys
+          before,vm,sub=(json.load(open(x)) for x in sys.argv[1:])
+          active=[x for x in before['status']['traffic'] if x.get('percent',0)>0]
+          if len(active)!=1 or active[0].get('percent')!=100:raise SystemExit('rua02b_formal_traffic_not_single=BLOCKED')
+          spec=before['spec']['template']['spec']
+          env={e['name']:e for e in spec['containers'][0].get('env',[])}
+          ref=(env.get('OMNIAGENT_PROVIDER_BUNDLE',{}).get('valueFrom') or {}).get('secretKeyRef') or {}
+          if (ref.get('name'),str(ref.get('key')))!=('omniagent-bundle','latest'):
+              raise SystemExit('rua02b_provider_bundle_drift=BLOCKED')
+          if env.get('GEMINI_SHARED_EXECUTION_ENABLED',{}).get('value')!='true':
+              raise SystemExit('rua02b_execution_not_enabled=BLOCKED')
+          if env.get('GEMINI_SHARED_USAGE_ENABLED',{}).get('value')=='true':
+              raise SystemExit('rua02b_usage_already_enabled=BLOCKED')
+          v=vm['networkInterfaces'][0]
+          if v['network']!=sub.get('network') or not sub.get('region','').endswith('/us-central1'):
+              raise SystemExit('rua02b_vpc_scope_not_same_network=BLOCKED')
+          print('rua02b_zero_traffic_preflight=PASS')
+          print('rua02b_same_vpc_target=PASS')
+          PY
+      - name: Deploy new telemetry-enabled same-VPC Gateway at zero percent
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git ls-remote https://github.com/tommylin15/omniAgent.git refs/heads/main | cut -f1)" = "$GITHUB_SHA"
+          gcloud run deploy "$SVC" --project="$P" --region="$REGION" \
+            --image="ghcr.io/tommylin15/omniagent-agent-gateway:$GITHUB_SHA" \
+            --no-traffic --tag=rua02b-usage \
+            --network=janusai-lake-poc --subnet=janusai-lake-poc-uscentral1 \
+            --vpc-egress=private-ranges-only \
+            --update-env-vars=GEMINI_SHARED_USAGE_ENABLED=true \
+            --set-secrets=OMNIAGENT_PROVIDER_BUNDLE=omniagent-bundle:latest \
+            --quiet >/dev/null
+          gcloud run services describe "$SVC" --project="$P" --region="$REGION" --format=json > "$RUNNER_TEMP/after.json"
+          python3 - "$RUNNER_TEMP/before.json" "$RUNNER_TEMP/after.json" <<'PY'
+          import json,sys
+          before,after=(json.load(open(x)) for x in sys.argv[1:])
+          def formal(o):return {(x.get('revisionName'),x['percent']) for x in o['status']['traffic'] if x.get('percent',0)>0}
+          if formal(before)!=formal(after):raise SystemExit('rua02b_formal_traffic_changed=BLOCKED')
+          template=after['spec']['template']
+          spec=template['spec']
+          if spec.get('serviceAccountName')!=before['spec']['template']['spec'].get('serviceAccountName'):
+              raise SystemExit('rua02b_runtime_service_account_changed=BLOCKED')
+          env={e['name']:e for e in spec['containers'][0].get('env',[])}
+          old={e['name']:e for e in before['spec']['template']['spec']['containers'][0].get('env',[])}
+          if any(env.get(k)!=v for k,v in old.items() if k!='GEMINI_SHARED_USAGE_ENABLED'):
+              raise SystemExit('rua02b_existing_gateway_env_changed=BLOCKED')
+          if env.get('GEMINI_SHARED_USAGE_ENABLED',{}).get('value')!='true':
+              raise SystemExit('rua02b_usage_candidate_flag_missing=BLOCKED')
+          source=(env.get('OMNIAGENT_PROVIDER_BUNDLE',{}).get('valueFrom') or {}).get('secretKeyRef') or {}
+          if (source.get('name'),str(source.get('key')))!=('omniagent-bundle','latest'):
+              raise SystemExit('rua02b_bundle_candidate_not_latest=BLOCKED')
+          tagged=[x for x in after['status']['traffic'] if x.get('tag')=='rua02b-usage' and x.get('percent',0)==0]
+          if len(tagged)!=1 or not tagged[0].get('revisionName'):
+              raise SystemExit('rua02b_zero_percent_candidate_missing=BLOCKED')
+          if after['status'].get('latestReadyRevisionName')!=tagged[0]['revisionName']:
+              raise SystemExit('rua02b_candidate_not_ready=BLOCKED')
+          print('rua02b_gateway_zero_percent_candidate=PASS')
+          print('rua02b_live_gateway_traffic=UNCHANGED_100_PERCENT')
+          print('rua02b_gateway_live_capture=STILL_DISABLED')
+          PY
