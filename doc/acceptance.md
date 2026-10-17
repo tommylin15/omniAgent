@@ -30,6 +30,8 @@
 
 Automatable OAuth/JWT/IAM/Owner denial remains required; manual OAuth sign-in acceptance is NOT_REQUIRED. Workflow SUCCESS with skipped deployment steps is not a release. Every claim needs implementation, tests, CI, deployment and runtime evidence for its exact scope. Revision retention is a point-in-time readback, not a permanent guarantee.
 
-| RUA AI Router 戰情室 | **SOURCE CANDIDATE / NODE與FLUTTER局部 PASS；FULL CI FAIL／正式驗收 OPEN** | [Node/Flutter 部分成功、Python 舊 workflow 引用阻塞](https://github.com/tommylin15/omniAgent/actions/runs/38989602077)；[設計及驗收契約](../docs/ai-router-analytics.md)：管理員 OAuth 權限、Gateway 單筆去重、Chat 分來源、空值／缺資料處理、CI、正式 DB 讀回皆需完成。不可因局部 PASS 直接上線 |
+| RUA AI Router 戰情室 | **RUA-01 CODE+CI PASS；RUA-02 LIVE OPEN，產品仍 PARTIAL** | [exact SHA `6bf1c28` CI PASS](https://github.com/tommylin15/omniAgent/actions/runs/38990748520)（Node、Flutter、PostgreSQL）；[規格與部署驗收契約](../docs/ai-router-analytics.md)。管理員合法 OAuth、Gateway 唯讀 DB 連接、實際多專案數據及正式 Cloud Run/Flutter 使用者驗收尚未證實。 |
 
 See [TODO](todo.md), [WBS](wbs.md), [P0-V contract](../docs/shared-gemini-vertical-slice.md), and GitHub Actions for details.
+
+| RUA source/candidate + release | **SOURCE+CI+GHCR+CANDIDATE+SMOKE PASS; RELEASE PARTIAL** | [CI](https://github.com/tommylin15/omniAgent/actions/runs/38990748520) / [GHCR](https://github.com/tommylin15/omniAgent/actions/runs/38990748509) / [candidate](https://github.com/tommylin15/omniAgent/actions/runs/38991162650) / [smoke](https://github.com/tommylin15/omniAgent/actions/runs/38991272976) PASS. [Auto Release #38991332177](https://github.com/tommylin15/omniAgent/actions/runs/38991332177) promotion step PASS, retention failed `older_revision_has_live_tag`; **正式 RUA OAuth / Gateway read-only DB / dashboard E2E OPEN**. Unsafe release-artifact retirement [PASS](https://github.com/tommylin15/omniAgent/actions/runs/38991688176). |

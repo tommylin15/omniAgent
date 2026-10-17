@@ -1,6 +1,6 @@
 # AI Router Usage War Room — implementation and operating contract
 
-Checkpoint: 2026-10-17. **Source implemented in a candidate commit; NOT production accepted.**
+Checkpoint: 2026-10-17. **RUA-01 CODE+CI PASS** on exact SHA `6bf1c28` ([full CI](https://github.com/tommylin15/omniAgent/actions/runs/38990748520)). **RUA-02 production configuration and live acceptance NOT VERIFIED.**
 Authoritative actual state is GitHub `main`, CI and Cloud Run/DB readback, not this design document.
 
 ## Goal and UX
@@ -146,3 +146,10 @@ no success proof for Chat model turns, no non-Gemini Gateway telemetry,
 no cross-service canonical correlation, no guarantee of retention outside
 existing DB policies, no production admin/readonly DSN configuration
 or end-to-end dashboard user acceptance receipt. **Do not mark DONE.**
+
+## 2026-10-17 RUA operational checkpoint
+
+- RUA-01 exact SHA `6bf1c28`: Node/Flutter/Postgres CI PASS #38990748520, three GHCR digests PASS #38990748509, 0% Cloud Run candidates PASS #38991162650, private candidate smoke PASS #38991272976.
+- One-shot release #38991332177: promotion step PASS, whole workflow **FAIL** at Shared Codex old tagged Revision retention (`older_revision_has_live_tag`). Do not treat the success of `notify` or promotion alone as full acceptance. Formal traffic readback and any tag changes require independent evidence.
+- Admin statistics flag, Google OAuth-bound Owner allowlist and separate Gateway **SELECT-only** PostgreSQL credentials remain **RUA-02 NOT VERIFIED**. Without those, the dashboard intentionally stays hidden and provider coverage unavailable; no invented data.
+- Security: release artifact upload pattern is constrained to specific receipt files after an unsafe glob was detected; exact impacted artifact `12085157906` was deleted with readback (Actions #38991688176).

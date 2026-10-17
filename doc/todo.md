@@ -105,7 +105,12 @@
 
 ## AI Router 戰情室（RUA）
 
-- [ ] **RUA-01｜統計讀取/API/Flutter UI/權限測試**：初版已實作；[Node Build/Vitest 177 PASS、Flutter 40 PASS 的來源](https://github.com/tommylin15/omniAgent/actions/runs/38989602077)；全套 CI 因 **21 個引用已移除部署 workflow 的 Python 歷史測試、1 個失效文件連結** FAIL，仍需先修復當前部署流程的測試契約並以最新 SHA 重跑。設計與資料口徑參考 [AI Router 戰情室契約](../docs/ai-router-analytics.md)，**不得只因 commit 宣稱 DONE**。
+- [x] **RUA-01｜統計讀取／API／Flutter UI／權限測試（CODE+CI PASS）**：[exact SHA `6bf1c28` 的完整 CI Node／Flutter／Postgres](https://github.com/tommylin15/omniAgent/actions/runs/38990748520) **全部 PASS**；包含實際 PostgreSQL 聚合、Owner 權限負例、缺值與分來源計數、Owner 排行及 Flutter widget。**僅標記 CODE+CI，正式部署／真實 Owner 讀回仍為 RUA-02 OPEN**。資料口徑參考 [戰情室契約](../docs/ai-router-analytics.md)。
 - [ ] **RUA-02｜正式資料來源接線與驗收**：以管理員 verified Owner UUID 啟用 `ROUTER_USAGE_ENABLED`、配置專用唯讀 Gateway 帳本 DB 憑證與 verified TLS；測試一般 Owner 403／管理員 200、真實多專案資料、手機操作、API latency，並以 Cloud Run 同 SHA 讀回。**未設定 Gateway 帳本時 UI 必須報缺，不能當 0 次**。
 - [ ] **RUA-03｜所有 Provider 統一執行帳本**：後續各 provider 實際 invocation 採獨立唯一 ID 串接 Chat turn、token split、耗時與錯誤；唯一鍵去重、前置拒絕另計，才允許跨來源去重總量。
 - [ ] **RUA-04｜成本與預警**：需可驗證實際 token/單價/計費來源才推出成本；用量異常與預警列 P2，不增加過早依賴。
+
+### RUA-02 驗收與發布證據更新（2026-10-17）
+- **RUA-01 同一 SHA 發布證據**：[CI #38990748520](https://github.com/tommylin15/omniAgent/actions/runs/38990748520) Node、Flutter、PostgreSQL **PASS**；[GHCR #38990748509](https://github.com/tommylin15/omniAgent/actions/runs/38990748509) 三映像 PASS；[0%-candidate #38991162650](https://github.com/tommylin15/omniAgent/actions/runs/38991162650) PASS；[Smoke #38991272976](https://github.com/tommylin15/omniAgent/actions/runs/38991272976) PASS。
+- [ ] **RUA-02 live**：[Auto Release #38991332177](https://github.com/tommylin15/omniAgent/actions/runs/38991332177) readiness 與 production promotion steps PASS；**整體 Release FAIL**，因 Shared Codex `older_revision_has_live_tag` 使 retention 安全阻擋。勿自行解除不明 live tags；先完整列出 tag／revision／traffic／rollback，再做受控清理。RUA 管理員 OAuth allowlist、唯讀 Gateway DB、跨專案真實統計、UI 登入讀回仍未通過。
+- [x] **Release Artifact 附件範圍安全修正**：發現舊 `*.json` 包含 runner 暫存 WIF credential configuration；已改為僅封存 `readiness.json` 與 `release.json`，並由 [Actions #38991688176](https://github.com/tommylin15/omniAgent/actions/runs/38991688176) 精確核對身分刪除受影響的 Artifact，讀回不存在。**勿將受影響的舊附件重新分享。**
