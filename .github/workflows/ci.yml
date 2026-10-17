@@ -76,10 +76,17 @@ jobs:
             -e POSTGRES_USER=test -e POSTGRES_PASSWORD=test \
             -e POSTGRES_DB=omniagent_acceptance postgres:16-alpine
           trap 'docker rm -f pg >/dev/null 2>&1 || :' EXIT
-          for i in $(seq 1 30); do
-            if docker exec pg pg_isready -U test -d omniagent_acceptance >/dev/null 2>&1; then break; fi
+          # pg_isready can briefly return success before the desired
+          # logical DB accepts real queries. Assert SELECT, not only readiness.
+          accepted=false
+          for i in $(seq 1 60); do
+            if docker exec pg psql -X -A -t -U test -d omniagent_acceptance \
+                -c 'SELECT 1' 2>/dev/null | grep -qx 1; then
+              accepted=true
+              break
+            fi
             sleep 1
           done
-          docker exec pg pg_isready -U test -d omniagent_acceptance
+          [[ "$accepted" == true ]] || { echo "::error::isolated Postgres SQL never became ready"; exit 1; }
           PG_TEST_URL=postgres://test:test@127.0.0.1:5432/omniagent_acceptance \
             npx vitest run tests/chat_storage.acceptance.test.ts tests/shared_gemini_quota.acceptance.test.ts
