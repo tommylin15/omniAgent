@@ -24,7 +24,7 @@ describe("passive Gateway analytics",()=>{
     expect(query).toHaveBeenCalledOnce();
     const sql=query.mock.calls[0][0] as string;
     expect(sql).toContain("omni_gateway.router_usage_events");
-    expect(sql).toContain("ON CONFLICT (execution_id) DO NOTHING");
+    expect(sql).toContain("ON CONFLICT DO NOTHING");
     expect(sql).not.toContain("prompt");
     expect(sql).not.toContain("response");
     expect(query.mock.calls[0][1]).toEqual([
