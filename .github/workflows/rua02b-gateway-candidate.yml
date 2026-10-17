@@ -2,9 +2,7 @@
 # Requires completed DB verify-full and writer/reader privilege receipt.
 name: RUA-02B Gateway passive telemetry candidate
 on:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/rua02b-gateway-candidate.yml']
+  workflow_dispatch:
 permissions:
   contents: read
   id-token: write
