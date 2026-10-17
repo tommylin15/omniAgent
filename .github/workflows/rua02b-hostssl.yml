@@ -1,9 +1,7 @@
 # One-shot on main; HBA only, no credentials, role changes, or Cloud Run traffic.
 name: RUA-02B scoped hostssl setup
 on:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/rua02b-hostssl.yml']
+  workflow_dispatch:
 permissions:
   contents: read
   id-token: write
