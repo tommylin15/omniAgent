@@ -71,3 +71,26 @@ jobs:
           HOST="$(printf '%s' 'amFudXMtcG9zdGdyZXMtZGV2' | base64 -d)"
           gcloud compute ssh "$HOST" --project=gen-lang-client-0593591102 --zone=us-central1-a --tunnel-through-iap --quiet \
             --command="sudo docker exec -u postgres janus-postgres psql -X -A -t -v ON_ERROR_STOP=1 -d postgres -c \"BEGIN READ ONLY; SELECT 'pg_ssl=' || current_setting('ssl'); SELECT 'chat_hostssl_rules=' || count(*) FROM pg_hba_file_rules WHERE type='hostssl' AND database @> ARRAY['omniagent_chat'] AND user_name @> ARRAY['omniagent_chat_app'] AND auth_method='scram-sha-256' AND error IS NULL; SELECT 'gateway_db_present=' || (count(*)>0)::text FROM pg_database WHERE datname='omniagent_gateway'; COMMIT;\""
+
+      - name: Read-only Gateway dedicated DB, roles and HBA exact scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          HOST=janus-postgres-dev
+          gcloud compute ssh "$HOST" --project=gen-lang-client-0593591102 --zone=us-central1-a --tunnel-through-iap --quiet \
+            --command='sudo docker exec -u postgres janus-postgres psql -X -A -t -v ON_ERROR_STOP=1 -d postgres -c "
+              BEGIN READ ONLY;
+              SELECT '\''gateway_db_exists='\'' || (SELECT count(*) FROM pg_database WHERE datname='\''omniagent_gateway'\'');
+              SELECT '\''usage_roles='\'' || coalesce(string_agg(rolname || '\'':'\'' || rolcanlogin::text, '\'','\'' ORDER BY rolname),'\''absent'\'')
+                FROM pg_roles WHERE rolname IN ('\''omniagent_usage_reader'\'','\''omniagent_usage_writer'\'');
+              SELECT '\''chat_hostssl_scope='\'' || count(*) FROM pg_hba_file_rules
+                WHERE type='\''hostssl'\'' AND database @> ARRAY['\''omniagent_chat'\'']
+                  AND user_name @> ARRAY['\''omniagent_chat_app'\'']
+                  AND auth_method='\''scram-sha-256'\'' AND error IS NULL;
+              SELECT '\''usage_hba_scope='\'' || count(*) FROM pg_hba_file_rules
+                WHERE type='\''hostssl'\'' AND database @> ARRAY['\''omniagent_gateway'\'']
+                  AND (user_name @> ARRAY['\''omniagent_usage_reader'\'']
+                    OR user_name @> ARRAY['\''omniagent_usage_writer'\''])
+                  AND auth_method='\''scram-sha-256'\'' AND error IS NULL;
+              SELECT '\''hba_parse_errors='\'' || count(*) FROM pg_hba_file_rules WHERE error IS NOT NULL;
+              COMMIT;"'
