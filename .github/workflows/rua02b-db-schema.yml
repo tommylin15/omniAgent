@@ -1,0 +1,108 @@
+# RUA-02B phase 1: isolated DB/schema/NOLOGIN roles only.
+# This does not change the shared PostgreSQL certificate, HBA, existing
+# logical databases, Cloud Run revisions, Secret Manager or any project traffic.
+name: RUA-02B isolated schema bootstrap
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/rua02b-db-schema.yml']
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: omniagent-rua02b-db-schema
+  cancel-in-progress: false
+jobs:
+  bootstrap:
+    if: github.repository == 'tommylin15/omniAgent' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify exact main, required migrations and SQL scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git ls-remote https://github.com/tommylin15/omniAgent.git refs/heads/main | cut -f1)" = "$GITHUB_SHA"
+          test -s infra/postgres/migrations/008_router_usage_telemetry.sql
+          test -s infra/postgres/migrations/008_router_usage_permissions.sql
+          ! grep -Ei '(^|[[:space:]])(DROP[[:space:]]+(DATABASE|SCHEMA|TABLE)|TRUNCATE|DELETE[[:space:]]+FROM)' infra/postgres/migrations/008_router_usage_*.sql
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+          service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Bootstrap only dedicated omniagent_gateway logical DB
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          cat > "$RUNNER_TEMP/rua02b-schema.sh" <<'REMOTE'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          umask 077
+          C=janus-postgres
+          BASE=/tmp/omniagent-rua02b-schema
+          trap 'rm -rf "$BASE"' EXIT
+          mkdir -p "$BASE"
+          PG() { sudo docker exec -u postgres "$C" psql -X -A -t -v ON_ERROR_STOP=1 "$@"; }
+          [[ "$(PG -d postgres -c 'SHOW ssl')" == "on" ]] || { echo 'rua02b_pg_ssl=BLOCKED'; exit 3; }
+          # Existing cert fingerprint was independently audited. No key read.
+          pgcert="$(PG -d postgres -c 'SHOW ssl_cert_file')"
+          pgdata="$(PG -d postgres -c 'SHOW data_directory')"
+          [[ "$pgcert" =~ ^[A-Za-z0-9_./-]+$ && "$pgdata" =~ ^/[A-Za-z0-9_./-]+$ ]] || exit 4
+          [[ "$pgcert" == /* ]] || pgcert="$pgdata/$pgcert"
+          [[ "$pgcert" == "$pgdata/"* ]] || exit 5
+          fingerprint="$(sudo docker exec -u postgres "$C" cat "$pgcert" | openssl x509 -noout -fingerprint -sha256 | sed 's/^.*=//')"
+          [[ "$fingerprint" == '5F:16:D1:58:31:AA:50:FA:4A:EF:09:08:7F:1A:70:5D:96:DA:90:CF:23:3C:FF:AE:16:7B:D7:CD:E9:47:25:56' ]] || exit 6
+          # Fail closed if a role is unexpectedly already privileged. Existing
+          # future LOGIN credentials must never be replaced by this job.
+          for role in omniagent_usage_writer omniagent_usage_reader; do
+            state="$(PG -d postgres -c "SELECT rolcanlogin::text || ':' || rolsuper::text || ':' || rolcreatedb::text || ':' || rolcreaterole::text || ':' || rolreplication::text FROM pg_roles WHERE rolname='$role'")"
+            [[ -z "$state" || "$state" == 'false:false:false:false:false' ]] ||
+              { echo "rua02b_role_drift=BLOCKED"; exit 7; }
+          done
+          exists="$(PG -d postgres -c "SELECT count(*) FROM pg_database WHERE datname='omniagent_gateway'")"
+          [[ "$exists" == 0 || "$exists" == 1 ]] || exit 8
+          if [[ "$exists" == 1 ]]; then
+            owner="$(PG -d postgres -c "SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname='omniagent_gateway'")"
+            [[ "$owner" == 'postgres' ]] || { echo 'rua02b_db_owner_drift=BLOCKED'; exit 9; }
+          fi
+          # Roles are NOLOGIN, so no application can reach the new table yet.
+          for role in omniagent_usage_writer omniagent_usage_reader; do
+            if [[ -z "$(PG -d postgres -c "SELECT 1 FROM pg_roles WHERE rolname='$role'")" ]]; then
+              PG -d postgres -c "CREATE ROLE $role NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION" >/dev/null
+            fi
+          done
+          if [[ "$exists" == 0 ]]; then
+            PG -d postgres -c 'CREATE DATABASE omniagent_gateway OWNER postgres' >/dev/null
+          fi
+          # Execute only the two reviewed, narrowly scoped omniAgent SQL files.
+          sudo docker cp /tmp/rua02b-008-telemetry.sql "$C:/tmp/rua02b-008-telemetry.sql"
+          sudo docker cp /tmp/rua02b-008-permissions.sql "$C:/tmp/rua02b-008-permissions.sql"
+          trap 'sudo docker exec -u root "$C" rm -f /tmp/rua02b-008-telemetry.sql /tmp/rua02b-008-permissions.sql; rm -rf "$BASE"' EXIT
+          sudo docker exec -u postgres "$C" psql -X -q -v ON_ERROR_STOP=1 -1 -d omniagent_gateway -f /tmp/rua02b-008-telemetry.sql >/dev/null
+          sudo docker exec -u postgres "$C" psql -X -q -v ON_ERROR_STOP=1 -d omniagent_gateway -f /tmp/rua02b-008-permissions.sql >/dev/null
+          PG -d omniagent_gateway -c "SELECT
+            (to_regclass('omni_gateway.router_usage_events') IS NOT NULL)::text || ':' ||
+            has_table_privilege('omniagent_usage_writer','omni_gateway.router_usage_events','INSERT')::text || ':' ||
+            has_table_privilege('omniagent_usage_writer','omni_gateway.router_usage_events','SELECT')::text || ':' ||
+            has_table_privilege('omniagent_usage_reader','omni_gateway.router_usage_events','SELECT')::text || ':' ||
+            has_table_privilege('omniagent_usage_reader','omni_gateway.router_usage_events','INSERT')::text" |
+            grep -qx 'true:true:false:true:false'
+          [[ "$(PG -d omniagent_gateway -c 'SELECT count(*) FROM omni_gateway.router_usage_events')" == 0 ]] ||
+            { echo 'rua02b_unexpected_existing_rows=BLOCKED'; exit 10; }
+          echo 'rua02b_dedicated_db_schema=PASS'
+          echo 'rua02b_writer_insert_only=PASS'
+          echo 'rua02b_reader_select_only=PASS'
+          echo 'rua02b_runtime_login=DISABLED'
+          echo 'rua02b_runtime_telemetry=NOT_CONFIGURED'
+          REMOTE
+          sed -i 's/^          //' "$RUNNER_TEMP/rua02b-schema.sh"
+          chmod 700 "$RUNNER_TEMP/rua02b-schema.sh"
+          HOST="$(printf '%s' 'amFudXMtcG9zdGdyZXMtZGV2' | base64 -d)"
+          gcloud compute scp "$RUNNER_TEMP/rua02b-schema.sh" "$HOST:/tmp/rua02b-schema.sh" --project=gen-lang-client-0593591102 --zone=us-central1-a --tunnel-through-iap --quiet >/dev/null
+          gcloud compute scp infra/postgres/migrations/008_router_usage_telemetry.sql "$HOST:/tmp/rua02b-008-telemetry.sql" --project=gen-lang-client-0593591102 --zone=us-central1-a --tunnel-through-iap --quiet >/dev/null
+          gcloud compute scp infra/postgres/migrations/008_router_usage_permissions.sql "$HOST:/tmp/rua02b-008-permissions.sql" --project=gen-lang-client-0593591102 --zone=us-central1-a --tunnel-through-iap --quiet >/dev/null
+          gcloud compute ssh "$HOST" --project=gen-lang-client-0593591102 --zone=us-central1-a --tunnel-through-iap --quiet --command="sudo bash /tmp/rua02b-schema.sh; rc=\$?; sudo rm -f /tmp/rua02b-schema.sh /tmp/rua02b-008-telemetry.sql /tmp/rua02b-008-permissions.sql; exit \$rc"
