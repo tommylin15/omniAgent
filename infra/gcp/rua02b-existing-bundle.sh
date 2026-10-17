@@ -8,7 +8,7 @@ PROJECT=gen-lang-client-0593591102
 ZONE=us-central1-a
 HOST=janus-postgres-dev
 SECRET=omniagent-bundle
-ROOT="$(cd "$(dirname "\${BASH_SOURCE[0]}")/../.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
