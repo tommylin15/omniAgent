@@ -31,7 +31,7 @@ The two independent counting series are intentionally *not additive*:
    quota reserved ceiling or an arbitrary fallback.
 
 The existing shared Gateway ledger covers its three *code enum*
-project keys `omniagent`, `market-mart` (Janus integration), and
+project keys `omniagent`, `market-mart`, and
 `life-assistant` (Life integration); **not** arbitrary direct consumer
 model calls, and no guarantee it was configured/recording in a given deployment.
 Composite `(project,owner_id)` is the logical distinct owner, because

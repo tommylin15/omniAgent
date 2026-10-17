@@ -65,8 +65,10 @@ class _RouterUsagePageState extends State<RouterUsagePage> {
       csv.add(columns.map((k)=>safeCell(row[k])).join(','));
     }
     await Clipboard.setData(ClipboardData(text:csv.join('\r\n')));
-    if(mounted)ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content:Text('已複製目前篩選結果的 CSV')));
+    if(mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content:Text('已複製目前篩選結果的 CSV')));
+    }
   }
 
   Widget stat(String title,String value,String note) => Container(
@@ -98,8 +100,10 @@ class _RouterUsagePageState extends State<RouterUsagePage> {
   }
 
   Widget breakdown(String label,List<Map<String,dynamic>> rows) {
-    if(rows.isEmpty)return Padding(
-      padding:const EdgeInsets.symmetric(vertical:12),child:Text('$label：沒有符合的紀錄'));
+    if(rows.isEmpty) {
+      return Padding(
+        padding:const EdgeInsets.symmetric(vertical:12),child:Text('$label：沒有符合的紀錄'));
+    }
     final grouped=<String,int>{};
     for(final row in rows) {
       final key='${row['provider']} / ${row['model']}';
@@ -140,7 +144,7 @@ class _RouterUsagePageState extends State<RouterUsagePage> {
     final chat=filtered.where((r)=>r['source']=='chat_turns').toList();
     final sources=data is Map?data['sources']:null;
     final sourceState=sources is Map?sources['sharedGemini']:'unknown';
-    final owners=filtered.map((r)=>r['project'].toString()+':'+r['ownerId'].toString()).toSet().length;
+    final owners=filtered.map((r)=>"${r['project']}:${r['ownerId']}").toSet().length;
     return ListView(padding:const EdgeInsets.all(16),children:[
       Text('AI Router 戰情室',style:Theme.of(context).textTheme.headlineSmall),
       const SizedBox(height:4),
@@ -217,11 +221,14 @@ class _RouterUsagePageState extends State<RouterUsagePage> {
     body:FutureBuilder<dynamic>(
       future:report,
       builder:(context,snapshot){
-        if(snapshot.connectionState!=ConnectionState.done)
+        if(snapshot.connectionState!=ConnectionState.done) {
           return const Center(child:CircularProgressIndicator());
-        if(snapshot.hasError)return Center(child:Padding(
-          padding:const EdgeInsets.all(24),
-          child:Text('統計 API 讀取失敗或未授權，請檢查管理員權限與資料來源設定。')));
+        }
+        if(snapshot.hasError) {
+          return const Center(child:Padding(
+            padding:EdgeInsets.all(24),
+            child:Text('統計 API 讀取失敗或未授權，請檢查管理員權限與資料來源設定。')));
+        }
         return content(snapshot.data);
       },
     ),

@@ -3,7 +3,9 @@ import { safeRecord, type ChatStore, type DispatchClaim } from "./storage.js";
 import { allowsModel, type ModelEntitlement } from "./model_entitlements.js";
 import { parseCodexPhase, type CodexSessionStore } from "./codex_session_store.js";
 
-export type DispatchOutcome = { status: "idle" | "completed" | "cancelled" | "error" | "running" | "approval_required"; turnId?: string; reason?: string };
+export type GatewayOperation = "turn:start" | "turn:events" | "turn:cancel" | "approval" |
+  "mcp/discover" | "mcp/call" | "mcp/cancel" | "mcp/disconnect";
+export type DispatchOutcome = { status: "idle" | "completed" | "cancelled" | "error" | "running" | "approval_required" | "awaiting_approval"; turnId?: string; reason?: string };
 type TurnEvent = { type: string; payload: unknown };
 export type GatewayControl = (operation:"turn:events"|"turn:cancel"|"approval",
   body:Record<string,unknown>) => Promise<unknown>;
@@ -143,10 +145,10 @@ export class ChatDispatcher {
   }
 }
 
-function validateEvents(value: unknown, claim: DispatchClaim): TurnEvent[] {
+export function validateEvents(value: unknown, claim: DispatchClaim, requireTerminal = true): TurnEvent[] {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("invalid response");
   const rows = (value as Record<string, unknown>).events;
-  if (!Array.isArray(rows) || rows.length < 1 || rows.length > 200) throw new Error("invalid event count");
+  if (!Array.isArray(rows) || rows.length < (requireTerminal ? 1 : 0) || rows.length > 200) throw new Error("invalid event count");
   const events: TurnEvent[] = [];
   for (const row of rows) {
     if (!row || typeof row !== "object" || Array.isArray(row)) throw new Error("invalid event");
@@ -168,8 +170,12 @@ function validateEvents(value: unknown, claim: DispatchClaim): TurnEvent[] {
       typeof clean.delta === "string" && typeof clean.text !== "string"
       ? { ...clean, text: clean.delta } : clean });
   }
-  if (events.filter(e => terminal.has(e.type)).length !== 1 ||
-      !terminal.has(events.at(-1)!.type)) throw new Error("missing terminal");
+  const terminalCount=events.filter(e=>terminal.has(e.type)).length;
+  if (requireTerminal && (terminalCount !== 1 || !terminal.has(events.at(-1)!.type)))
+    throw new Error("missing terminal");
+  if (!requireTerminal && (terminalCount > 1 ||
+      (terminalCount === 1 && !terminal.has(events.at(-1)!.type))))
+    throw new Error("invalid partial terminal");
   return events;
 }
 
