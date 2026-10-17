@@ -30,6 +30,6 @@
 
 Automatable OAuth/JWT/IAM/Owner denial remains required; manual OAuth sign-in acceptance is NOT_REQUIRED. Workflow SUCCESS with skipped deployment steps is not a release. Every claim needs implementation, tests, CI, deployment and runtime evidence for its exact scope. Revision retention is a point-in-time readback, not a permanent guarantee.
 
-| RUA AI Router 戰情室 | **SOURCE CANDIDATE / CI與正式驗收未證實** | [設計及驗收契約](../docs/ai-router-analytics.md)：管理員 OAuth 權限、Gateway 單筆去重、Chat 分來源、空值／缺資料處理、Flutter、CI、正式 DB 讀回皆需完成 |
+| RUA AI Router 戰情室 | **SOURCE CANDIDATE / NODE與FLUTTER局部 PASS；FULL CI FAIL／正式驗收 OPEN** | [Node/Flutter 部分成功、Python 舊 workflow 引用阻塞](https://github.com/tommylin15/omniAgent/actions/runs/38989602077)；[設計及驗收契約](../docs/ai-router-analytics.md)：管理員 OAuth 權限、Gateway 單筆去重、Chat 分來源、空值／缺資料處理、CI、正式 DB 讀回皆需完成。不可因局部 PASS 直接上線 |
 
 See [TODO](todo.md), [WBS](wbs.md), [P0-V contract](../docs/shared-gemini-vertical-slice.md), and GitHub Actions for details.

@@ -105,7 +105,7 @@
 
 ## AI Router 戰情室（RUA）
 
-- [ ] **RUA-01｜統計讀取/API/Flutter UI/權限測試**：程式已提出候選實作，等 exact SHA TypeScript、Vitest、Flutter Analyze/Test/Web 及 CI。設計與資料口徑參考 [AI Router 戰情室契約](../docs/ai-router-analytics.md)，**不得只因 commit 宣稱 DONE**。
+- [ ] **RUA-01｜統計讀取/API/Flutter UI/權限測試**：初版已實作；[Node Build/Vitest 177 PASS、Flutter 40 PASS 的來源](https://github.com/tommylin15/omniAgent/actions/runs/38989602077)；全套 CI 因 **21 個引用已移除部署 workflow 的 Python 歷史測試、1 個失效文件連結** FAIL，仍需先修復當前部署流程的測試契約並以最新 SHA 重跑。設計與資料口徑參考 [AI Router 戰情室契約](../docs/ai-router-analytics.md)，**不得只因 commit 宣稱 DONE**。
 - [ ] **RUA-02｜正式資料來源接線與驗收**：以管理員 verified Owner UUID 啟用 `ROUTER_USAGE_ENABLED`、配置專用唯讀 Gateway 帳本 DB 憑證與 verified TLS；測試一般 Owner 403／管理員 200、真實多專案資料、手機操作、API latency，並以 Cloud Run 同 SHA 讀回。**未設定 Gateway 帳本時 UI 必須報缺，不能當 0 次**。
 - [ ] **RUA-03｜所有 Provider 統一執行帳本**：後續各 provider 實際 invocation 採獨立唯一 ID 串接 Chat turn、token split、耗時與錯誤；唯一鍵去重、前置拒絕另計，才允許跨來源去重總量。
 - [ ] **RUA-04｜成本與預警**：需可驗證實際 token/單價/計費來源才推出成本；用量異常與預警列 P2，不增加過早依賴。
