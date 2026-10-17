@@ -268,9 +268,11 @@ describe("Shared Gateway Gemini vertical slice",()=>{
     }));
     const good=await post(url,{...base,project:"life-assistant"});
     expect(good.status).toBe(200);
+    expect((await good.json())).toMatchObject({usageCapture:"persisted"});
     const failed=await post(url,{...base,project:"life-assistant",
       requestId:"00000000-0000-4000-8000-000000000099"});
     expect(failed.status).toBe(503);
+    expect((await failed.json())).toMatchObject({usageCapture:"persisted"});
     expect(records).toHaveLength(2);
     expect(records[0]).toMatchObject({project:"life-assistant",
       ownerId:ids.ownerId,requestId:ids.requestId,
@@ -290,13 +292,13 @@ describe("Shared Gateway Gemini vertical slice",()=>{
       }));
       const result=await post(url,base);
       expect(result.status).toBe(200);
-      expect((await result.json())).toMatchObject({status:"completed",result:{text:"OK"}});
+      expect((await result.json())).toMatchObject({status:"completed",result:{text:"OK"},usageCapture:"unavailable"});
       expect(usage.record).toHaveBeenCalledOnce();
       expect(warn).toHaveBeenCalledOnce();
       expect(String(warn.mock.calls[0][0])).not.toContain("DB credential value");
     } finally {warn.mockRestore();}
   });
-  it("does not wait on a stalled analytics writer before returning Gemini",async()=>{
+  it("limits a stalled writer to bounded latency and marks response deferred",async()=>{
     const warn=vi.spyOn(console,"warn").mockImplementation(()=>undefined);
     let release:()=>void=()=>undefined;
     const usage={record:vi.fn(()=>new Promise<void>(resolve=>{release=resolve;}))};
@@ -308,8 +310,9 @@ describe("Shared Gateway Gemini vertical slice",()=>{
       const started=Date.now();
       const response=await post(url,base);
       expect(response.status).toBe(200);
-      expect((await response.json()).result).toEqual({text:"OK"});
-      expect(Date.now()-started).toBeLessThan(1200);
+      expect((await response.json())).toMatchObject({result:{text:"OK"},usageCapture:"deferred"});
+      expect(Date.now()-started).toBeGreaterThanOrEqual(1700);
+      expect(Date.now()-started).toBeLessThan(3500);
       expect(usage.record).toHaveBeenCalledOnce();
       expect(warn).toHaveBeenCalledWith(expect.stringContaining('"state":"deferred"'));
     }finally{
