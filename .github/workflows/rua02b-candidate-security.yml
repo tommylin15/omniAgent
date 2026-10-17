@@ -1,0 +1,71 @@
+# RUA-02B: strict read-only validation of the existing tagged 0% candidate.
+# No user identity tokens, provider calls, DB writes or traffic changes.
+name: RUA-02B candidate security readback
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/rua02b-candidate-security.yml']
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  inspect:
+    if: github.repository == 'tommylin15/omniAgent' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+          service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Verify exact revision identity, runtime boundary and invoker policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          P=gen-lang-client-0593591102
+          R=us-central1
+          S=omniagent-agent-gateway
+          gcloud run services describe "$S" --project="$P" --region="$R" --format=json > "$RUNNER_TEMP/service.json"
+          gcloud run revisions describe omniagent-agent-gateway-00107-doy --project="$P" --region="$R" --format=json > "$RUNNER_TEMP/revision.json"
+          gcloud run services get-iam-policy "$S" --project="$P" --region="$R" --format=json > "$RUNNER_TEMP/iam.json"
+          python3 - "$RUNNER_TEMP/service.json" "$RUNNER_TEMP/revision.json" "$RUNNER_TEMP/iam.json" <<'PY'
+          import json,sys
+          svc,rev,iam=(json.load(open(f)) for f in sys.argv[1:])
+          rows=svc['status']['traffic']
+          active=[r for r in rows if r.get('percent',0)>0]
+          target=[r for r in rows if r.get('tag')=='rua02b-usage' and r.get('percent',0)==0]
+          if len(active)!=1 or active[0].get('percent')!=100 or len(target)!=1:
+              raise SystemExit('rua02b_traffic_boundary=BLOCKED')
+          if target[0].get('revisionName')!='omniagent-agent-gateway-00107-doy' or target[0].get('revisionName')==active[0].get('revisionName'):
+              raise SystemExit('rua02b_candidate_revision=BLOCKED')
+          spec=rev['spec']
+          env={e['name']:e for e in spec['containers'][0].get('env',[])}
+          source=((env.get('OMNIAGENT_PROVIDER_BUNDLE') or {}).get('valueFrom') or {}).get('secretKeyRef') or {}
+          if (source.get('name'),str(source.get('key')))!=('omniagent-bundle','latest'):
+              raise SystemExit('rua02b_provider_bundle=BLOCKED')
+          if env.get('GEMINI_SHARED_USAGE_ENABLED',{}).get('value')!='true' or env.get('GEMINI_SHARED_EXECUTION_ENABLED',{}).get('value')!='true':
+              raise SystemExit('rua02b_candidate_enabled=BLOCKED')
+          if env.get('GEMINI_SHARED_QUOTA_ENABLED',{}).get('value')=='true' or env.get('GEMINI_SHARED_REQUIRE_OWNER_AUTHORIZATION',{}).get('value')=='true':
+              raise SystemExit('rua02b_policy_unapproved=BLOCKED')
+          expected={'omniagent','market-mart','life-assistant'}
+          expected_accounts={
+              'serviceAccount:omniagent-codex-chat-client@gen-lang-client-0593591102.iam.gserviceaccount.com',
+              'serviceAccount:omniagent-codex-life-client@gen-lang-client-0593591102.iam.gserviceaccount.com',
+              'serviceAccount:omniagent-codex-market-client@gen-lang-client-0593591102.iam.gserviceaccount.com'
+          }
+          callers=json.loads(env['GEMINI_SHARED_CALLERS_JSON']['value'])
+          if set(callers)!=expected or {'serviceAccount:'+v for v in callers.values()}!=expected_accounts:
+              raise SystemExit('rua02b_project_caller_map=BLOCKED')
+          allowed={m for b in iam.get('bindings',[]) if b.get('role')=='roles/run.invoker' for m in b.get('members',[])}
+          if 'allUsers' in allowed or 'allAuthenticatedUsers' in allowed or not expected_accounts<=allowed:
+              raise SystemExit('rua02b_private_iam=BLOCKED')
+          print('rua02b_candidate_0_percent=PASS')
+          print('rua02b_formal_100_percent_unchanged=PASS')
+          print('rua02b_candidate_bundle=PASS')
+          print('rua02b_project_caller_map=PASS')
+          print('rua02b_private_iam_invokers=PASS')
+          print('rua02b_live_capture=NOT_ENABLED')
+          print('rua02b_signed_model_and_db_canary=NOT_RUN')
+          PY
