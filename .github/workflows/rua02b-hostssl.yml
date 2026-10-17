@@ -1,0 +1,43 @@
+# One-shot on main; HBA only, no credentials, role changes, or Cloud Run traffic.
+name: RUA-02B scoped hostssl setup
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/rua02b-hostssl.yml']
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: omniagent-rua02b-shared-db-hba
+  cancel-in-progress: false
+jobs:
+  activate:
+    if: github.repository == 'tommylin15/omniAgent' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Freeze current main and validate script
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git ls-remote https://github.com/tommylin15/omniAgent.git refs/heads/main | cut -f1)" = "$GITHUB_SHA"
+          bash -n infra/gcp/rua02b-hostssl-setup.sh
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+          service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Apply only omniagent_gateway HBA with rollback and runtime validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          HOST=janus-postgres-dev
+          test "$(git ls-remote https://github.com/tommylin15/omniAgent.git refs/heads/main | cut -f1)" = "$GITHUB_SHA"
+          for i in 1 2 3; do
+            if gcloud compute scp infra/gcp/rua02b-hostssl-setup.sh "$HOST:/tmp/rua02b-hostssl-setup.sh" --project=gen-lang-client-0593591102 --zone=us-central1-a --tunnel-through-iap --quiet >/dev/null; then break; fi
+            test "$i" != 3
+            sleep $((i*4))
+          done
+          gcloud compute ssh "$HOST" --project=gen-lang-client-0593591102 --zone=us-central1-a --tunnel-through-iap --quiet --command="sudo bash /tmp/rua02b-hostssl-setup.sh; rc=\$?; sudo rm -f /tmp/rua02b-hostssl-setup.sh; exit \$rc"
