@@ -48,6 +48,7 @@ jobs:
           mkdir -p "$BASE"
           PG() { sudo docker exec -u postgres "$C" psql -X -A -t -v ON_ERROR_STOP=1 "$@"; }
           [[ "$(PG -d postgres -c 'SHOW ssl')" == "on" ]] || { echo 'rua02b_pg_ssl=BLOCKED'; exit 3; }
+          echo 'rua02b_stage=pg_ssl_verified'
           # Existing cert fingerprint was independently audited. No key read.
           pgcert="$(PG -d postgres -c 'SHOW ssl_cert_file')"
           pgdata="$(PG -d postgres -c 'SHOW data_directory')"
@@ -56,6 +57,7 @@ jobs:
           [[ "$pgcert" == "$pgdata/"* ]] || exit 5
           fingerprint="$(sudo docker exec -u postgres "$C" cat "$pgcert" | openssl x509 -noout -fingerprint -sha256 | sed 's/^.*=//')"
           [[ "$fingerprint" == '5F:16:D1:58:31:AA:50:FA:4A:EF:09:08:7F:1A:70:5D:96:DA:90:CF:23:3C:FF:AE:16:7B:D7:CD:E9:47:25:56' ]] || exit 6
+          echo 'rua02b_stage=pg_cert_pinned'
           # Fail closed if a role is unexpectedly already privileged. Existing
           # future LOGIN credentials must never be replaced by this job.
           for role in omniagent_usage_writer omniagent_usage_reader; do
@@ -63,12 +65,14 @@ jobs:
             [[ -z "$state" || "$state" == 'false:false:false:false:false' ]] ||
               { echo "rua02b_role_drift=BLOCKED"; exit 7; }
           done
+          echo 'rua02b_stage=roles_checked'
           exists="$(PG -d postgres -c "SELECT count(*) FROM pg_database WHERE datname='omniagent_gateway'")"
           [[ "$exists" == 0 || "$exists" == 1 ]] || exit 8
           if [[ "$exists" == 1 ]]; then
             owner="$(PG -d postgres -c "SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname='omniagent_gateway'")"
             [[ "$owner" == 'postgres' ]] || { echo 'rua02b_db_owner_drift=BLOCKED'; exit 9; }
           fi
+          echo 'rua02b_stage=db_prechecked'
           # Roles are NOLOGIN, so no application can reach the new table yet.
           for role in omniagent_usage_writer omniagent_usage_reader; do
             if [[ -z "$(PG -d postgres -c "SELECT 1 FROM pg_roles WHERE rolname='$role'")" ]]; then
@@ -78,12 +82,15 @@ jobs:
           if [[ "$exists" == 0 ]]; then
             PG -d postgres -c 'CREATE DATABASE omniagent_gateway OWNER postgres' >/dev/null
           fi
+          echo 'rua02b_stage=database_and_roles_created'
           # Execute only the two reviewed, narrowly scoped omniAgent SQL files.
           sudo docker cp /tmp/rua02b-008-telemetry.sql "$C:/tmp/rua02b-008-telemetry.sql"
           sudo docker cp /tmp/rua02b-008-permissions.sql "$C:/tmp/rua02b-008-permissions.sql"
           trap 'sudo docker exec -u root "$C" rm -f /tmp/rua02b-008-telemetry.sql /tmp/rua02b-008-permissions.sql; rm -rf "$BASE"' EXIT
           sudo docker exec -u postgres "$C" psql -X -q -v ON_ERROR_STOP=1 -1 -d omniagent_gateway -f /tmp/rua02b-008-telemetry.sql >/dev/null
+          echo 'rua02b_stage=table_migrated'
           sudo docker exec -u postgres "$C" psql -X -q -v ON_ERROR_STOP=1 -d omniagent_gateway -f /tmp/rua02b-008-permissions.sql >/dev/null
+          echo 'rua02b_stage=grants_migrated'
           PG -d omniagent_gateway -c "SELECT
             (to_regclass('omni_gateway.router_usage_events') IS NOT NULL)::text || ':' ||
             has_table_privilege('omniagent_usage_writer','omni_gateway.router_usage_events','INSERT')::text || ':' ||
