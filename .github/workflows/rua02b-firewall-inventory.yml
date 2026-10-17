@@ -1,0 +1,65 @@
+# Pure read-only: determine if same-VPC Gateway source may reach DB VM tcp:5432.
+name: RUA-02B firewall reachability inventory
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/rua02b-firewall-inventory.yml']
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  inspect:
+    if: github.repository == 'tommylin15/omniAgent'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+          service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Inspect effective VM ingress and existing VPC ingress rules
+        shell: bash
+        run: |
+          set -euo pipefail
+          gcloud compute instances describe janus-postgres-dev --project=gen-lang-client-0593591102 --zone=us-central1-a --format=json > "$RUNNER_TEMP/vm.json"
+          gcloud compute firewall-rules list --project=gen-lang-client-0593591102 --format=json > "$RUNNER_TEMP/firewalls.json"
+          gcloud compute networks subnets describe janusai-lake-poc-uscentral1 --project=gen-lang-client-0593591102 --region=us-central1 --format=json > "$RUNNER_TEMP/subnet.json"
+          python3 - "$RUNNER_TEMP/vm.json" "$RUNNER_TEMP/firewalls.json" "$RUNNER_TEMP/subnet.json" <<'PY'
+          import json,ipaddress,sys
+          vm,rows,subnet=(json.load(open(s)) for s in sys.argv[1:])
+          nic=vm["networkInterfaces"][0]
+          network=nic["network"]
+          tags=set((vm.get("tags") or {}).get("items",[]))
+          sa={x["email"] for x in vm.get("serviceAccounts",[])}
+          source=ipaddress.ip_network(subnet["ipCidrRange"])
+          print("rua02b_gateway_vpc_source="+str(source))
+          matches=[]
+          for rule in rows:
+              if rule.get("network")!=network or rule.get("direction")!="INGRESS" or rule.get("disabled",False):
+                  continue
+              targets=set(rule.get("targetTags") or [])
+              target_accounts=set(rule.get("targetServiceAccounts") or [])
+              if targets and not targets.intersection(tags):continue
+              if target_accounts and not target_accounts.intersection(sa):continue
+              sources=rule.get("sourceRanges") or []
+              try: intersection=any(source.subnet_of(ipaddress.ip_network(r)) for r in sources)
+              except ValueError: intersection=False
+              if not intersection:continue
+              ports=[]
+              for p in (rule.get("allowed") if rule.get("allowed") else rule.get("denied") or []):
+                  if p.get("IPProtocol") not in ("tcp","all"):continue
+                  allowed=p.get("ports") or []
+                  if not allowed:ports.append("all")
+                  for x in allowed:
+                      if x=="5432":ports.append("5432")
+                      if "-" in x:
+                          a,b=x.split("-",1)
+                          if int(a)<=5432<=int(b):ports.append("5432")
+              if ports:matches.append((rule["name"],rule.get("priority",1000),"ALLOW" if rule.get("allowed") else "DENY"))
+          for name,priority,action in sorted(matches,key=lambda x:x[1]):
+              print("rua02b_db_ingress_candidate="+name+":"+str(priority)+":"+action)
+          print("rua02b_matching_ingress_rules="+str(len(matches)))
+          if not matches:print("rua02b_private_tcp5432_firewall=NOT_PROVEN")
+          PY
