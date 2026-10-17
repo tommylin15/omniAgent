@@ -1,0 +1,31 @@
+# Bounded diagnostic; exactly one signed Life model call on 0% tagged revision.
+name: RUA-02B signed usage status diagnosis
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/rua02b-capture-probe.yml']
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  probe:
+    if: github.repository == 'tommylin15/omniAgent' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pin source and syntax
+        run: |
+          set -euo pipefail
+          test "$(git ls-remote https://github.com/tommylin15/omniAgent.git refs/heads/main | cut -f1)" = "$GITHUB_SHA"
+          python3 -m py_compile scripts/rua02b_capture_probe.py
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+          service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Single signed tagged Life inference; only return sanitized status
+        run: |
+          set -euo pipefail
+          set +x
+          PYTHONPATH=scripts python3 scripts/rua02b_capture_probe.py
