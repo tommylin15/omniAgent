@@ -11,6 +11,17 @@ SECRET=omniagent-bundle
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
+# OS Login/IAP public-key propagation may lag. Retry the SAME command only.
+retry_iap() {
+  local attempt
+  for attempt in 1 2 3; do
+    if "$@"; then return 0; fi
+    echo "rua02b_iap_retry=$attempt" >&2
+    sleep $((attempt * 4))
+  done
+  echo "rua02b_iap_exhausted=BLOCKED" >&2
+  return 1
+}
 
 before="$(gcloud secrets versions describe latest --secret="$SECRET" --project="$PROJECT" --format='value(name)')"
 [[ "$before" == projects/*/secrets/omniagent-bundle/versions/* ]] || { echo "rua02b_original_version=BLOCKED"; exit 2; }
@@ -57,13 +68,13 @@ sudo docker exec -u postgres "$c" cat "$f" > /tmp/rua02b-omniagent-public.pem
 chmod 644 /tmp/rua02b-omniagent-public.pem
 REMOTE
 chmod 700 "$work/public-cert-only.sh"
-gcloud compute scp "$work/public-cert-only.sh" "$HOST:/tmp/rua02b-public-cert-only.sh" \
+retry_iap gcloud compute scp "$work/public-cert-only.sh" "$HOST:/tmp/rua02b-public-cert-only.sh" \
   --project="$PROJECT" --zone="$ZONE" --tunnel-through-iap --quiet >/dev/null
-gcloud compute ssh "$HOST" --project="$PROJECT" --zone="$ZONE" --tunnel-through-iap --quiet \
+retry_iap gcloud compute ssh "$HOST" --project="$PROJECT" --zone="$ZONE" --tunnel-through-iap --quiet \
   --command="bash /tmp/rua02b-public-cert-only.sh" >/dev/null
-gcloud compute scp "$HOST:/tmp/rua02b-omniagent-public.pem" "$work/public-ca.pem" \
+retry_iap gcloud compute scp "$HOST:/tmp/rua02b-omniagent-public.pem" "$work/public-ca.pem" \
   --project="$PROJECT" --zone="$ZONE" --tunnel-through-iap --quiet >/dev/null
-gcloud compute ssh "$HOST" --project="$PROJECT" --zone="$ZONE" --tunnel-through-iap --quiet \
+retry_iap gcloud compute ssh "$HOST" --project="$PROJECT" --zone="$ZONE" --tunnel-through-iap --quiet \
   --command="rm -f /tmp/rua02b-public-cert-only.sh /tmp/rua02b-omniagent-public.pem" >/dev/null
 observed="$(openssl x509 -in "$work/public-ca.pem" -noout -fingerprint -sha256 | sed 's/^.*=//')"
 [[ "$observed" == '5F:16:D1:58:31:AA:50:FA:4A:EF:09:08:7F:1A:70:5D:96:DA:90:CF:23:3C:FF:AE:16:7B:D7:CD:E9:47:25:56' ]] ||
