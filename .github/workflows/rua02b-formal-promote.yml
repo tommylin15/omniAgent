@@ -1,3 +1,4 @@
+# Second controlled attempt: use acknowledged-write candidate 00110-neq.
 # Explicit owner authorization: move only omniagent-agent-gateway to the
 # already deployed RUA-02B candidate, before signed model usage readback.
 # Fail closed and restore old 100% revision on missing DB/provider evidence.
