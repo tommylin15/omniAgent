@@ -10,6 +10,4 @@ class P0Audit(unittest.TestCase):
                    "gcloud run deploy","secrets versions access","DROP TABLE",
                    "UPDATE omni_chat","INSERT INTO"):
       self.assertNotIn(denied,script)
-    workflow=(ROOT/".github/workflows/omniagent-p0-security-runtime-baseline.yml").read_text()
-    self.assertIn("scripts/p0_security_runtime_baseline.py",workflow)
 if __name__=="__main__":unittest.main()

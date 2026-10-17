@@ -41,10 +41,5 @@ class R05SignedServicePrincipalGate(unittest.TestCase):
                        'gcloud run deploy','gcloud secrets versions','print(token',
                        "includeEmail\": False"):
             self.assertNotIn(unsafe,data)
-        wf=Path(".github/workflows/omniagent-r05-live-negative.yml").read_text()
-        self.assertIn("scripts/r05_service_account_denial.py",wf)
-        self.assertIn("r05_signed_sa_user_boundary=PASS",wf)
-        self.assertIn("r05_no_model_inference=PASS",wf)
-
 if __name__=="__main__":
     unittest.main()

@@ -16,13 +16,4 @@ class OwnerLiveReadback(unittest.TestCase):
         for forbidden in ("INSERT INTO", "DELETE FROM", "UPDATE omni_chat", "gcloud secrets versions access",
                           "gcloud run deploy", "update-traffic", "consumed_turns=0"):
             self.assertNotIn(forbidden,source)
-    def test_one_shot_marker_and_no_auto_release(self):
-        workflow=WF.read_text()
-        self.assertIn("[p0-evidence-once]", workflow)
-        self.assertIn("bash -n infra/gcp/p0-owner-live-readback.sh", workflow)
-        self.assertNotIn("[release-once]", workflow)
-        self.assertNotIn("workflow_dispatch:", workflow)
-        self.assertNotIn("update-traffic", workflow)
-        self.assertIn("Owner B live authenticated negative: NOT VERIFIED", workflow)
-
 if __name__=="__main__": unittest.main()

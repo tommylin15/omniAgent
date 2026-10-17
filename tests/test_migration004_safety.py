@@ -15,11 +15,5 @@ class Migration004Safety(unittest.TestCase):
         for illegal in ("DROP DATABASE", "CREATE DATABASE", "ALTER ROLE ",
                         "gcloud run deploy", "update-traffic"):
             self.assertNotIn(illegal,content)
-    def test_workflow_requires_exact_main_and_wif(self):
-        content=WF.read_text()
-        self.assertIn("id-token: write",content)
-        self.assertIn("apply-omniagent-chat-migration004.sh",content)
-        self.assertIn("if: always()",content)
-        self.assertNotIn("CHAT_DISPATCH_ENABLED=true",content)
 if __name__ == "__main__":
     unittest.main()

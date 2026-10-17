@@ -18,10 +18,5 @@ class OwnerIdentityPreflight(unittest.TestCase):
         for forbidden in ("INSERT INTO","UPDATE omni_chat","CREATE ROLE","add-iam-policy-binding",
                           "gcloud run deploy", "gcloud secrets versions access", ":access","gcloud secrets versions destroy"):
             self.assertNotIn(forbidden,sh)
-    def test_github_wif_exact_sha(self):
-        sh=SH.read_text(); wf=WF.read_text()
-        self.assertIn('test "$(git rev-parse HEAD)" = "$GITHUB_SHA"',sh)
-        self.assertIn('id-token: write',wf)
-        self.assertNotIn('CHAT_DISPATCH_ENABLED=true',wf)
 if __name__=="__main__":
     unittest.main()

@@ -35,13 +35,17 @@ class AutomatedOauthGate(unittest.TestCase):
         self.assertIn("denies an authenticated but model-unentitled owner",api)
         self.assertIn("cross-owner request",pg)
 
-    def test_no_fake_manual_oauth_success_or_implicit_model_enablement(self):
+    def test_automatic_release_is_gated_by_successful_candidate_smoke(self):
         policy=(ROOT/"docs/oauth-automated-acceptance-policy.md").read_text()
-        release=(ROOT/".github/workflows/omniagent-ghcr-one-shot-release.yml").read_text()
+        current=(ROOT/".github/workflows/auto-release.yml").read_text()
+        chat=(ROOT/"services/chat-api/main.ts").read_text()
         self.assertIn("NOT_REQUIRED",policy)
         self.assertIn("NOT_VERIFIED_AUTOMATION_UNAVAILABLE",policy)
-        self.assertIn("DEPLOY_CODE_WITH_DISPATCH_AND_BYOK_DISABLED",release)
-        self.assertIn("[release-once]",release)
-        self.assertNotIn("  workflow_dispatch:",release)
+        self.assertIn("omniAgent GHCR current candidate auto smoke",current)
+        self.assertIn("github.event.workflow_run.conclusion == 'success'",current)
+        self.assertIn("ghcr_release_readiness.py",current)
+        self.assertIn("ghcr_one_shot_promotion.py",current)
+        self.assertNotIn('CHAT_DISPATCH_ENABLED=true',current)
+        self.assertIn('process.env.CHAT_DISPATCH_ENABLED === "true"',chat)
 
 if __name__=="__main__":unittest.main()

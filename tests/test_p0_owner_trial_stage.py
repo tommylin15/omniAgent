@@ -22,13 +22,6 @@ class OwnerTrialStage(unittest.TestCase):
         for forbidden in ("update-traffic","[release-once]","gcloud secrets versions access",
                           "gcloud secrets versions add","gcloud secrets versions destroy"):
             self.assertNotIn(forbidden,source)
-    def test_marker_and_same_sha_required(self):
-        wf=WF.read_text()
-        self.assertIn("[p0-trial-once]",wf)
-        self.assertIn("git ls-remote",wf)
-        self.assertIn("shared_secret_iam_access=VERIFIED_DIRECT_ACCESSOR",wf)
-        self.assertIn("workflow_run:",wf)
-
     def test_revision_import_mirror_uses_verified_source_ghcr_digest(self):
         import importlib.util
         import json

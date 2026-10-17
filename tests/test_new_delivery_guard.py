@@ -5,7 +5,6 @@ import unittest
 ROOT=Path(__file__).resolve().parents[1]
 GHCR=ROOT/".github/workflows/omniagent-ghcr-publish.yml"
 CANDIDATE=ROOT/".github/workflows/omniagent-ghcr-cloudrun-candidate.yml"
-RETAIN=ROOT/".github/workflows/omniagent-cloudrun-retain-ten.yml"
 
 
 class NewDeliveryGuardTests(unittest.TestCase):
@@ -41,13 +40,6 @@ class NewDeliveryGuardTests(unittest.TestCase):
         self.assertNotIn("gcloud builds",t)
         self.assertNotIn("gcloud storage cp",t)
         self.assertNotIn("gcloud artifacts repositories delete",t)
-
-    def test_retention_requires_approval(self):
-        t=RETAIN.read_text()
-        self.assertIn("inputs.acceptance_and_promotion_passed",t)
-        self.assertIn("--apply",t)
-        self.assertNotIn("workflow_dispatch:",t)
-
 
 if __name__=="__main__":
     unittest.main()

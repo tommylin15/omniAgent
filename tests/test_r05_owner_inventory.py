@@ -11,10 +11,5 @@ class R05OwnerInventoryGuard(unittest.TestCase):
         for bad in ("INSERT INTO", "UPDATE omni_chat", "DELETE FROM omni_chat",
                     "CREATE TABLE","gcloud run deploy","gcloud secrets versions access"):
             self.assertNotIn(bad,s)
-        w=Path(".github/workflows/omniagent-r05-owner-inventory.yml").read_text()
-        self.assertIn("r05-owner-inventory-readonly.sh",w)
-        self.assertNotIn("workflow_dispatch",w)
-        self.assertNotIn("CHAT_DISPATCH_ENABLED",w)
-
 if __name__=="__main__":
     unittest.main()

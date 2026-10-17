@@ -1,19 +1,19 @@
-import pathlib
+"""Current automatic release uses readiness checks, not retired release markers."""
+from pathlib import Path
 import unittest
 
-ROOT = pathlib.Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[1]
 
 class ReleaseMarkerSkip(unittest.TestCase):
-    def test_non_release_commit_is_safe_successful_noop(self):
-        yaml = (ROOT / ".github/workflows/omniagent-ghcr-one-shot-release.yml").read_text()
-        self.assertIn("id: authorization", yaml)
-        self.assertIn("formal_release=NOT_RUN_NO_OWNER_RELEASE_MARKER", yaml)
-        self.assertIn("authorized=false", yaml)
-        self.assertIn("authorized=true", yaml)
-        self.assertIn("if ! git log -1 --format=%B | grep -Fq '[release-once]'", yaml)
-        self.assertGreaterEqual(yaml.count("if: steps.authorization.outputs.authorized == 'true'"), 6)
-        self.assertEqual(yaml.count("if: always() && steps.authorization.outputs.authorized == 'true'"), 2)
-        self.assertIn("cloudrun_revision_retention.py", yaml)
+    def test_readiness_gate_precedes_promotion_and_cleanup(self):
+        flow=(ROOT/'.github/workflows/auto-release.yml').read_text()
+        ready=flow.index('scripts/ghcr_release_readiness.py')
+        promote=flow.index('scripts/ghcr_one_shot_promotion.py')
+        cleanup=flow.index('scripts/cloudrun_revision_retention.py')
+        self.assertLess(ready,promote)
+        self.assertLess(promote,cleanup)
+        self.assertIn("workflows: ['omniAgent GHCR current candidate auto smoke']",flow)
+        self.assertIn("github.event.workflow_run.conclusion == 'success'",flow)
+        self.assertIn('github.ref', (ROOT/'.github/workflows/ci.yml').read_text())
 
-if __name__ == "__main__":
-    unittest.main()
+if __name__=='__main__': unittest.main()

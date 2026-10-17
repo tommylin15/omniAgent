@@ -1,31 +1,36 @@
-"""GitHub Actions has only one pending workflow per concurrency group.
-Ensure co-triggered release/readiness/owner workflows cannot cancel each other,
-and mutually exclusive markers prevent an unsafe same-SHA dual promotion.
+"""Protect currently deployed GitHub Actions release concurrency and provenance.
+
+Retired one-shot Owner-specific workflows are intentionally not resurrected.
 """
-import pathlib
+from pathlib import Path
 import unittest
 
-ROOT=pathlib.Path(__file__).resolve().parents[1]/".github/workflows"
-class ReleaseConcurrencyIsolation(unittest.TestCase):
-    def test_after_smoke_workflows_have_unique_groups(self):
-        groups={
-          "omniagent-ghcr-one-shot-release.yml":"omniagent-ghcr-formal-production",
-          "omniagent-p0-owner-trial-staging.yml":"omniagent-p0-owner-staging",
-          "omniagent-ghcr-production-readiness.yml":"omniagent-ghcr-readonly-audit",
-          "omniagent-ghcr-current-candidate-smoke.yml":"omniagent-ghcr-cloudrun-release",
-        }
-        for filename,group in groups.items():
-            contents=(ROOT/filename).read_text()
-            self.assertIn("  group: "+group,contents)
-            self.assertIn("  cancel-in-progress: false",contents)
-        self.assertEqual(len(groups.values()),len(set(groups.values())))
+ROOT=Path(__file__).resolve().parents[1]/".github/workflows"
 
-    def test_conflicting_paid_trial_and_production_marker_fail_closed(self):
-        prod=(ROOT/"omniagent-ghcr-one-shot-release.yml").read_text()
-        trial=(ROOT/"omniagent-p0-owner-trial-staging.yml").read_text()
-        self.assertIn("BLOCKED_CONFLICTING_OWNER_TRIAL_MARKER",prod)
-        self.assertIn("BLOCKED_CONFLICTING_FORMAL_RELEASE_MARKER",trial)
-        self.assertIn("[release-once]",prod)
-        self.assertIn("[p0-trial-once]",trial)
-        self.assertIn("DEPLOY_CODE_WITH_DISPATCH_AND_BYOK_DISABLED",prod)
-if __name__=="__main__": unittest.main()
+class ReleaseConcurrencyIsolation(unittest.TestCase):
+    def test_publish_smoke_candidate_and_production_release_cannot_cancel_each_other(self):
+        names={
+          'omniagent-ghcr-publish.yml':'omniagent-ghcr-publish',
+          'omniagent-ghcr-cloudrun-candidate.yml':'omniagent-ghcr-cloudrun-release',
+          'omniagent-ghcr-current-candidate-smoke.yml':'omniagent-ghcr-cloudrun-release',
+          'auto-release.yml':'auto-release',
+        }
+        for name,group in names.items():
+            source=(ROOT/name).read_text()
+            self.assertIn('  group: '+group,source,name)
+            self.assertIn('  cancel-in-progress: false',source,name)
+        self.assertNotEqual(names['auto-release.yml'],names['omniagent-ghcr-publish.yml'])
+        self.assertEqual(names['omniagent-ghcr-cloudrun-candidate.yml'],
+                         names['omniagent-ghcr-current-candidate-smoke.yml'])
+
+    def test_auto_release_accepts_only_successful_named_smoke_or_explicit_dispatch(self):
+        source=(ROOT/'auto-release.yml').read_text()
+        self.assertIn("workflows: ['omniAgent GHCR current candidate auto smoke']",source)
+        self.assertIn("github.event.workflow_run.conclusion == 'success'",source)
+        self.assertIn("github.event.workflow_run.head_branch == 'main'",source)
+        self.assertIn("github.event.workflow_run.head_repository.full_name == 'tommylin15/omniAgent'",source)
+        self.assertIn('scripts/ghcr_release_readiness.py',source)
+        self.assertIn('scripts/ghcr_one_shot_promotion.py',source)
+        self.assertIn('scripts/cloudrun_revision_retention.py',source)
+
+if __name__=='__main__': unittest.main()

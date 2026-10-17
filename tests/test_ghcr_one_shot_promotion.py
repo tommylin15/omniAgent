@@ -69,15 +69,5 @@ class OneShotReleaseTest(unittest.TestCase):
         with self.assertRaises(release.Blocked):
             release.plan(SHA, services, report)
 
-    def test_one_time_marker_required_in_workflow(self):
-        body = Path(".github/workflows/omniagent-ghcr-one-shot-release.yml").read_text()
-        self.assertIn("[release-once]", body)
-        self.assertIn("head_sha", body)
-        self.assertIn("concurrency:", body)
-        self.assertIn("--apply", body)
-        self.assertIn("scripts/cloudrun_revision_retention.py", body)
-        self.assertNotIn("workflow_dispatch:", body)
-
-
 if __name__ == "__main__":
     unittest.main()

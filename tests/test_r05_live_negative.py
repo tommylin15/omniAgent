@@ -18,12 +18,5 @@ class R05LiveNegativeSafety(unittest.TestCase):
                           "/internal/v1/chat/dispatch:once",
                           "/internal/v1/assistant/turn"):
             self.assertNotIn(forbidden, source)
-        workflow = Path(".github/workflows/omniagent-r05-live-negative.yml").read_text()
-        for required in ("workflow_run", "head_sha", "git ls-remote",
-                         "omniAgent GHCR current candidate auto smoke",
-                         "scripts/r05_live_auth_negative.py"):
-            self.assertIn(required,workflow)
-        self.assertNotIn("workflow_dispatch",workflow)
-
 if __name__ == "__main__":
     unittest.main()

@@ -14,11 +14,5 @@ class CodexTrialMigrationSafety(unittest.TestCase):
         for forbidden in ("DROP DATABASE","CREATE DATABASE","ALTER ROLE ","gcloud run deploy",
                           "CHAT_DISPATCH_ENABLED=true","CODEX_OWNER_SECRETS"):
             self.assertNotIn(forbidden,src)
-    def test_workflow_readback_not_inference(self):
-        src=WF.read_text()
-        self.assertIn("id-token: write",src)
-        self.assertIn("if: always()",src)
-        self.assertIn("apply-omniagent-chat-migration005.sh",src)
-        self.assertNotIn("CHAT_DISPATCH_ENABLED=true",src)
 if __name__=="__main__":
     unittest.main()

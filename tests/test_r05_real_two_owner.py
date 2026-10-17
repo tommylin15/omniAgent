@@ -82,11 +82,5 @@ class R05TwoOwner(unittest.TestCase):
         self.assertNotIn("secretmanager.versions.access",src)
         self.assertNotIn('"/messages"',src)
         self.assertNotIn("print(token",src)
-        workflow=Path(".github/workflows/omniagent-r05-real-two-owner.yml").read_text()
-        self.assertIn("R05_OWNER_A_GOOGLE_ID_TOKEN", workflow)
-        self.assertIn("R05_OWNER_B_GOOGLE_ID_TOKEN", workflow)
-        self.assertIn("scripts/r05_real_two_owner.py",workflow)
-        self.assertIn("git ls-remote",workflow)
-
 if __name__ == "__main__":
     unittest.main()
