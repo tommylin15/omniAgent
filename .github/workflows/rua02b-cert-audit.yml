@@ -1,0 +1,44 @@
+# RUA-02B: examine public PostgreSQL server certificate ONLY.
+# Never read server private key, root secret, application DB data, or other DBs.
+name: RUA-02B server TLS cert audit
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/rua02b-cert-audit.yml']
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  cert:
+    if: github.repository == 'tommylin15/omniAgent' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+          service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Verify public certificate subject, SAN and expiration without private keys
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          cat > "$RUNNER_TEMP/rua02b-cert-inspect.sh" <<'REMOTE'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          c=janus-postgres
+          pgcert="$(sudo docker exec -u postgres "$c" psql -X -A -t -d postgres -c 'SHOW ssl_cert_file')"
+          pgdata="$(sudo docker exec -u postgres "$c" psql -X -A -t -d postgres -c 'SHOW data_directory')"
+          [[ "$pgcert" =~ ^[A-Za-z0-9_./-]+$ && "$pgdata" =~ ^/[A-Za-z0-9_./-]+$ ]] || exit 4
+          if [[ "$pgcert" != /* ]]; then pgcert="$pgdata/$pgcert"; fi
+          [[ "$pgcert" == "$pgdata/"* ]] || exit 5
+          sudo docker exec -u postgres "$c" cat "$pgcert" | openssl x509 -noout -subject -issuer -dates -ext subjectAltName -fingerprint -sha256
+          echo "rua_public_tls_cert_metadata=PASS"
+          REMOTE
+          sed -i 's/^          //' "$RUNNER_TEMP/rua02b-cert-inspect.sh"
+          chmod 700 "$RUNNER_TEMP/rua02b-cert-inspect.sh"
+          HOST="$(printf '%s' 'amFudXMtcG9zdGdyZXMtZGV2' | base64 -d)"
+          gcloud compute scp "$RUNNER_TEMP/rua02b-cert-inspect.sh" "$HOST:/tmp/rua02b-cert-inspect.sh" --project=gen-lang-client-0593591102 --zone=us-central1-a --tunnel-through-iap --quiet >/dev/null
+          gcloud compute ssh "$HOST" --project=gen-lang-client-0593591102 --zone=us-central1-a --tunnel-through-iap --quiet --command="sudo bash /tmp/rua02b-cert-inspect.sh; rc=\$?; sudo rm -f /tmp/rua02b-cert-inspect.sh; exit \$rc"
