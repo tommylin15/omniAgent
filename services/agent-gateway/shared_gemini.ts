@@ -223,39 +223,42 @@ export function makeSharedGeminiHandler(options: Configuration = {}) {
     running++;
     const started = Date.now();
     const executionId = usage ? randomUUID() : "";
-    const capture = async (status:"completed"|"failed",providerTokens:number|null) => {
-      if (!usage) return;
+    // A 125ms fire-and-forget timeout silently lost the first production
+    // signed usage canary after Cloud Run suspended CPU. Wait for the DB
+    // acknowledgement, bounded to 1800ms, before responding. Provider output
+    // still succeeds if telemetry is unavailable; the status is explicit.
+    const capture = async (status:"completed"|"failed",providerTokens:number|null):
+      Promise<"persisted"|"unavailable"> => {
+      if (!usage) return "unavailable";
       try {
         await usage.record({executionId,project:body.project,ownerId:body.ownerId,
           requestId:body.requestId,model:body.model,status,providerTokens,
           durationMs:Math.max(0,Date.now()-started)});
+        return "persisted";
       } catch {
-        // Never change a Gemini business result or replay it because
-        // an independent analytics write failed. Alert on these logs;
-        // metrics coverage is then incomplete rather than "zero calls".
         console.warn(JSON.stringify({kind:"gateway_usage_capture",state:"unavailable",
           project:body.project}));
+        return "unavailable";
       }
     };
-    // Keep passive telemetry best-effort: bound its contribution to the
-    // consumer's response latency. Late inserts may be lost if Cloud Run
-    // suspends CPU after the response; log the coverage uncertainty.
-    const captureBounded = async (status:"completed"|"failed",tokens:number|null) => {
+    const captureBounded = async (status:"completed"|"failed",tokens:number|null):
+      Promise<"persisted"|"unavailable"|"deferred"> => {
       let timeout:ReturnType<typeof setTimeout>|undefined;
-      let timedOut=false;
-      const deadline=new Promise<void>(resolve=>{
-        timeout=setTimeout(()=>{timedOut=true;resolve();},125);
+      const deadline=new Promise<"deferred">(resolve=>{
+        timeout=setTimeout(()=>resolve("deferred"),1800);
       });
-      try { await Promise.race([capture(status,tokens),deadline]); }
-      finally { if(timeout)clearTimeout(timeout); }
-      if(timedOut)console.warn(JSON.stringify({
-        kind:"gateway_usage_capture",state:"deferred",project:body.project
-      }));
+      try {
+        const state=await Promise.race([capture(status,tokens),deadline]);
+        if(state==="deferred")console.warn(JSON.stringify({
+          kind:"gateway_usage_capture",state:"deferred",project:body.project
+        }));
+        return state;
+      } finally { if(timeout)clearTimeout(timeout); }
     };
     try {
       const answer = await generate(body.prompt,body.model,maxOutputTokens);
       assertSafeGeminiAnswer(answer,body.model);
-      await captureBounded("completed",answer.usage?.totalTokens ?? null);
+      const usageCapture=await captureBounded("completed",answer.usage?.totalTokens ?? null);
       if(quota){
         try{await quota.settle(body,"completed",answer.usage);}
         catch{return send(reply,503,{error:"quota_settlement_uncertain",requestId:body.requestId});}
@@ -264,10 +267,11 @@ export function makeSharedGeminiHandler(options: Configuration = {}) {
         status:"completed",model:answer.model,durationMs:Date.now()-started}));
       return send(reply,200,{status:"completed",project:body.project,ownerId:body.ownerId,
         requestId:body.requestId,model:answer.model,result:{text:answer.text},
-        ...(answer.usage?{usage:answer.usage}:{})});
+        ...(answer.usage?{usage:answer.usage}:{}),
+        ...(usage?{usageCapture}:{})});
     } catch (error) {
       const failure=classifyExecutionFailure(error);
-      await captureBounded("failed",null);
+      const usageCapture=await captureBounded("failed",null);
       if(quota){
         try{await quota.settle(body,"failed");}
         catch{return send(reply,503,{error:"quota_settlement_uncertain",requestId:body.requestId});}
@@ -281,7 +285,8 @@ export function makeSharedGeminiHandler(options: Configuration = {}) {
       return send(reply,failure.httpStatus,{status:"failed",requestId:body.requestId,error:code,
         ...(failure.httpStatus!==429 ? {reason:failure.reason}:{}),
         ...(failure.upstreamStatus ? {upstreamStatus:failure.upstreamStatus}:{}),
-        ...(failure.transient ? {transient:true}:{})});
+        ...(failure.transient ? {transient:true}:{}),
+        ...(usage?{usageCapture}:{})});
     } finally { running--; }
   };
 }
