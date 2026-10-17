@@ -237,10 +237,25 @@ export function makeSharedGeminiHandler(options: Configuration = {}) {
           project:body.project}));
       }
     };
+    // Keep passive telemetry best-effort: bound its contribution to the
+    // consumer's response latency. Late inserts may be lost if Cloud Run
+    // suspends CPU after the response; log the coverage uncertainty.
+    const captureBounded = async (status:"completed"|"failed",tokens:number|null) => {
+      let timeout:ReturnType<typeof setTimeout>|undefined;
+      let timedOut=false;
+      const deadline=new Promise<void>(resolve=>{
+        timeout=setTimeout(()=>{timedOut=true;resolve();},125);
+      });
+      try { await Promise.race([capture(status,tokens),deadline]); }
+      finally { if(timeout)clearTimeout(timeout); }
+      if(timedOut)console.warn(JSON.stringify({
+        kind:"gateway_usage_capture",state:"deferred",project:body.project
+      }));
+    };
     try {
       const answer = await generate(body.prompt,body.model,maxOutputTokens);
       assertSafeGeminiAnswer(answer,body.model);
-      await capture("completed",answer.usage?.totalTokens ?? null);
+      await captureBounded("completed",answer.usage?.totalTokens ?? null);
       if(quota){
         try{await quota.settle(body,"completed",answer.usage);}
         catch{return send(reply,503,{error:"quota_settlement_uncertain",requestId:body.requestId});}
@@ -252,7 +267,7 @@ export function makeSharedGeminiHandler(options: Configuration = {}) {
         ...(answer.usage?{usage:answer.usage}:{})});
     } catch (error) {
       const failure=classifyExecutionFailure(error);
-      await capture("failed",null);
+      await captureBounded("failed",null);
       if(quota){
         try{await quota.settle(body,"failed");}
         catch{return send(reply,503,{error:"quota_settlement_uncertain",requestId:body.requestId});}
