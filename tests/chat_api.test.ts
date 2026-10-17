@@ -166,10 +166,10 @@ describe("omniAgent Chat API ownership boundary", () => {
       headers:{Authorization:"Bearer service"}})).status).toBe(401);
     expect(await (await fetch(base+"/v1/me",{
       headers:{Authorization:"Bearer alice"}})).json()).toEqual({
-        ownerId:"owner-alice",modelDispatchEnabled:false,byokManagementEnabled:false});
+        ownerId:"owner-alice",modelDispatchEnabled:false,byokManagementEnabled:false,routerStatsEnabled:false});
     expect(await (await fetch(base+"/v1/me",{
       headers:{Authorization:"Bearer bob"}})).json()).toEqual({
-        ownerId:"owner-bob",modelDispatchEnabled:false,byokManagementEnabled:false});
+        ownerId:"owner-bob",modelDispatchEnabled:false,byokManagementEnabled:false,routerStatsEnabled:false});
   });
 
   it("reveals only verified Owner model entitlements and denies anonymous model inventory", async () => {
