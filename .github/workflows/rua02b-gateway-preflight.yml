@@ -1,0 +1,53 @@
+# RUA-02B read-only Gateway deployment and network preflight.
+name: RUA-02B Gateway deployment preflight
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/rua02b-gateway-preflight.yml']
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  inspect:
+    if: github.repository == 'tommylin15/omniAgent'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+          service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Inspect Gateway live source and egress without secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          gcloud run services describe omniagent-agent-gateway --project=gen-lang-client-0593591102 --region=us-central1 --format=json > "$RUNNER_TEMP/gateway.json"
+          python3 - "$RUNNER_TEMP/gateway.json" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1]))
+          traffic=[x for x in d.get('status',{}).get('traffic',[]) if x.get('percent',0)>0]
+          if len(traffic)!=1 or traffic[0].get('percent')!=100:
+              raise SystemExit('rua02b_live_traffic=UNEXPECTED')
+          spec=d['spec']['template']['spec']
+          c=spec['containers'][0]
+          env={x['name']:x for x in c.get('env',[])}
+          secret=(env.get('OMNIAGENT_PROVIDER_BUNDLE',{}).get('valueFrom') or {}).get('secretKeyRef') or {}
+          if (secret.get('name'),str(secret.get('key'))) != ('omniagent-bundle','latest'):
+              raise SystemExit('rua02b_existing_bundle_reference=BLOCKED')
+          if env.get('GEMINI_SHARED_USAGE_ENABLED',{}).get('value') == 'true':
+              raise SystemExit('rua02b_telemetry_already_enabled=REVIEW')
+          mode=env.get('GEMINI_SHARED_EXECUTION_ENABLED',{}).get('value','ABSENT')
+          network=spec.get('vpcAccess') or {}
+          ann=(d['spec'].get('template') or {}).get('metadata',{}).get('annotations',{})
+          direct=ann.get('run.googleapis.com/network-interfaces','')
+          connector=ann.get('run.googleapis.com/vpc-access-connector','')
+          print('rua02b_live_gateway_image_ghcr='+str(c.get('image','')).startswith('ghcr.io/tommylin15/omniagent-agent-gateway@sha256:').__str__().upper())
+          print('rua02b_live_traffic=100_UNCHANGED')
+          print('rua02b_existing_bundle_reference=PASS')
+          print('rua02b_shared_execution='+mode)
+          print('rua02b_network_config='+('DIRECT' if direct else 'CONNECTOR' if connector else 'VPC_ACCESS' if network else 'NOT_CONFIGURED'))
+          print('rua02b_gateway_runtime_service_account='+('PRESENT' if spec.get('serviceAccountName') else 'ABSENT'))
+          print('rua02b_live_telemetry=DISABLED')
+          PY
