@@ -2,8 +2,12 @@
 # This deliberately does not enable PostgreSQL role LOGIN, update pg_hba,
 # set Cloud Run env flags, or promote any formal service traffic.
 name: RUA-02B existing bundle merge
-# Manual gate: do not repeatedly attempt denied IAM writes on ordinary pushes.
+# One-shot controlled run after verified secret-scoped IAM grant.
+# Push path is restricted to this workflow; restore manual-only after readback.
 on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/rua02b-existing-bundle.yml']
   workflow_dispatch:
 permissions:
   contents: read
