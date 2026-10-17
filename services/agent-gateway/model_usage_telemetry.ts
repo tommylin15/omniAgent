@@ -6,6 +6,7 @@
  */
 import { isIP } from "node:net";
 import { Pool, type PoolConfig } from "pg";
+import { routerUsageBundleConnection } from "./router_usage_bundle.js";
 
 export type GatewayUsageReceipt = Readonly<{
   executionId:string; project:string; ownerId:string; requestId:string;
@@ -17,9 +18,13 @@ export interface GatewayUsageRecorder {
 }
 
 export function createUsagePool(env:NodeJS.ProcessEnv):Pool {
-  const dsn=env.GEMINI_SHARED_USAGE_DATABASE_URL;
-  const ca=env.GEMINI_SHARED_USAGE_CA_PEM;
-  const tlsServername=env.GEMINI_SHARED_USAGE_TLS_SERVERNAME;
+  const bundle=routerUsageBundleConnection(env.OMNIAGENT_PROVIDER_BUNDLE,"writer");
+  if(bundle && (env.GEMINI_SHARED_USAGE_DATABASE_URL ||
+       env.GEMINI_SHARED_USAGE_CA_PEM || env.GEMINI_SHARED_USAGE_TLS_SERVERNAME))
+    throw Error("gateway_usage_conflicting_configuration");
+  const dsn=bundle?.databaseUrl ?? env.GEMINI_SHARED_USAGE_DATABASE_URL;
+  const ca=bundle?.caPem ?? env.GEMINI_SHARED_USAGE_CA_PEM;
+  const tlsServername=bundle?.tlsServername ?? env.GEMINI_SHARED_USAGE_TLS_SERVERNAME;
   let url:URL;
   try { url=new URL(dsn||""); }
   catch {throw Error("gateway_usage_verified_tls_required");}
