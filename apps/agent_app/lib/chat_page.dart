@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import 'chat_api.dart';
 import 'model_catalog.dart';
+import 'router_usage_page.dart';
 import 'omni_theme.dart';
 import 'twin_beast_mascot.dart';
 
@@ -39,6 +40,7 @@ class _ChatPageState extends State<ChatPage> {
   bool pendingUnknown=false;
   Map<String, List<String>>? entitledModels;
   String? authenticatedOwnerId;
+  bool routerStatsEnabled=false;
 
   @override
   void initState() {
@@ -55,7 +57,10 @@ class _ChatPageState extends State<ChatPage> {
           RegExp(r'^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$')
               .hasMatch(value);
       if (mounted && valid) {
-        setState(() => authenticatedOwnerId = value);
+        setState(() {
+          authenticatedOwnerId = value;
+          routerStatsEnabled = result['routerStatsEnabled'] == true;
+        });
       }
     } catch (_) {
       // No Owner ID without a verified OAuth-bound backend response.
@@ -606,6 +611,14 @@ class _ChatPageState extends State<ChatPage> {
                   tooltip: '複製 Owner ID',
                   onPressed: copyAuthenticatedOwner,
                   icon: const Icon(Icons.badge_outlined),
+                ),
+              if (routerStatsEnabled)
+                IconButton(
+                  tooltip: 'AI Router 使用統計',
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(builder: (_) =>
+                      RouterUsagePage(widget.api))),
+                  icon: const Icon(Icons.query_stats_rounded),
                 ),
               IconButton(
                 tooltip: '重新載入事件',

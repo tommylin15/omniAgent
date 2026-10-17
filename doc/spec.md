@@ -324,3 +324,7 @@ public GHCR digests; WIF/IAM; 0%-candidate revisions/readbacks; live integration
 and real recovery; protected traffic/rollback readback; only then verified
 retirement of old push/release Cloud Build triggers. The 2026-10-14 P0-V Gateway-only production release and separate 10/10/10 revision-retention operation have runtime PASS evidence, but full Chat feature acceptance is PARTIAL. Current status lives in `doc/todo.md`; this SPEC describes future release requirements, not an unsatisfied historical migration. [New runbook](../docs/cicd-ghcr-actions-runbook.md),
 [acceptance](acceptance.md), and [TODO](todo.md) govern execution.
+
+### FR — AI Router usage war room (RUA)
+
+Admin-only, opt-in router usage analytics must follow [AI Router Analytics](../docs/ai-router-analytics.md). It is **not** proof of a billable provider invocation when sourced from Chat turns. Gateway Gemini ledger is request-ID deduped, with only successfully reserved requests; pre-reservation denials are excluded. Missing tokens, pricing and sources are explicit null/unavailable. Project+Owner identity is composite. Backend verified OAuth Owner UUID allowlist, bounded 1/7/30 UTC day queries, separate readonly Gateway DB privilege, and no prompts/secrets are mandatory. Cross-source totals remain disabled until a canonical execution ID is accepted.

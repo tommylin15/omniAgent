@@ -33,3 +33,5 @@ When sources conflict, cite both, explain dates and gaps. Missing evidence is NO
 PostgreSQL/omni_chat owns live Owner/thread/turn/event/approval state. GCS artifacts and Iceberg/BigLake archival are unaccepted target design. Direct Groq adapter source exists but Chat end-to-end integration is open. BYOK management and Chat production model Dispatch are separate opt-in gates. Shared Gateway caller identity does not substitute for each consumer's end-user authorization.
 
 **Completion** requires implementation → tests → CI → deployment → runtime/integration evidence. Manual Google OAuth sign-in acceptance is NOT_REQUIRED; valid automated OAuth/JWT/IAM/Owner authorization tests remain mandatory.
+
+Additional feature contract: [AI Router 戰情室](../docs/ai-router-analytics.md), including source provenance, admin-only API, UI controls and release gates. Its existence in source does not establish deployed availability.

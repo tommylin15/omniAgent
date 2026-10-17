@@ -7,6 +7,7 @@ import { ChatConflict, ChatNotFound, type ChatStore, type ThreadInput } from "./
 import type { ChatDispatcher } from "./gateway_dispatch.js";
 import type { CredentialManager } from "./credential_management.js";
 import { isAllowedGeminiModel } from "./model_entitlements.js";
+import { parseUsageDays, type RouterUsageStats } from "./router_usage.js";
 
 export type Principal = { issuer: string; subject: string };
 export type VerifyUser = (token: string) => Promise<Principal>;
@@ -109,7 +110,8 @@ function threadInput(value: Record<string, unknown>): ThreadInput {
 
 export function makeChatServer(store: ChatStore, verifyUser: VerifyUser, verifyService: VerifyService,
                                dispatcher?: Pick<ChatDispatcher,"runOnce"> & Partial<Pick<ChatDispatcher,"canDispatch" | "inspectRunningCandidates" | "availableModels" | "continueCodex">>,
-                               credentials?: Pick<CredentialManager,"create" | "list" | "revoke">) {
+                               credentials?: Pick<CredentialManager,"create" | "list" | "revoke">,
+                               usage?: { stats: RouterUsageStats; admins: ReadonlySet<string> }) {
   return createServer(async (request, response) => {
     const requestId=randomUUID();
     response.setHeader("X-OmniAgent-Request-Id",requestId);
@@ -161,12 +163,23 @@ export function makeChatServer(store: ChatStore, verifyUser: VerifyUser, verifyS
       }
       const principal = await verifyUser(token);
       const ownerId = await store.owner(principal.issuer,principal.subject);
+      if (request.method === "GET" && url.pathname === "/v1/admin/router-usage") {
+        if (!usage) return send(response,404,{error:"not_found"});
+        if (!usage.admins.has(ownerId.toLowerCase()))
+          return send(response,403,{error:"forbidden"});
+        let days:1|7|30;
+        try { days=parseUsageDays(url.searchParams.get("days")); }
+        catch { throw new InvalidRequest("invalid usage range"); }
+        // Bounded read-only queries; never return raw prompts or secrets.
+        return send(response,200,await usage.stats.read(days));
+      }
       if (request.method === "GET" && url.pathname === "/v1/me") {
         // Owner UUID comes from the authenticated DB mapping, never from the
         // client. It is a locator for configuring entitlements, not a secret.
         return send(response,200,{ownerId,modelDispatchEnabled:
           (dispatcher?.availableModels?.(ownerId)?.length ?? 0) > 0,
-          byokManagementEnabled:Boolean(credentials)});
+          byokManagementEnabled:Boolean(credentials),
+          routerStatsEnabled:Boolean(usage?.admins.has(ownerId.toLowerCase()))});
       }
       if (request.method === "GET" && url.pathname === "/v1/models") {
         const items = dispatcher?.availableModels?.(ownerId) ?? [];

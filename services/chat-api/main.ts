@@ -10,6 +10,7 @@ import { CredentialManager, CredentialRegistry } from "./credential_management.j
 import { GoogleSecretManagerVault } from "./credential_vault.js";
 import { chatDatabasePoolConfig, chatDatabaseUrl, chatDatabaseTrustAnchor } from "./database.js";
 import { parseChatDispatchBudget } from "./dispatch_budget.js";
+import { RouterUsageStats,parseUsageAdmins } from "./router_usage.js";
 
 const dsn = chatDatabaseUrl(process.env);
 const userAudience = process.env.OMNIAGENT_GOOGLE_CLIENT_ID;
@@ -80,6 +81,23 @@ if (process.env.CHAT_BYOK_MANAGEMENT_ENABLED === "true") {
   credentials = new CredentialManager(new CredentialRegistry(pool),
     new GoogleSecretManagerVault(project));
 }
+// Router analytics is opt-in and restricted to explicit DB-derived Owner UUIDs.
+ // Gateway ledger connection MUST use a separate PostgreSQL SELECT-only role;
+ // it is not the Gateway's quota writer credential.
+const usageEnabled=process.env.ROUTER_USAGE_ENABLED==="true";
+const usageAdmins=usageEnabled
+  ? parseUsageAdmins(process.env.ROUTER_USAGE_ADMIN_OWNER_IDS??"") : undefined;
+const ledgerDsn=process.env.ROUTER_USAGE_GATEWAY_DATABASE_URL;
+const ledgerCa=process.env.ROUTER_USAGE_GATEWAY_CA_PEM;
+if(usageEnabled && Boolean(ledgerDsn)!==Boolean(ledgerCa))
+  throw new Error("router usage gateway read-only connection is incomplete");
+const ledgerPool=usageEnabled && ledgerDsn && ledgerCa
+  ? new Pool(chatDatabasePoolConfig(ledgerDsn,"verified-ca",ledgerCa,
+      process.env.ROUTER_USAGE_GATEWAY_TLS_SERVERNAME)) : undefined;
+const usage=usageAdmins?{admins:usageAdmins,stats:new RouterUsageStats(
+  {query:(sql,params)=>pool.query(sql,params)},
+  ledgerPool?{query:(sql,params)=>ledgerPool.query(sql,params)}:undefined)}:undefined;
+
 const server = makeChatServer(store,
   async (token) => {
     try {
@@ -95,7 +113,9 @@ const server = makeChatServer(store,
         throw new Error("unauthorized");
       }
     } catch { throw new Error("unauthorized"); }
-  }, dispatcher, credentials);
+  }, dispatcher, credentials, usage);
 
 server.listen(Number(process.env.PORT ?? "8080"),"0.0.0.0");
-process.once("SIGTERM",() => server.close(() => void pool.end()));
+process.once("SIGTERM",() => server.close(() => {
+  void Promise.all([pool.end(),...(ledgerPool?[ledgerPool.end()]:[])]);
+}));
