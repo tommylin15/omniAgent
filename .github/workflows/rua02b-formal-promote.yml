@@ -1,0 +1,42 @@
+# Explicit owner authorization: move only omniagent-agent-gateway to the
+# already deployed RUA-02B candidate, before signed model usage readback.
+# Fail closed and restore old 100% revision on missing DB/provider evidence.
+name: RUA-02B formal Gateway telemetry promotion
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/rua02b-formal-promote.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: omniagent-gateway-formal-traffic-change
+  cancel-in-progress: false
+jobs:
+  promote:
+    if: github.repository == 'tommylin15/omniAgent' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify exact HEAD and bounded source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git ls-remote https://github.com/tommylin15/omniAgent.git refs/heads/main | cut -f1)" = "$GITHUB_SHA"
+          python3 -m py_compile scripts/rua02b_production_promote.py
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+          service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Switch Gateway 100 percent, then signed usage and DB readback; rollback on failure
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +x
+          test "$(git ls-remote https://github.com/tommylin15/omniAgent.git refs/heads/main | cut -f1)" = "$GITHUB_SHA"
+          PYTHONPATH=scripts python3 scripts/rua02b_production_promote.py
