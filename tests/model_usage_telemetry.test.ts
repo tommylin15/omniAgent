@@ -1,5 +1,6 @@
 import { describe,expect,it,vi } from "vitest";
 import { createUsagePool,PgGatewayUsageRecorder } from "../services/agent-gateway/model_usage_telemetry.js";
+import { routerUsageBundleConnection } from "../services/agent-gateway/router_usage_bundle.js";
 
 const row={
   executionId:"00000000-0000-4000-8000-000000000003",
@@ -37,5 +38,31 @@ describe("passive Gateway analytics",()=>{
     await expect(writer.record({...row,durationMs:-1})).rejects.toThrow();
     await expect(writer.record({...row,providerTokens:-1})).rejects.toThrow();
     expect(query).not.toHaveBeenCalled();
+  });
+});
+
+describe("existing shared omniagent-bundle RUA-02B selection",()=>{
+  const writer="postgresql://omniagent_usage_writer:fake@10.1.2.3:5432/omniagent_gateway?sslmode=require";
+  const reader="postgresql://omniagent_usage_reader:fake@10.1.2.3:5432/omniagent_gateway?sslmode=require";
+  const ca="-----BEGIN CERTIFICATE-----\\nZHVtbXk=\\n-----END CERTIFICATE-----";
+  const raw=JSON.stringify({gemini_api_key:"existing",
+    router_usage:{writer_database_url:writer,reader_database_url:reader,ca_pem:ca,tls_servername:"janus-postgres-dev"}});
+  it("reads only role-specific DSN and no secret values in errors",()=>{
+    expect(routerUsageBundleConnection(raw,"reader")?.databaseUrl).toBe(reader);
+    expect(routerUsageBundleConnection(raw,"writer")?.databaseUrl).toBe(writer);
+    expect(routerUsageBundleConnection("{}","reader")).toBeUndefined();
+    expect(()=>routerUsageBundleConnection("{bad","writer")).toThrow("router_usage_bundle_invalid");
+    expect(()=>routerUsageBundleConnection(JSON.stringify({router_usage:{writer_database_url:reader}}),"writer"))
+      .toThrow("router_usage_bundle_invalid");
+  });
+  it("uses Writer identity for Gateway and rejects mixed env override",()=>{
+    const pool=createUsagePool({OMNIAGENT_PROVIDER_BUNDLE:raw});
+    expect(pool.options.ssl).toMatchObject({rejectUnauthorized:true,servername:"janus-postgres-dev"});
+    expect(pool.options.connectionString).toContain("omniagent_usage_writer");
+    expect(pool.options.connectionString).not.toContain("sslmode");
+    void pool.end();
+    expect(()=>createUsagePool({OMNIAGENT_PROVIDER_BUNDLE:raw,
+      GEMINI_SHARED_USAGE_DATABASE_URL:writer}))
+      .toThrow("gateway_usage_conflicting_configuration");
   });
 });
