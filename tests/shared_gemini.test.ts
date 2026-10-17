@@ -296,6 +296,27 @@ describe("Shared Gateway Gemini vertical slice",()=>{
       expect(String(warn.mock.calls[0][0])).not.toContain("DB credential value");
     } finally {warn.mockRestore();}
   });
+  it("does not wait on a stalled analytics writer before returning Gemini",async()=>{
+    const warn=vi.spyOn(console,"warn").mockImplementation(()=>undefined);
+    let release:()=>void=()=>undefined;
+    const usage={record:vi.fn(()=>new Promise<void>(resolve=>{release=resolve;}))};
+    try{
+      const url=await serve(makeSharedGeminiHandler({
+        env:{...env,GEMINI_SHARED_USAGE_ENABLED:"true"},usage,
+        verify:async()=>sa.omniagent,generate:async()=>answer
+      }));
+      const started=Date.now();
+      const response=await post(url,base);
+      expect(response.status).toBe(200);
+      expect((await response.json()).result).toEqual({text:"OK"});
+      expect(Date.now()-started).toBeLessThan(1200);
+      expect(usage.record).toHaveBeenCalledOnce();
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('"state":"deferred"'));
+    }finally{
+      release();
+      warn.mockRestore();
+    }
+  });
   it("fails closed without exposing private output/provider exceptions",async()=>{
     const verify=vi.fn(async()=>sa.omniagent);
     const generate=vi.fn().mockRejectedValueOnce(new GeminiProviderError("quota",429))
