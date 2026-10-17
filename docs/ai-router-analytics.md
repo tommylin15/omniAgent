@@ -200,3 +200,13 @@ passive event rows as quota reservations: passive counts actual server execution
 IDs and explicitly warns about possible dropped DB writes. Owner IDs in these
 rows are asserted by each IAM-authenticated project consumer, not independently
 human-OAuth verified. The disabled/unavailable state is never treated as zero.
+
+## RUA-02B credential-source correction (2026-10-17)
+
+**Authoritative source: the pre-existing Secret Manager `omniagent-bundle`, not three dedicated Secret resources.** The failed three-secret workflow has been deleted. Existing provider keys and the Chat signing key must survive byte-for-byte as JSON values; do not recreate, rotate or print them. The append-only one-shot `.github/workflows/rua02b-existing-bundle.yml` invokes `infra/gcp/rua02b-existing-bundle.sh`, which validates the active Chat DB endpoint, verifies the existing pinned PostgreSQL public cert and its DNS identity, uses `merge-router-usage-bundle.py` to add the nested `router_usage` object, appends a version to **the same** secret, and compares readback without exposing values.
+
+`router_usage` includes `writer_database_url`, `reader_database_url`, `ca_pem` and `tls_servername`. The Gateway reads only the writer connection through `OMNIAGENT_PROVIDER_BUNDLE` and the Chat admin read API selects the reader through `OMNIAGENT_BUNDLE` when source is passive. Existing quota or legacy env paths stay gated, and conflicts fail closed. SQL grants remain isolated: writer INSERT-columns-only, reader SELECT-only.
+
+**Security exception:** the single shared Secret payload contains both DSNs, and both runtimes may technically read both. This is NOT independent Secret-level credential isolation; service code selects by role and PostgreSQL enforces scoped SQL privileges, but a compromised runtime with bundle access may extract the other role's password. Re-evaluate the boundary before multi-tenant or sensitive production analytics. Do not claim full least-privilege separation.
+
+**Remaining runtime gates:** adding a bundle version does not enable `NOLOGIN` PostgreSQL roles, `pg_hba`, `GEMINI_SHARED_USAGE_ENABLED`, or Chat passive mode; validate connection and runtime service 401/403/200 plus actual events before RUA-02 DONE. No extra Gemini calls should be triggered merely to populate analytics.
