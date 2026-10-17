@@ -1,0 +1,41 @@
+# RUA-02B: one-shot append to EXISTING omniagent-bundle, not a new Secret.
+# This deliberately does not enable PostgreSQL role LOGIN, update pg_hba,
+# set Cloud Run env flags, or promote any formal service traffic.
+name: RUA-02B existing bundle merge
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/rua02b-existing-bundle.yml']
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: omniagent-rua02b-existing-bundle
+  cancel-in-progress: false
+jobs:
+  merge:
+    if: github.repository == 'tommylin15/omniAgent' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify exact source, tool syntax, and immutable migrations
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git ls-remote https://github.com/tommylin15/omniAgent.git refs/heads/main | cut -f1)" = "$GITHUB_SHA"
+          bash -n infra/gcp/rua02b-existing-bundle.sh
+          python3 -m unittest discover -s tests -p 'test_merge_router_usage_bundle.py'
+          test -s infra/postgres/migrations/008_router_usage_telemetry.sql
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+          service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Append guarded RUA section to the existing bundle (no new Secret)
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +x
+          bash infra/gcp/rua02b-existing-bundle.sh
