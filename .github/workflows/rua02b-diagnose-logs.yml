@@ -19,12 +19,36 @@ jobs:
           workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
           service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
       - uses: google-github-actions/setup-gcloud@v2
+      - name: Compare real Gateway subnet and dedicated DB hostssl reachability scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          gcloud compute networks subnets describe janusai-lake-poc-uscentral1 --project=gen-lang-client-0593591102 --region=us-central1 --format=json > "$RUNNER_TEMP/subnet.json"
+          gcloud compute ssh janus-postgres-dev --project=gen-lang-client-0593591102 --zone=us-central1-a --tunnel-through-iap --quiet --command="sudo docker exec -u postgres janus-postgres psql -X -A -F '|' -t -v ON_ERROR_STOP=1 -d postgres -c \"SELECT address,netmask FROM pg_hba_file_rules WHERE type='hostssl' AND database @> ARRAY['omniagent_gateway'] AND user_name @> ARRAY['omniagent_usage_writer'] AND error IS NULL\"" > "$RUNNER_TEMP/hba.txt"
+          python3 - "$RUNNER_TEMP/subnet.json" "$RUNNER_TEMP/hba.txt" <<'PY'
+          import json,ipaddress,sys
+          subnet=ipaddress.ip_network(json.load(open(sys.argv[1]))['ipCidrRange'],strict=False)
+          networks=[]
+          for line in open(sys.argv[2]):
+              parts=line.strip().split('|')
+              if len(parts)!=2:continue
+              try:
+                  if parts[1]:
+                      n=ipaddress.ip_network(parts[0]+'/'+parts[1],strict=False)
+                  else:
+                      n=ipaddress.ip_network(parts[0],strict=False)
+                  networks.append(n)
+              except ValueError:continue
+          print('rua02b_direct_vpc_subnet='+str(subnet))
+          print('rua02b_scoped_writer_hba_count='+str(len(networks)))
+          print('rua02b_writer_hba_accepts_gateway_subnet='+str(any(subnet.subnet_of(net) for net in networks)).upper())
+          PY
       - name: Read only bounded Gateway usage-capture diagnostics
         shell: bash
         run: |
           set -euo pipefail
           gcloud logging read 'resource.type="cloud_run_revision" AND resource.labels.service_name="omniagent-agent-gateway" AND resource.labels.revision_name="omniagent-agent-gateway-00107-doy"' \
-            --project=gen-lang-client-0593591102 --freshness=2h --limit=100 --format=json > "$RUNNER_TEMP/logs.json"
+            --project=gen-lang-client-0593591102 --freshness=2h --limit=100 --format=json > "$RUNNER_TEMP/logs.json" 2>/dev/null || { echo 'rua02b_logging_read=PERMISSION_DENIED'; echo '[]' > "$RUNNER_TEMP/logs.json"; }
           python3 - "$RUNNER_TEMP/logs.json" <<'PY'
           import json,sys
           rows=json.load(open(sys.argv[1]))
