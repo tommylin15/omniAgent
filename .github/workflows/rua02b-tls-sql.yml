@@ -1,0 +1,86 @@
+# RUA-02B proof only: no Gemini calls and no persistent telemetry rows.
+name: RUA-02B verified TLS and scoped SQL
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/rua02b-tls-sql.yml']
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  probe:
+    if: github.repository == 'tommylin15/omniAgent' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pin main and validate script
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git ls-remote https://github.com/tommylin15/omniAgent.git refs/heads/main | cut -f1)" = "$GITHUB_SHA"
+          bash -n infra/gcp/rua02b-tls-sql-probe.sh
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+          service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Verify credentials and public trust anchor without logging values
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +x
+          umask 077
+          d="$RUNNER_TEMP/rua02b-tls"
+          mkdir -m 700 "$d"
+          gcloud secrets versions access latest --secret=omniagent-bundle --project=gen-lang-client-0593591102 --out-file="$d/bundle.json" >/dev/null
+          python3 - "$d" <<'PY'
+          import json,sys,re
+          from pathlib import Path
+          from urllib.parse import urlsplit,unquote,parse_qs
+          p=Path(sys.argv[1])
+          b=json.loads((p/'bundle.json').read_text())
+          u=b.get('router_usage')
+          if not isinstance(u,dict) or u.get('tls_servername')!='janus-postgres-dev':
+              raise SystemExit('rua02b_bundle_identity=BLOCKED')
+          old=urlsplit(b.get('chat_database_url',''))
+          if old.username!='omniagent_chat_app' or old.path!='/omniagent_chat':
+              raise SystemExit('rua02b_existing_endpoint=BLOCKED')
+          for role in ('writer','reader'):
+              v=urlsplit(u.get(role+'_database_url',''))
+              pw=unquote(v.password or '')
+              if (v.scheme not in ('postgres','postgresql') or
+                  v.username!='omniagent_usage_'+role or
+                  v.hostname!=old.hostname or v.path!='/omniagent_gateway' or
+                  (v.port or 5432)!=5432 or parse_qs(v.query)!={'sslmode':['require']} or
+                  not re.fullmatch('[a-f0-9]{64}',pw)):
+                  raise SystemExit('rua02b_role_endpoint=BLOCKED')
+              (p/(role+'.pw')).write_text(pw)
+          ca=u.get('ca_pem')
+          if not isinstance(ca,str) or '-----BEGIN CERTIFICATE-----' not in ca:
+              raise SystemExit('rua02b_tls_anchor=BLOCKED')
+          (p/'ca.pem').write_text(ca)
+          print('RUA02B_BUNDLE_ROLE_SCOPE=PASS')
+          PY
+          rm -f "$d/bundle.json"
+          fingerprint="$(openssl x509 -in "$d/ca.pem" -noout -fingerprint -sha256 | sed 's/^.*=//')"
+          test "$fingerprint" = '5F:16:D1:58:31:AA:50:FA:4A:EF:09:08:7F:1A:70:5D:96:DA:90:CF:23:3C:FF:AE:16:7B:D7:CD:E9:47:25:56'
+          openssl x509 -in "$d/ca.pem" -noout -checkhost janus-postgres-dev | grep -q 'does match'
+          echo 'RUA02B_TLS_PIN=PASS'
+      - name: Execute actual TLS positive/negative and writer/reader SQL boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +x
+          umask 077
+          HOST=janus-postgres-dev
+          d="$RUNNER_TEMP/rua02b-tls"
+          remote="/tmp/rua02b-tls-$GITHUB_RUN_ID"
+          gcloud compute ssh "$HOST" --project=gen-lang-client-0593591102 --zone=us-central1-a --tunnel-through-iap --quiet --command="umask 077; mkdir -m 700 $remote" >/dev/null
+          for i in 1 2 3; do
+            if gcloud compute scp "$d/writer.pw" "$d/reader.pw" "$d/ca.pem" infra/gcp/rua02b-tls-sql-probe.sh "$HOST:$remote/" --project=gen-lang-client-0593591102 --zone=us-central1-a --tunnel-through-iap --quiet >/dev/null; then break; fi
+            test "$i" != 3
+            sleep $((i*4))
+          done
+          gcloud compute ssh "$HOST" --project=gen-lang-client-0593591102 --zone=us-central1-a --tunnel-through-iap --quiet --command="sudo bash $remote/rua02b-tls-sql-probe.sh $remote; rc=\$?; rm -rf $remote; exit \$rc"
