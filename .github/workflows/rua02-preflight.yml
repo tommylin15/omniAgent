@@ -1,0 +1,111 @@
+# RUA-02: one-shot read-only proof of runtime wiring readiness.
+# Never dump secrets, human subjects, prompt, raw ledger rows, or identities.
+name: RUA-02 preflight
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/rua02-preflight.yml']
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: omniagent-rua02-preflight
+  cancel-in-progress: false
+jobs:
+  inspect:
+    if: github.repository == 'tommylin15/omniAgent' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+          service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Inspect the three exact 100% live service revisions (metadata only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          for svc in omniagent-chat omniagent-agent-gateway; do
+            gcloud run services describe "$svc" --project=gen-lang-client-0593591102 --region=us-central1 --format=json > "$RUNNER_TEMP/$svc-service.json"
+            name="$(python3 - "$RUNNER_TEMP/$svc-service.json" <<'PY'
+          import json,sys
+          s=json.load(open(sys.argv[1]))['status']
+          active=[e for e in s['traffic'] if e.get('percent',0)>0]
+          if len(active)!=1 or active[0]['percent']!=100: raise SystemExit('RUA_BLOCKED_NOT_SINGLE_100_PERCENT')
+          if active[0].get('revisionName')!=s.get('latestReadyRevisionName'): raise SystemExit('RUA_BLOCKED_LIVE_NOT_READY')
+          print(active[0]['revisionName'])
+          PY
+          )"
+            gcloud run revisions describe "$name" --project=gen-lang-client-0593591102 --region=us-central1 --format=json > "$RUNNER_TEMP/$svc-live.json"
+          done
+          python3 - "$RUNNER_TEMP" <<'PY'
+          from pathlib import Path
+          import json,sys
+          root=Path(sys.argv[1])
+          for svc in ('omniagent-chat','omniagent-agent-gateway'):
+            obj=json.loads((root/(svc+'-live.json')).read_text())
+            service=json.loads((root/(svc+'-service.json')).read_text())
+            container=((obj.get('spec') or {}).get('containers') or [{}])[0]
+            items={x.get('name'):x for x in container.get('env') or []}
+            selected=(
+              ('ROUTER_USAGE_ENABLED','ROUTER_USAGE_ADMIN_OWNER_IDS',
+                'ROUTER_USAGE_GATEWAY_DATABASE_URL','ROUTER_USAGE_GATEWAY_CA_PEM',
+                'ROUTER_USAGE_GATEWAY_TLS_SERVERNAME')
+              if svc=='omniagent-chat' else
+              ('GEMINI_SHARED_LEDGER_DATABASE_URL','GEMINI_SHARED_LEDGER_CA_PEM',
+                'GEMINI_SHARED_LEDGER_TLS_SERVERNAME','GEMINI_SHARED_EXECUTION_ENABLED')
+            )
+            status={}
+            for key in selected:
+              e=items.get(key)
+              if e is None: status[key]='ABSENT'
+              elif e.get('valueFrom',{}).get('secretKeyRef'): status[key]='SECRET_REF'
+              elif 'value' in e: status[key]='PRESENT_LITERAL_REDACTED'
+              else: status[key]='UNKNOWN'
+            print(json.dumps({'service':svc,'revision':obj['metadata']['name'],
+              'flags':status,'runtime_sa_present':bool((obj.get('spec') or {}).get('serviceAccountName'))},
+              sort_keys=True))
+          PY
+      - name: Inspect ONLY omniAgent databases and known human Owner mapping
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          HOST="$(printf '%s' 'amFudXMtcG9zdGdyZXMtZGV2' | base64 -d)"
+          CONTAINER="$(printf '%s' 'amFudXMtcG9zdGdyZXM=' | base64 -d)"
+          cat > "$RUNNER_TEMP/rua02-db-inspect.sh" <<'REMOTE'
+          #!/bin/bash
+          set -euo pipefail
+          C="$(printf '%s' 'amFudXMtcG9zdGdyZXM=' | base64 -d)"
+          pg() { sudo docker exec -u postgres "$C" psql -X -A -t -v ON_ERROR_STOP=1 "$@"; }
+          while IFS= read -r db; do
+            [[ "$db" =~ ^omniagent_[a-z0-9_]+$ ]] || exit 12
+            echo "rua_database=$db:PRESENT"
+            if [[ "$db" == omniagent_chat ]]; then
+              pg -d "$db" -c "BEGIN READ ONLY;
+                SET LOCAL ROLE omniagent_chat_app;
+                SELECT 'owner_mapping_valid=' ||
+                  CASE WHEN EXISTS(
+                    SELECT 1 FROM omni_chat.owners
+                    WHERE owner_id='8b330f02-639d-4284-9e79-b2f183f74d06'
+                    AND issuer IN ('https://accounts.google.com','accounts.google.com')
+                    AND length(subject)>0
+                  ) THEN 'YES' ELSE 'NO' END;
+                COMMIT;" | grep '^owner_mapping_valid='
+            fi
+            if [[ "$db" != omniagent_chat ]]; then
+              pg -d "$db" -c "BEGIN READ ONLY;
+                SELECT 'gateway_ledger_relation=' ||
+                  CASE WHEN to_regclass('omni_gateway.model_execution_ledger') IS NOT NULL
+                    THEN 'PRESENT' ELSE 'ABSENT' END;
+                COMMIT;" | grep '^gateway_ledger_relation='
+            fi
+          done < <(pg -d postgres -c "SELECT datname FROM pg_database WHERE datname LIKE 'omniagent_%' ORDER BY 1")
+          REMOTE
+          sed -i 's/^          //' "$RUNNER_TEMP/rua02-db-inspect.sh"
+          chmod 700 "$RUNNER_TEMP/rua02-db-inspect.sh"
+          gcloud compute scp "$RUNNER_TEMP/rua02-db-inspect.sh" "$HOST:/tmp/rua02-db-inspect.sh" --project=gen-lang-client-0593591102 --zone=us-central1-a --tunnel-through-iap --quiet >/dev/null
+          gcloud compute ssh "$HOST" --project=gen-lang-client-0593591102 --zone=us-central1-a --tunnel-through-iap --quiet --command="sudo bash /tmp/rua02-db-inspect.sh; rc=\$?; sudo rm -f /tmp/rua02-db-inspect.sh; exit \$rc"
