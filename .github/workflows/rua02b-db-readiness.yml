@@ -1,0 +1,73 @@
+# RUA-02B sensitive configuration readiness WITHOUT secret payloads or DB writes.
+name: RUA-02B DB readiness
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/rua02b-db-readiness.yml']
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  inspect:
+    if: github.repository == 'tommylin15/omniAgent' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+          service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Check only live omniAgent environment flags (never values)
+        shell: bash
+        run: |
+          set -euo pipefail
+          for svc in omniagent-chat omniagent-agent-gateway; do
+            gcloud run services describe "$svc" --project=gen-lang-client-0593591102 --region=us-central1 --format=json > "$RUNNER_TEMP/$svc.json"
+            rev="$(python3 - "$RUNNER_TEMP/$svc.json" <<'PY'
+          import json,sys
+          s=json.load(open(sys.argv[1]))['status']
+          active=[x for x in s['traffic'] if x.get('percent',0)>0]
+          if len(active)!=1 or active[0].get('percent')!=100: raise SystemExit('BLOCKED_MULTIPLE_LIVE_REVISIONS')
+          print(active[0]['revisionName'])
+          PY
+          )"
+            gcloud run revisions describe "$rev" --project=gen-lang-client-0593591102 --region=us-central1 --format=json > "$RUNNER_TEMP/$svc-live.json"
+          done
+          python3 - "$RUNNER_TEMP" <<'PY'
+          from pathlib import Path
+          import json,sys
+          root=Path(sys.argv[1])
+          for svc in ('omniagent-chat','omniagent-agent-gateway'):
+            doc=json.loads((root/(svc+'-live.json')).read_text())
+            spec=doc['spec']
+            env={e['name']:e for e in spec['containers'][0].get('env',[])}
+            if svc=='omniagent-chat':
+              names=('CHAT_DATABASE_TLS_MODE','CHAT_DATABASE_CA_BASE64',
+                     'CHAT_DATABASE_CA_PEM','CHAT_DATABASE_TLS_SERVERNAME',
+                     'ROUTER_USAGE_ENABLED','ROUTER_USAGE_GATEWAY_DATABASE_URL')
+            else:
+              names=('GEMINI_SHARED_QUOTA_ENABLED','GEMINI_SHARED_REQUIRE_OWNER_AUTHORIZATION',
+                     'GEMINI_SHARED_USAGE_ENABLED')
+            stat={}
+            for name in names:
+              v=env.get(name)
+              if not v: stat[name]='ABSENT'
+              elif (v.get('valueFrom') or {}).get('secretKeyRef'):stat[name]='SECRET_REFERENCE'
+              elif 'value' in v and name in ('ROUTER_USAGE_ENABLED','GEMINI_SHARED_QUOTA_ENABLED','GEMINI_SHARED_REQUIRE_OWNER_AUTHORIZATION','GEMINI_SHARED_USAGE_ENABLED','CHAT_DATABASE_TLS_MODE'):
+                stat[name]=v['value']
+              elif 'value' in v:stat[name]='LITERAL_REDACTED'
+              else:stat[name]='UNKNOWN'
+            vpc=spec.get('vpcAccess') or {}
+            print(json.dumps({'service':svc,'flags':stat,
+                 'vpc_configured':bool(vpc) or bool(doc.get('metadata',{}).get('annotations',{}).get('run.googleapis.com/vpc-access-connector')),
+                 'runtime_sa_present':bool(spec.get('serviceAccountName'))},sort_keys=True))
+          PY
+      - name: Read only existing omniAgent PostgreSQL TLS/HBA role contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          HOST="$(printf '%s' 'amFudXMtcG9zdGdyZXMtZGV2' | base64 -d)"
+          gcloud compute ssh "$HOST" --project=gen-lang-client-0593591102 --zone=us-central1-a --tunnel-through-iap --quiet \
+            --command="sudo docker exec -u postgres janus-postgres psql -X -A -t -v ON_ERROR_STOP=1 -d postgres -c \"BEGIN READ ONLY; SELECT 'pg_ssl=' || current_setting('ssl'); SELECT 'chat_hostssl_rules=' || count(*) FROM pg_hba_file_rules WHERE type='hostssl' AND database @> ARRAY['omniagent_chat'] AND user_name @> ARRAY['omniagent_chat_app'] AND auth_method='scram-sha-256' AND error IS NULL; SELECT 'gateway_db_present=' || (count(*)>0)::text FROM pg_database WHERE datname='omniagent_gateway'; COMMIT;\""

@@ -52,6 +52,7 @@ describe("router usage aggregation contract",()=>{
     ]}))};
     const result=await new RouterUsageStats(chat,gateway,"passive").read(1);
     expect(result.rows).toHaveLength(1);
+    expect(result.gatewayMode).toBe("passive");
     expect(result.rows[0]).toMatchObject({source:"shared_gemini",
       project:"market-mart",ownerId:BOB,calls:1,tokens:35});
     const sql=gateway.query.mock.calls[0][0];

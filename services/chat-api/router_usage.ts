@@ -23,6 +23,7 @@ export type UsageReport = {
   generatedAt: string;
   days: number;
   timezone: "UTC";
+  gatewayMode: "quota" | "passive";
   sources: { chatTurns: "available"; sharedGemini: "available" | "not_configured" | "unavailable" };
   truncated: boolean;
   rows: UsageRow[];
@@ -119,7 +120,7 @@ export class RouterUsageStats {
       ...chatRows.slice(0,LIMIT-1).map(x=>asRow(x,"chat_turns")),
       ...gatewayRows.slice(0,LIMIT-1).map(x=>asRow(x,"shared_gemini"))
     ];
-    return {generatedAt:new Date().toISOString(),days,timezone:"UTC",
+    return {generatedAt:new Date().toISOString(),days,timezone:"UTC",gatewayMode:this.gatewayMode,
       sources:{chatTurns:"available",sharedGemini},truncated,rows};
   }
 }

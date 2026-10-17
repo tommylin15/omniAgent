@@ -184,6 +184,7 @@ class _RouterUsagePageState extends State<RouterUsagePage> {
     final chat=filtered.where((r)=>r['source']=='chat_turns').toList();
     final sources=data is Map?data['sources']:null;
     final sourceState=sources is Map?sources['sharedGemini']:'unknown';
+    final passive=data is Map && data['gatewayMode']=='passive';
     final owners=filtered.map((r)=>"${r['project']}:${r['ownerId']}").toSet().length;
     final settled=filtered.where((r)=>r['source']=='shared_gemini' &&
         (r['status']=='completed'||r['status']=='failed')).toList();
@@ -216,7 +217,7 @@ class _RouterUsagePageState extends State<RouterUsagePage> {
       ]),
       const SizedBox(height:16),
       Wrap(spacing:12,runSpacing:12,children:[
-        stat('Gateway 請求',number(calls(gateway)),'Gemini 去重 request ID'),
+        stat('Gateway 請求',number(calls(gateway)),passive?'每次執行 ID，寫入可能漏計':'Gemini 去重 request ID'),
         stat('Chat 對話回合',number(calls(chat)),'不可等同實際 API 呼叫'),
         stat('活躍 Owner',number(owners),'依專案＋Owner 去重'),
         stat('Gateway Tokens',tokens(gateway),'缺一筆即標示未完整提供'),
@@ -259,7 +260,9 @@ class _RouterUsagePageState extends State<RouterUsagePage> {
       if(filtered.length>250)
         const Text('畫面僅列出前 250 筆明細；複製 CSV 包含本次查詢的完整回傳列。'),
       const SizedBox(height:24),
-      const Text('口徑：Gateway 帳本只涵蓋已成功預留配額的 Gemini 請求；拒絕於預留前的請求不在內。Chat 回合不一定代表已真正呼叫供應商，兩類數字不能相加。成本尚無經驗證單價，故不估算。'),
+      Text(passive
+        ? '口徑：Gateway 被動紀錄按實際執行 ID 計數，因資料庫寫入可能失敗，此數字是可能漏計的已記錄次數。Owner UUID 由已授權的專案消費端聲明，未獨立驗證人員身分。Chat 回合不一定代表供應商呼叫，兩類數字不能相加；成本不推估。'
+        : '口徑：Gateway 配額帳本只涵蓋已成功預留配額的 Gemini 請求；預留前拒絕的請求不在內。Chat 回合不一定代表供應商呼叫，兩類數字不能相加；成本不推估。'),
     ]);
   }
 

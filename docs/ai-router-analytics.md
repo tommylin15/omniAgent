@@ -194,3 +194,9 @@ Because such a failure creates a coverage gap, the resulting view must be
 described as best-effort and may be incomplete until log/source reconciliation
 is independently verified. Never claim 100% completeness only because SQL
 returns rows. Retention and index sizing require measured operational counts.
+
+The API now reports gatewayMode=quota|passive. The UI must never explain
+passive event rows as quota reservations: passive counts actual server execution
+IDs and explicitly warns about possible dropped DB writes. Owner IDs in these
+rows are asserted by each IAM-authenticated project consumer, not independently
+human-OAuth verified. The disabled/unavailable state is never treated as zero.
