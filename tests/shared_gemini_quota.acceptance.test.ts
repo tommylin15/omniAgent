@@ -73,7 +73,9 @@ describe.runIf(Boolean(dsn))("isolated gateway cross-instance quota ledger",()=>
       await poolA.query(telemetrySql);
       const writer=new PgGatewayUsageRecorder(poolA);
       const sample={executionId:"00000000-0000-4000-8000-000000000088",
-        requestId:"00000000-0000-4000-8000-000000000099",ownerId:a,
+        requestId:"00000000-0000-4000-8000-000000000099",
+        // Separate fixture identity from the historical synthetic P0-V canary.
+        ownerId:"00000000-0000-4000-8000-000000000021",
         project:"life-assistant",model:"gemini-3.5-flash-lite",
         status:"completed" as const,providerTokens:23,durationMs:180};
       await writer.record(sample);
@@ -81,6 +83,14 @@ describe.runIf(Boolean(dsn))("isolated gateway cross-instance quota ledger",()=>
       await writer.record({...sample,
         executionId:"00000000-0000-4000-8000-000000000089",
         status:"failed",providerTokens:null});
+      // Audit the historical test-only principal without presenting it as a
+      // human user's measured AI usage in the war room.
+      await writer.record({...sample,
+        executionId:"00000000-0000-4000-8000-000000000090",
+        requestId:"00000000-0000-4000-8000-000000000098",
+        ownerId:"00000000-0000-4000-8000-000000000001"});
+      const raw=await poolA.query("SELECT count(*)::int AS n FROM omni_gateway.router_usage_events");
+      expect(raw.rows[0].n).toBe(3);
       const passive=await new RouterUsageStats({query:async()=>({rows:[]})},
         {query:(sql,params)=>poolA.query(sql,params)},"passive").read(1);
       const recorded=passive.rows.filter(r=>r.source==="shared_gemini");
