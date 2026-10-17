@@ -18,8 +18,8 @@ class ReleaseMarkerSkip(unittest.TestCase):
 
     def test_release_artifact_upload_does_not_glob_credentials(self):
         flow=(ROOT/'.github/workflows/auto-release.yml').read_text()
-        self.assertIn('path: |\\n            readiness.json\\n            release.json',flow)
+        self.assertIn('path: |\n            readiness.json\n            release.json',flow)
         self.assertNotIn('path: "*.json"',flow)
-        self.assertNotIn('path: |\\n            *.json',flow)
+        self.assertNotIn('path: |\n            *.json',flow)
 
 if __name__=='__main__': unittest.main()

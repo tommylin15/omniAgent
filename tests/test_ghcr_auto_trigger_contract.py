@@ -19,7 +19,14 @@ class GhcrAutomaticTriggerContractTest(unittest.TestCase):
     def test_source_push_runs_quality_and_three_image_publish(self):
         source = workflow("omniagent-ghcr-publish.yml")
         self.assertRegex(source, r"(?m)^on:\n  push:\n    branches: \[main\]")
-        self.assertIn("- 'tests/**'", source)
+        self.assertIn("- 'services/**'",source)
+        self.assertIn("- 'apps/agent_app/lib/**'",source)
+        self.assertIn("- 'infra/postgres/migrations/003_runtime_bindings.sql'",source)
+        self.assertNotIn("- 'tests/**'",source)
+        self.assertNotIn("- 'scripts/**'",source)
+        ci=workflow("ci.yml")
+        self.assertIn("- 'tests/**'",ci)
+        self.assertIn("- 'scripts/**'",ci)
         self.assertIn("needs: quality", source)
         for image in ("omniagent-chat", "omniagent-agent-gateway", "omniagent-shared-codex"):
             with self.subTest(image=image):

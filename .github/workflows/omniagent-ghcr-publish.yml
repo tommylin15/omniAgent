@@ -5,19 +5,18 @@ on:
   push:
     branches: [main]
     paths:
+      # Publish only actual OCI build inputs. Tests/ops/docs still trigger CI.
       - 'services/**'
-      - 'apps/agent_app/**'
-      - 'tests/**'
-      - 'infra/postgres/migrations/**'
-      - 'infra/gcp/**'
-      - 'scripts/**'
+      - 'apps/agent_app/lib/**'
+      - 'apps/agent_app/web/**'
+      - 'apps/agent_app/assets/**'
+      - 'apps/agent_app/pubspec.yaml'
+      - 'apps/agent_app/pubspec.lock'
+      - 'infra/postgres/migrations/003_runtime_bindings.sql'
       - 'package.json'
       - 'package-lock.json'
       - 'tsconfig.json'
-      - 'setup-omniagent-db-dev.sh'
       - '.github/workflows/omniagent-ghcr-publish.yml'
-      - '.github/workflows/omniagent-ghcr-one-shot-release.yml'
-      - '.github/workflows/omniagent-ghcr-cloudrun-candidate.yml'
   workflow_dispatch:
 permissions:
   contents: read

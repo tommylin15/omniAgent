@@ -11,8 +11,15 @@ class NewDeliveryGuardTests(unittest.TestCase):
     def test_publish_is_main_source_triggered(self):
         t=GHCR.read_text()
         self.assertIn("branches: [main]",t)
-        for item in ("'services/**'","'apps/agent_app/**'","'tests/**'","'package.json'"):
+        for item in ("'services/**'","'apps/agent_app/lib/**'",
+                     "'infra/postgres/migrations/003_runtime_bindings.sql'",
+                     "'package.json'"):
             self.assertIn(item,t)
+        self.assertNotIn("'tests/**'",t)
+        self.assertNotIn("'scripts/**'",t)
+        ci=(ROOT/".github/workflows/ci.yml").read_text()
+        self.assertIn("'tests/**'",ci)
+        self.assertIn("'scripts/**'",ci)
         self.assertIn("needs: quality",t)
         self.assertIn("ghcr.io/tommylin15/",t)
 

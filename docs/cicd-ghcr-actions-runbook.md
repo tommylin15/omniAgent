@@ -39,3 +39,14 @@
 Log `source_sha`, `CI_run`, `GHCR_digest`, `candidate_revision`, `formal_before`, `formal_after`, `auth_negative`, `business_acceptance`, `rollback_or_fallback`, `revision_count`, `run_attempt`, `end_time`, `final_status`. Distinguish `NOT_RUN`, `PASS`, `PARTIAL`, `BLOCKED`, `NOT_VERIFIED` and `RECOVERY_FAILED`. No missing field may be invented.
 
 Historical detailed executions remain accessible through [Git history](https://github.com/tommylin15/omniAgent/commits/main), Actions artifacts and dated evidence documents. Project-specific risks are tracked in [risk audit](project-risk-audit-2026-10-14.md).
+
+## 2026-10-17: Suppress test-only Cloud Run revision churn
+
+GHCR's publish push paths now cover only actual OCI image build inputs:
+service source, Flutter web `lib/web/assets/pubspec*`, the shipped
+`003_runtime_bindings.sql`, npm manifests, TypeScript config, and the
+publish workflow itself. Separate `ci.yml` still runs on `tests/**`,
+`scripts/**`, and infrastructure changes, with Node/Python/Flutter/PostgreSQL
+checks. A test-only, docs-only or runbook-only main change must not publish
+three images and start another Cloud Run candidate and promotion chain.
+The trigger change does not waive CI gates for real app image changes.
