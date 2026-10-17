@@ -161,3 +161,36 @@ or end-to-end dashboard user acceptance receipt. **Do not mark DONE.**
 **Phase A deployed, partial**: preflight [#39021269576](https://github.com/tommylin15/omniAgent/actions/runs/39021269576) verified previously supplied Owner UUID has Google OAuth owner mapping. Controlled rollout [#39021649125](https://github.com/tommylin15/omniAgent/actions/runs/39021649125) enables Chat admin statistics for this one Owner only, preserving all old env, runtime identity, image digest and disabled Chat Dispatch. Zero-traffic candidate health and unsigned 401 PASS; revision omniagent-chat-00128-ver confirmed 100% live. No valid delegated human OAuth token was tested, so admin API 200 and mobile UI E2E are still OPEN.
 
 **Phase B blocked by source absence**: the 100%-traffic Gateway revision lacks GEMINI_SHARED_LEDGER_DATABASE_URL and verified CA; the read-only database inventory found no dedicated omniAgent Gateway ledger database. Gateway calls therefore cannot be asserted as a complete actual Owner/model tally. sharedGemini must stay not_configured; do not backfill inferred zeros. GEMINI_SHARED_QUOTA_ENABLED would require owner authorization HMAC and alter consumer contracts, so do not enable it merely for analytics. Build an independent event capture path with least privilege, verified TLS and measurable coverage before promoting Phase B to DONE.
+
+## Passive Gemini telemetry candidate (RUA-02B, no rollout until receipt)
+
+Runtime quota/HMAC mode remains unchanged. An independent opt-in and
+best-effort Gateway recording path stores one receipt per **actual execution**,
+with its own server-generated execution_id. It does not call Gemini twice
+or create consumer entitlement and does not intercept rejected-before-provider
+requests. The recorded Owner UUID is **consumer-asserted** behind the existing
+authenticated project service account, not independently verified as the
+end user's Google identity. Request IDs may repeat across actual attempts;
+different execution IDs then count separately.
+
+Schema: infra/postgres/migrations/008_router_usage_telemetry.sql in the
+dedicated omniAgent Gateway logical database. Table
+omni_gateway.router_usage_events has no prompt/body/output/credential field.
+Gateway new envs: GEMINI_SHARED_USAGE_ENABLED=true,
+GEMINI_SHARED_USAGE_DATABASE_URL (least-privilege INSERT-only metadata writer),
+GEMINI_SHARED_USAGE_CA_PEM (verified server CA), optional
+GEMINI_SHARED_USAGE_TLS_SERVERNAME when connecting by IP.
+Chat Reader new env: ROUTER_USAGE_GATEWAY_SOURCE=passive,
+ROUTER_USAGE_GATEWAY_DATABASE_URL (a **different SELECT-only role**),
+ROUTER_USAGE_GATEWAY_CA_PEM and optional
+ROUTER_USAGE_GATEWAY_TLS_SERVERNAME. Existing quota ledger remains available
+under mode quota when actually configured; do not merge these overlapping
+sources to avoid false double-counting.
+
+Gateway writes are bounded and fail open for production business continuity.
+A write failure emits a metadata-only gateway_usage_capture unavailable log;
+it does **not** assert zero calls and should create an operations alert.
+Because such a failure creates a coverage gap, the resulting view must be
+described as best-effort and may be incomplete until log/source reconciliation
+is independently verified. Never claim 100% completeness only because SQL
+returns rows. Retention and index sizing require measured operational counts.

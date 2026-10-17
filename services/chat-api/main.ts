@@ -84,6 +84,9 @@ if (process.env.CHAT_BYOK_MANAGEMENT_ENABLED === "true") {
 // Router analytics is opt-in and restricted to explicit DB-derived Owner UUIDs.
  // Gateway ledger connection MUST use a separate PostgreSQL SELECT-only role;
  // it is not the Gateway's quota writer credential.
+const usageMode=process.env.ROUTER_USAGE_GATEWAY_SOURCE ?? "quota";
+if(usageMode!=="quota" && usageMode!=="passive")
+  throw new Error("router usage source mode invalid");
 const usageEnabled=process.env.ROUTER_USAGE_ENABLED==="true";
 const usageAdmins=usageEnabled
   ? parseUsageAdmins(process.env.ROUTER_USAGE_ADMIN_OWNER_IDS??"") : undefined;
@@ -96,7 +99,7 @@ const ledgerPool=usageEnabled && ledgerDsn && ledgerCa
       process.env.ROUTER_USAGE_GATEWAY_TLS_SERVERNAME)) : undefined;
 const usage=usageAdmins?{admins:usageAdmins,stats:new RouterUsageStats(
   {query:(sql,params)=>pool.query(sql,params)},
-  ledgerPool?{query:(sql,params)=>ledgerPool.query(sql,params)}:undefined)}:undefined;
+  ledgerPool?{query:(sql,params)=>ledgerPool.query(sql,params)}:undefined,usageMode)}:undefined;
 
 const server = makeChatServer(store,
   async (token) => {

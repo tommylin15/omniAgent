@@ -8,11 +8,13 @@
  * consumer backends MUST authorize their own owner and business request.
  */
 import { OAuth2Client } from "google-auth-library";
+import { randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { GeminiProvider, GeminiProviderError, type GeminiResult } from "./gemini_provider.js";
 import { isAllowedGeminiModel } from "./gemini_model_policy.js";
 import { parseOwnerAuthorizationKeys, verifyOwnerAuthorization } from "./owner_authorization.js";
 import { PgModelQuotaLedger,createQuotaPool,parseQuotaLimits,ModelQuotaDenied,type ModelQuotaLedger } from "./model_quota_ledger.js";
+import { PgGatewayUsageRecorder,createUsagePool,type GatewayUsageRecorder } from "./model_usage_telemetry.js";
 
 const PROJECTS = ["omniagent", "market-mart", "life-assistant"] as const;
 type Project = typeof PROJECTS[number];
@@ -40,6 +42,7 @@ type Configuration = {
   verify?: Verify;
   generate?: Generate;
   quota?: ModelQuotaLedger;
+  usage?: GatewayUsageRecorder;
 };
 
 // Stable, deliberately coarse diagnostic categories; never serialize raw Gemini
@@ -180,6 +183,10 @@ export function makeSharedGeminiHandler(options: Configuration = {}) {
   const quota:ModelQuotaLedger|undefined=quotaEnabled
     ? options.quota ?? new PgModelQuotaLedger(createQuotaPool(env),
        parseQuotaLimits(env.GEMINI_SHARED_QUOTA_LIMITS_JSON||"")) : undefined;
+  // Passive telemetry is independent of strict quota/Owner-HMAC policy.
+  // Disabled by default, so existing Life/Janus calls are unaffected.
+  const usage = enabled && env.GEMINI_SHARED_USAGE_ENABLED === "true"
+    ? options.usage ?? new PgGatewayUsageRecorder(createUsagePool(env)) : undefined;
   const verify = options.verify ?? verifyGeminiCaller;
   const generate: Generate = options.generate ?? ((prompt,model,maxOutputTokens) =>
     new GeminiProvider(env.GEMINI_API_KEY || "",model).generate(prompt,{
@@ -215,9 +222,25 @@ export function makeSharedGeminiHandler(options: Configuration = {}) {
     }
     running++;
     const started = Date.now();
+    const executionId = usage ? randomUUID() : "";
+    const capture = async (status:"completed"|"failed",providerTokens:number|null) => {
+      if (!usage) return;
+      try {
+        await usage.record({executionId,project:body.project,ownerId:body.ownerId,
+          requestId:body.requestId,model:body.model,status,providerTokens,
+          durationMs:Math.max(0,Date.now()-started)});
+      } catch {
+        // Never change a Gemini business result or replay it because
+        // an independent analytics write failed. Alert on these logs;
+        // metrics coverage is then incomplete rather than "zero calls".
+        console.warn(JSON.stringify({kind:"gateway_usage_capture",state:"unavailable",
+          project:body.project}));
+      }
+    };
     try {
       const answer = await generate(body.prompt,body.model,maxOutputTokens);
       assertSafeGeminiAnswer(answer,body.model);
+      await capture("completed",answer.usage?.totalTokens ?? null);
       if(quota){
         try{await quota.settle(body,"completed",answer.usage);}
         catch{return send(reply,503,{error:"quota_settlement_uncertain",requestId:body.requestId});}
@@ -229,6 +252,7 @@ export function makeSharedGeminiHandler(options: Configuration = {}) {
         ...(answer.usage?{usage:answer.usage}:{})});
     } catch (error) {
       const failure=classifyExecutionFailure(error);
+      await capture("failed",null);
       if(quota){
         try{await quota.settle(body,"failed");}
         catch{return send(reply,503,{error:"quota_settlement_uncertain",requestId:body.requestId});}

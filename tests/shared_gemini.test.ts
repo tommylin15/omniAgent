@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { makeSharedGeminiHandler, parseGeminiCallers, parseSharedGeminiRequest } from "../services/agent-gateway/shared_gemini.js";
 import { GeminiProviderError, type GeminiResult } from "../services/agent-gateway/gemini_provider.js";
 import { ModelQuotaDenied } from "../services/agent-gateway/model_quota_ledger.js";
+import type { GatewayUsageReceipt } from "../services/agent-gateway/model_usage_telemetry.js";
 import { signOwnerAuthorization } from "../services/agent-gateway/owner_authorization.js";
 
 const ids={ownerId:"00000000-0000-4000-8000-000000000001",requestId:"00000000-0000-4000-8000-000000000002"};
@@ -255,6 +256,45 @@ describe("Shared Gateway Gemini vertical slice",()=>{
     expect(recovered.status).toBe(200);
     expect(generate).toHaveBeenCalledTimes(expectations.length+1);
     expect(generate).toHaveBeenLastCalledWith("Reply with OK","gemini-3.5-flash-lite",2048);
+  });
+  it("records only approved Gateway invocation metadata when enabled",async()=>{
+    const records:GatewayUsageReceipt[]=[];
+    const usage={record:vi.fn(async(value:GatewayUsageReceipt)=>{records.push(value);})};
+    const generate=vi.fn().mockResolvedValueOnce(answer)
+      .mockRejectedValueOnce(new GeminiProviderError("provider_unavailable",503));
+    const url=await serve(makeSharedGeminiHandler({
+      env:{...env,GEMINI_SHARED_USAGE_ENABLED:"true"},usage,
+      verify:async()=>sa["life-assistant"],generate
+    }));
+    const good=await post(url,{...base,project:"life-assistant"});
+    expect(good.status).toBe(200);
+    const failed=await post(url,{...base,project:"life-assistant",
+      requestId:"00000000-0000-4000-8000-000000000099"});
+    expect(failed.status).toBe(503);
+    expect(records).toHaveLength(2);
+    expect(records[0]).toMatchObject({project:"life-assistant",
+      ownerId:ids.ownerId,requestId:ids.requestId,
+      status:"completed",providerTokens:6});
+    expect(records[1]).toMatchObject({status:"failed",providerTokens:null});
+    expect(records[0].executionId).not.toBe(records[1].executionId);
+    expect(JSON.stringify(records)).not.toContain(base.prompt);
+    expect(JSON.stringify(records)).not.toContain("mock-key");
+  });
+  it("analytics storage failure cannot turn a good Gemini response into a failure",async()=>{
+    const warn=vi.spyOn(console,"warn").mockImplementation(()=>undefined);
+    try{
+      const usage={record:vi.fn(async()=>{throw Error("DB credential value");})};
+      const url=await serve(makeSharedGeminiHandler({
+        env:{...env,GEMINI_SHARED_USAGE_ENABLED:"true"},usage,
+        verify:async()=>sa.omniagent,generate:async()=>answer
+      }));
+      const result=await post(url,base);
+      expect(result.status).toBe(200);
+      expect((await result.json())).toMatchObject({status:"completed",result:{text:"OK"}});
+      expect(usage.record).toHaveBeenCalledOnce();
+      expect(warn).toHaveBeenCalledOnce();
+      expect(String(warn.mock.calls[0][0])).not.toContain("DB credential value");
+    } finally {warn.mockRestore();}
   });
   it("fails closed without exposing private output/provider exceptions",async()=>{
     const verify=vi.fn(async()=>sa.omniagent);

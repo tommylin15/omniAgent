@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { Pool } from "pg";
 import { RouterUsageStats } from "../services/chat-api/router_usage.js";
+import { PgGatewayUsageRecorder } from "../services/agent-gateway/model_usage_telemetry.js";
 import { describe,expect,it } from "vitest";
 import { PgModelQuotaLedger,ModelQuotaDenied,parseQuotaLimits,createQuotaPool } from
   "../services/agent-gateway/model_quota_ledger.js";
@@ -65,6 +66,27 @@ describe.runIf(Boolean(dsn))("isolated gateway cross-instance quota ledger",()=>
       expect(gateway.reduce((n,r)=>n+r.calls,0)).toBe(3);
       expect(gateway.some(r=>r.tokens===null)).toBe(true);
       expect(gateway.every(r=>r.project==="omniagent")).toBe(true);
+      // RUA-02B metadata-only receipts in an isolated disposable PostgreSQL
+      // fixture. Replays of the same server execution id must not double-count.
+      const telemetrySql=readFileSync("infra/postgres/migrations/008_router_usage_telemetry.sql","utf8");
+      await poolA.query(telemetrySql);
+      await poolA.query(telemetrySql);
+      const writer=new PgGatewayUsageRecorder(poolA);
+      const sample={executionId:"00000000-0000-4000-8000-000000000088",
+        requestId:"00000000-0000-4000-8000-000000000099",ownerId:a,
+        project:"life-assistant",model:"gemini-3.5-flash-lite",
+        status:"completed" as const,providerTokens:23,durationMs:180};
+      await writer.record(sample);
+      await writer.record(sample);
+      await writer.record({...sample,
+        executionId:"00000000-0000-4000-8000-000000000089",
+        status:"failed",providerTokens:null});
+      const passive=await new RouterUsageStats({query:async()=>({rows:[]})},
+        {query:(sql,params)=>poolA.query(sql,params)},"passive").read(1);
+      const recorded=passive.rows.filter(r=>r.source==="shared_gemini");
+      expect(recorded.reduce((n,r)=>n+r.calls,0)).toBe(2);
+      expect(recorded.some(r=>r.project==="life-assistant" && r.tokens===23)).toBe(true);
+      expect(recorded.some(r=>r.status==="failed" && r.tokens===null)).toBe(true);
     }finally{await Promise.all([poolA.end(),poolB.end()]);}
   });
 });

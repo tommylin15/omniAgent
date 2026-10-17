@@ -39,3 +39,5 @@ See [TODO](todo.md), [WBS](wbs.md), [P0-V contract](../docs/shared-gemini-vertic
 
 | RUA-02A admin-only analytics | **Chat admin configuration LIVE 100%; OAuth admin 200/Flutter owner test OPEN** | [preflight #39021269576](https://github.com/tommylin15/omniAgent/actions/runs/39021269576) verified eligible owner mapping; [release #39021649125](https://github.com/tommylin15/omniAgent/actions/runs/39021649125) new Chat revision omniagent-chat-00128-ver 100%, 0%-candidate auth 401, Chat Dispatch unchanged OFF. |
 | RUA-02B Gateway usage | **BLOCKED: missing persistent ledger** | Gateway official live config has no quota ledger URL/verified CA and related dedicated database absent. Do not mistake missing call records for zero; owner-scoped real Gateway counting and verified read-only TLS must precede acceptance. |
+
+| RUA-02B passive code | **CANDIDATE SOURCE ONLY; LIVE OFF** | Passive metadata writer, one server execution_id per invocation, isolated read mode, no quota/HMAC policy change. Acceptance requires disposable PostgreSQL rows plus runtime least-privilege credentials, CA, real multi-project receipts and coverage monitoring. |

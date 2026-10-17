@@ -45,6 +45,21 @@ describe("router usage aggregation contract",()=>{
     expect(sql).not.toContain("payload");
     expect(JSON.stringify(result)).not.toContain("prompt");
   });
+  it("supports isolated passive Gateway events without borrowing quota statistics",async()=>{
+    const chat={query:vi.fn(async()=>({rows:[]}))};
+    const gateway={query:vi.fn(async()=>({rows:[
+      row({project:"market-mart",calls:1,tokens:"35",ownerId:BOB})
+    ]}))};
+    const result=await new RouterUsageStats(chat,gateway,"passive").read(1);
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0]).toMatchObject({source:"shared_gemini",
+      project:"market-mart",ownerId:BOB,calls:1,tokens:35});
+    const sql=gateway.query.mock.calls[0][0];
+    expect(sql).toContain("omni_gateway.router_usage_events");
+    expect(sql).toContain("::timestamp AT TIME ZONE 'UTC'");
+    expect(sql).not.toContain("model_execution_ledger");
+    expect(sql).not.toContain("prompt");
+  });
   it("exposes coverage when gateway is missing or unavailable instead of fake zeros",async()=>{
     const chat={query:vi.fn(async()=>({rows:[row()]}))};
     expect((await new RouterUsageStats(chat).read(1)).sources.sharedGemini).toBe("not_configured");

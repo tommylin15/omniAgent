@@ -56,6 +56,21 @@ const GATEWAY_SQL = `
   GROUP BY 1,2,3,4,5,6
   ORDER BY 1 DESC, 2, 3, 4, 5, 6 LIMIT 5001`;
 
+// RUA-02B passive telemetry counts each actual Gateway execution_id once.
+// The owner_id is asserted by an IAM-authenticated consumer, not a verified
+// Google human principal. Capture failures are flagged in Gateway logs.
+const PASSIVE_SQL = `
+  SELECT to_char((created_at AT TIME ZONE 'UTC')::date,'YYYY-MM-DD') AS day,
+         project::text AS project, owner_id::text AS "ownerId",
+         'gemini'::text AS provider, model::text AS model,
+         status::text AS status, count(*)::integer AS calls,
+         CASE WHEN count(provider_tokens)=count(*) THEN sum(provider_tokens)::bigint
+              ELSE NULL::bigint END AS tokens
+  FROM omni_gateway.router_usage_events
+  WHERE created_at >= (((now() AT TIME ZONE 'UTC')::date - ($1::integer - 1))::timestamp AT TIME ZONE 'UTC')
+  GROUP BY 1,2,3,4,5,6
+  ORDER BY 1 DESC,2,3,4,5,6 LIMIT 5001`;
+
 export function parseUsageDays(raw: string | null): 1 | 7 | 30 {
   if (raw === null || raw === "7") return 7;
   if (raw === "1" || raw === "30") return Number(raw) as 1 | 30;
@@ -88,14 +103,15 @@ function asRow(value:Record<string,unknown>,source:UsageRow["source"]):UsageRow 
 }
 
 export class RouterUsageStats {
-  constructor(private readonly chat:QueryReader,private readonly gateway?:QueryReader) {}
+  constructor(private readonly chat:QueryReader,private readonly gateway?:QueryReader,
+    private readonly gatewayMode:"quota"|"passive"="quota") {}
   async read(days:1|7|30):Promise<UsageReport> {
     const chatRows=(await this.chat.query(CHAT_SQL,[days])).rows;
     let gatewayRows:Record<string,unknown>[]=[];
     let sharedGemini:UsageReport["sources"]["sharedGemini"] =
       this.gateway?"available":"not_configured";
     if(this.gateway) {
-      try { gatewayRows=(await this.gateway.query(GATEWAY_SQL,[days])).rows; }
+      try { gatewayRows=(await this.gateway.query(this.gatewayMode==="passive"?PASSIVE_SQL:GATEWAY_SQL,[days])).rows; }
       catch { sharedGemini="unavailable"; }
     }
     const truncated=chatRows.length>=LIMIT || gatewayRows.length>=LIMIT;
