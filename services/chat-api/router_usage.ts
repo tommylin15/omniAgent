@@ -39,7 +39,7 @@ const CHAT_SQL = `
          NULL::bigint AS tokens
   FROM omni_chat.turns t
   JOIN omni_chat.threads th ON th.owner_id=t.owner_id AND th.thread_id=t.thread_id
-  WHERE t.created_at >= ((now() AT TIME ZONE 'UTC')::date - ($1::integer - 1))
+  WHERE t.created_at >= (((now() AT TIME ZONE 'UTC')::date - ($1::integer - 1))::timestamp AT TIME ZONE 'UTC')
   GROUP BY 1,2,3,4,5,6
   ORDER BY 1 DESC, 2, 3, 4, 5, 6 LIMIT 5001`;
 const GATEWAY_SQL = `
@@ -52,7 +52,7 @@ const GATEWAY_SQL = `
          CASE WHEN count(provider_tokens)=count(*) THEN sum(provider_tokens)::bigint
               ELSE NULL::bigint END AS tokens
   FROM omni_gateway.model_execution_ledger
-  WHERE created_at >= ((now() AT TIME ZONE 'UTC')::date - ($1::integer - 1))
+  WHERE created_at >= (((now() AT TIME ZONE 'UTC')::date - ($1::integer - 1))::timestamp AT TIME ZONE 'UTC')
   GROUP BY 1,2,3,4,5,6
   ORDER BY 1 DESC, 2, 3, 4, 5, 6 LIMIT 5001`;
 

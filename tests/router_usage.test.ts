@@ -39,6 +39,8 @@ describe("router usage aggregation contract",()=>{
     expect(chat.query).toHaveBeenCalledWith(expect.stringContaining("omni_chat.turns"),[7]);
     expect(gateway.query).toHaveBeenCalledWith(expect.stringContaining("omni_gateway.model_execution_ledger"),[7]);
     const sql=chat.query.mock.calls[0][0];
+    expect(sql).toContain("::timestamp AT TIME ZONE 'UTC'");
+    expect(gateway.query.mock.calls[0][0]).toContain("::timestamp AT TIME ZONE 'UTC'");
     expect(sql).not.toContain("message_digest");
     expect(sql).not.toContain("payload");
     expect(JSON.stringify(result)).not.toContain("prompt");
