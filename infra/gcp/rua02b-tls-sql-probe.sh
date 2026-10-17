@@ -51,7 +51,7 @@ if sudo docker exec -u postgres \
   exit 12
 fi
 echo 'RUA02B_WRONG_PASSWORD=PASS'
-pg writer -c "BEGIN; INSERT INTO omni_gateway.router_usage_events (execution_id,project,owner_id,request_id,model,status,provider_tokens,duration_ms) VALUES ('00000000-0000-4000-8000-000000000005','omniagent','00000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000002','gemini-flash-lite','completed',0,1) ON CONFLICT (execution_id) DO NOTHING; ROLLBACK;" >/dev/null
+pg writer -c "BEGIN; INSERT INTO omni_gateway.router_usage_events (execution_id,project,owner_id,request_id,model,status,provider_tokens,duration_ms) VALUES ('00000000-0000-4000-8000-000000000005','omniagent','00000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000002','gemini-flash-lite','completed',0,1) ON CONFLICT DO NOTHING; ROLLBACK;" >/dev/null
 [[ "$(pg reader -c 'SELECT count(*) FROM omni_gateway.router_usage_events')" == 0 ]]
 echo 'RUA02B_WRITER_UPSERT_ROLLBACK=PASS'
 if pg writer -c 'SELECT count(*) FROM omni_gateway.router_usage_events' >/dev/null 2>&1; then
