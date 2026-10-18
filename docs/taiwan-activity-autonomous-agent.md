@@ -57,7 +57,7 @@ Life existing 07:30 separate consumer -> Sheet -> PostgreSQL -> Flutter
 
 故障分類至少有 `HTTP_404` / `HTTP_403_429` / `DNS_TLS` / `JS_RENDER` / `STALE_CACHE` / `PARSER_CHANGED` / `SOURCE_POLICY_CONFLICT`。每個問題最多有界診斷與合法替代入口，再重讀新入口。記 `repair_action/recheck_status/recheck_evidence/next_due`。
 
-- **可自動**：僅在來源表授權範圍內修補已證實的純網址搬家、標記來源品質/健康、更新逐站執行證據、無害解析 selector 修復（必須 fixture/差異/回歸驗證和 rollback）。
+- **可自動**：僅在來源表授權範圍內修補已證實的純網址搬家、標記來源品質/健康、更新逐站執行證據、已核准來源設定中可回滾的 selector/欄位映射更新（僅限非程式碼設定，須 fixture/差異/回歸驗證與 rollback）；若需修改解析器程式碼，僅輸出修復提案，另走程式審查、CI 與正式部署。
 - **先提出差異稿**：更換來源類型、重新啟用停用來源、擴大掃描深度或工具權限、修改 1/3/5 星政策、放寬核證閾值、刪除來源或改 01～05 正式規格。未核准不得套用。
 - 失敗修復不代表原站修好；須分開 `original_status`、`fallback_readback` 與整輪 PARTIAL。查無新活動、來源不可讀、舊快照均不能推論 `zero_new=PASS`。
 - Agent 不得自行改 GitHub 程式並發布或進行 production 高風險修改；可輸出 issue/patch proposal，交付專案 CI/Owner 流程。
