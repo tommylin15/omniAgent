@@ -22,6 +22,7 @@ When sources conflict, cite both, explain dates and gaps. Missing evidence is NO
 | [UI](ui.md) and [assets](visual-assets.md) | Flutter visual/accessibility and Twin Beast contract |
 | [CI/CD runbook](../docs/cicd-ghcr-actions-runbook.md) | GitHub Actions/GHCR/Cloud Run release and fallback |
 | [P0-V Gateway contract](../docs/shared-gemini-vertical-slice.md) | Three callers, model limits, endpoint and verified state |
+| [Taiwan Activity Autonomous Agent design](../docs/taiwan-activity-autonomous-agent.md) | New planned Agent Worker: bounded web exploration, source repair, document proposal, Life publication boundary (**DESIGN / NOT IMPLEMENTED**) |
 | [Owner Chat runbook](../docs/p0-owner-chat-runbook.md) | Error correlation, DB receipt and scoped E2E |
 | [Risk register](../docs/project-risk-audit-2026-10-14.md) | Confirmed risks, conditional risks, missing verification |
 | [OAuth policy](../docs/oauth-automated-acceptance-policy.md) | No manual login gate; mandatory feasible automated auth checks |
