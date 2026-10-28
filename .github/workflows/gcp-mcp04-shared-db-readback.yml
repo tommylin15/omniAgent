@@ -1,0 +1,75 @@
+# GCP_MCP-04 cross-repo shared PostgreSQL PRE-MIGRATION readback.
+# Only reads existing VM/Cloud Run state. NO IAM, DB, Secret or Cloud Run writes.
+name: GCP_MCP-04 shared PostgreSQL read-only inventory
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/gcp-mcp04-shared-db-readback.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  db-readback:
+    if: github.repository == 'tommylin15/omniAgent' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pin current main SHA
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git ls-remote https://github.com/tommylin15/omniAgent.git refs/heads/main | cut -f1)" = "$GITHUB_SHA"
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+          service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Read-only Gateway runtime and ingress conditions
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          d="$RUNNER_TEMP/gcp-mcp04-runtime.json"
+          gcloud run services describe multi-project-gcp-devops-mcp             --project=gen-lang-client-0593591102 --region=us-central1             --format=json > "$d"
+          python3 - "$d" <<'PY'
+          import json,sys
+          doc=json.load(open(sys.argv[1]))
+          traffic=(doc.get("status") or {}).get("traffic") or []
+          allocation=[(x.get("revisionName"),x.get("percent")) for x in traffic if (x.get("percent") or 0)>0]
+          assert len(allocation)==1 and allocation[0][1]==100, "BLOCKED: runtime traffic drift"
+          print("gcp_mcp_serving_revision="+str(allocation[0][0]))
+          print("gcp_mcp_serving_percent=100")
+          annotations=(doc.get("metadata") or {}).get("annotations") or {}
+          print("gcp_mcp_invoker_iam_disabled="+str(annotations.get("run.googleapis.com/invoker-iam-disabled","UNKNOWN")))
+          template=((doc.get("spec") or {}).get("template") or {}).get("spec") or {}
+          print("gcp_mcp_runtime_sa_present="+str(bool(template.get("serviceAccountName"))))
+          print("gcp_mcp_vpc_access_present="+str(bool(template.get("vpcAccess"))))
+          PY
+      - name: Existing shared PostgreSQL live inventory READ ONLY
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          set +x
+          gcloud compute ssh janus-postgres-dev             --project=gen-lang-client-0593591102 --zone=us-central1-a             --tunnel-through-iap --quiet             --command='sudo docker exec -u postgres janus-postgres psql -X -A -t -q -v ON_ERROR_STOP=1 -d omniagent_chat -c "
+              BEGIN READ ONLY;
+              SELECT '\''database='\'' || current_database();
+              SELECT '\''pg_ssl='\'' || current_setting('\''ssl'\'');
+              SELECT '\''omni_chat_schema='\'' || (to_regnamespace('\''omni_chat'\'') IS NOT NULL)::text;
+              SELECT '\''gcp_mcp_role_state='\'' || COALESCE(
+                (SELECT rolcanlogin::text || '\'':'\'' || rolsuper::text || '\'':'\'' ||
+                        rolcreatedb::text || '\'':'\'' || rolcreaterole::text
+                 FROM pg_roles WHERE rolname='\''gcp_mcp_oauth_app'\''), '\''ABSENT'\'');
+              SELECT '\''gcp_mcp_schema='\'' || (to_regnamespace('\''gcp_mcp_oauth'\'') IS NOT NULL)::text;
+              SELECT '\''gcp_mcp_table='\'' || (to_regclass('\''gcp_mcp_oauth.gcp_mcp_oauth_kv'\'') IS NOT NULL)::text;
+              SELECT '\''chat_hba_scope='\'' || count(*) FROM pg_hba_file_rules
+                 WHERE type='\''hostssl'\'' AND database @> ARRAY['\''omniagent_chat'\'']
+                 AND user_name @> ARRAY['\''omniagent_chat_app'\'']
+                 AND auth_method='\''scram-sha-256'\'' AND error IS NULL;
+              SELECT '\''gcp_mcp_hba_scope='\'' || count(*) FROM pg_hba_file_rules
+                 WHERE type='\''hostssl'\'' AND database @> ARRAY['\''omniagent_chat'\'']
+                 AND user_name @> ARRAY['\''gcp_mcp_oauth_app'\'']
+                 AND auth_method='\''scram-sha-256'\'' AND error IS NULL;
+              SELECT '\''hba_errors='\'' || count(*) FROM pg_hba_file_rules WHERE error IS NOT NULL;
+              COMMIT;"'
