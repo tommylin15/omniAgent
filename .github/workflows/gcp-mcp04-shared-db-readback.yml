@@ -47,6 +47,38 @@ jobs:
           print("gcp_mcp_runtime_sa_present="+str(bool(template.get("serviceAccountName"))))
           print("gcp_mcp_vpc_access_present="+str(bool(template.get("vpcAccess"))))
           PY
+      - name: Read-only serving Chat VPC and existing PostgreSQL host network
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          gcloud run services describe omniagent-chat             --project=gen-lang-client-0593591102 --region=us-central1             --format=json > "$RUNNER_TEMP/omniagent-chat-live.json"
+          gcloud compute instances describe janus-postgres-dev             --project=gen-lang-client-0593591102 --zone=us-central1-a             --format=json > "$RUNNER_TEMP/omniagent-shared-pg-host.json"
+          python3 - "$RUNNER_TEMP/omniagent-chat-live.json" "$RUNNER_TEMP/omniagent-shared-pg-host.json" <<'PY'
+          import json,sys
+          service=json.load(open(sys.argv[1]))
+          host=json.load(open(sys.argv[2]))
+          templ=((service.get("spec") or {}).get("template") or {})
+          spec=templ.get("spec") or {}
+          ann=templ.get("metadata",{}).get("annotations",{}) or {}
+          vpc=spec.get("vpcAccess") or {}
+          raw=ann.get("run.googleapis.com/network-interfaces")
+          interfaces=[]
+          if raw:
+            interfaces=json.loads(raw)
+          else:
+            interfaces=vpc.get("networkInterfaces") or []
+          vm_ni=(host.get("networkInterfaces") or [{}])[0]
+          def tail(x): return (str(x or "").split("/")[-1] if x else "ABSENT")
+          print("omni_chat_active_revision="+str(next((x.get("revisionName") for x in
+                (service.get("status") or {}).get("traffic",[]) if x.get("percent")==100),"UNKNOWN")))
+          print("omni_chat_vpc_mode="+("DIRECT" if interfaces else ("CONNECTOR" if vpc.get("connector") else "ABSENT")))
+          print("omni_chat_vpc_network="+tail((interfaces[0] if interfaces else {}).get("network")))
+          print("omni_chat_vpc_subnet="+tail((interfaces[0] if interfaces else {}).get("subnetwork")))
+          print("omni_chat_vpc_egress="+str(vpc.get("egress") or ann.get("run.googleapis.com/vpc-access-egress","UNKNOWN")))
+          print("postgres_host_network="+tail(vm_ni.get("network")))
+          print("postgres_host_subnet="+tail(vm_ni.get("subnetwork")))
+          print("postgres_host_status="+str(host.get("status","UNKNOWN")))
+          PY
       - name: Existing shared PostgreSQL live inventory READ ONLY
         shell: bash
         run: |
