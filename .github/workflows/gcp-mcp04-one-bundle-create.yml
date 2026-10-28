@@ -1,0 +1,74 @@
+# One-time Owner-approved GCP_MCP-04 secret resource bootstrap.
+# NO Secret version or password creation in this job. Safe to replay only
+# against an existing same-shape secret. No changes to Omniagent bundle.
+name: GCP_MCP-04 one dedicated Secret Manager resource
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/gcp-mcp04-one-bundle-create.yml']
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  one-secret:
+    if: github.repository == 'tommylin15/omniAgent' && github.ref == 'refs/heads/main' && github.event.head_commit.message == 'feat(gcp-mcp04): create one owner-approved GCP MCP secret resource'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify exact main and one-resource guard
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git ls-remote https://github.com/tommylin15/omniAgent.git refs/heads/main | cut -f1)" = "$GITHUB_SHA"
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+          service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Create exactly one new unversioned GCP MCP bundle and secret-level IAM
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          set +x
+          PROJECT=gen-lang-client-0593591102
+          NAME=gcp-mcp-oauth-bundle
+          RUNTIME=gcp-devops-mcp-runtime@gen-lang-client-0593591102.iam.gserviceaccount.com
+          if gcloud secrets describe "$NAME" --project="$PROJECT" --format=json > "$RUNNER_TEMP/secret.json" 2>/dev/null; then
+            echo 'gcp_mcp04_secret_resource=ALREADY_EXISTS'
+          else
+            gcloud secrets create "$NAME" --project="$PROJECT" \
+              --replication-policy=user-managed --locations=us-central1 \
+              --labels=app=gcp-mcp,purpose=oauth \
+              --quiet > /dev/null
+            echo 'gcp_mcp04_secret_resource=CREATED'
+          fi
+          gcloud secrets describe "$NAME" --project="$PROJECT" --format=json > "$RUNNER_TEMP/secret.json"
+          python3 - "$RUNNER_TEMP/secret.json" <<'PY'
+          import json,sys
+          d=json.load(open(sys.argv[1]))
+          x=(d.get('replication') or {}).get('userManaged') or {}
+          locations=[e.get('location') for e in x.get('replicas') or []]
+          assert locations==['us-central1'], 'BLOCKED: secret replication drift'
+          assert str(d.get('name','')).endswith('/secrets/gcp-mcp-oauth-bundle')
+          print('gcp_mcp04_secret_region=us-central1')
+          PY
+          gcloud secrets add-iam-policy-binding "$NAME" --project="$PROJECT" \
+            --member="serviceAccount:$RUNTIME" \
+            --role=roles/secretmanager.secretAccessor --quiet > /dev/null
+          gcloud secrets get-iam-policy "$NAME" --project="$PROJECT" --format=json > "$RUNNER_TEMP/iam.json"
+          python3 - "$RUNNER_TEMP/iam.json" <<'PY'
+          import json,sys
+          b=json.load(open(sys.argv[1])).get('bindings',[])
+          principal='serviceAccount:gcp-devops-mcp-runtime@gen-lang-client-0593591102.iam.gserviceaccount.com'
+          assert any(x.get('role')=='roles/secretmanager.secretAccessor'
+              and principal in x.get('members',[]) and not x.get('condition') for x in b)
+          print('gcp_mcp04_runtime_secret_accessor=PASS')
+          PY
+          versions="$(gcloud secrets versions list --secret="$NAME" --project="$PROJECT" --format='value(name)')"
+          [[ -z "$versions" ]] || {
+            echo 'gcp_mcp04_secret_versions=EXISTING_REVIEW_REQUIRED'; exit 3;
+          }
+          echo 'gcp_mcp04_secret_versions=NONE'
+          echo 'gcp_mcp04_oauth_live=NOT_READY'
