@@ -11,7 +11,10 @@ permissions:
   id-token: write
 jobs:
   one-secret:
-    if: github.repository == 'tommylin15/omniAgent' && github.ref == 'refs/heads/main' && github.event.head_commit.message == 'feat(gcp-mcp04): create one owner-approved GCP MCP secret resource'
+    if: >-
+      github.repository == 'tommylin15/omniAgent' &&
+      github.ref == 'refs/heads/main' &&
+      github.event.head_commit.message == 'fix(gcp-mcp04) approved secret resource bootstrap'
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
