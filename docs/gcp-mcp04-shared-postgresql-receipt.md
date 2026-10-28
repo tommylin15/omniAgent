@@ -18,3 +18,12 @@
 - 進入下一階段以前，需核准 GCP MCP 專用 Secret 資源／版本與相應最小權限，執行 role password／LOGIN／HBA／VPC/TLS 正反驗證、Google OAuth Credential/Owner allowlist；若涉及新增付費 GCP 資源，須先取得 Owner 明確授權。
 
 GCP MCP Gateway 的直接程式、完整架構及部署文件以獨立 repo [multi-project-gcp-devops](https://github.com/tommylin15/multi-project-gcp-devops/blob/main/docs/GCP_MCP_04_SHARED_POSTGRES.md) 為準。
+
+## 2026-10-28 單一 Secret Bundle Owner 核准及 IAM 阻擋
+
+Owner 已核准在原專案新增**一個** `gcp-mcp-oauth-bundle` Secret Manager resource 與 GCP MCP Runtime 的最小 Secret-level accessor；不授權擴張 `omniagent-ci` project IAM。原本 six-secret 設計已被 GCP MCP repo 的 one-bundle 實作取代。
+
+- [嘗試 Run 40640670796](https://github.com/tommylin15/omniAgent/actions/runs/40640670796) 由 `omniagent-ci` 透過既有 OIDC 執行，GCP 回覆 `secretmanager.secrets.create: PERMISSION_DENIED`，因此沒有 Secret 建立成功證據。
+- 一次性 GitHub Resource creation workflow 已撤銷；不提高自動化 SA 權限。
+- 下一步由具權限的 Owner 在 Cloud Shell 以 GCP MCP 獨立 repo 的 `infra/gcp-mcp04-owner-secret-bootstrap.sh --apply` 建立單一 Secret resource 及 Runtime accessor；腳本不會讀取或寫入 Secret value／version，不修改 DB 或 Cloud Run。
+- GCP MCP Runtime 仍 Bootstrap 100%；資料庫的 `gcp_mcp_oauth_app` 仍 NOLOGIN、HBA=0；Google OAuth、Secret version、Private Candidate deployment 仍為 BLOCKED。
