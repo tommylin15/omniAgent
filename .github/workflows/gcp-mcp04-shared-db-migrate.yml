@@ -1,0 +1,50 @@
+# GCP_MCP-04: transactional first-phase NOLOGIN role/schema migration.
+# IMPORTANT: no Secret Manager, IAM, HBA, network or Cloud Run writes.
+name: GCP_MCP-04 existing shared DB isolated schema migration
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/gcp-mcp04-shared-db-migrate.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: gcp-mcp04-shared-pg-schema
+  cancel-in-progress: false
+jobs:
+  migration:
+    if: github.repository == 'tommylin15/omniAgent' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Guard immutable current-main migration
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git ls-remote https://github.com/tommylin15/omniAgent.git refs/heads/main | cut -f1)" = "$GITHUB_SHA"
+          test -s infra/postgres/migrations/009_gcp_mcp_oauth_isolated.sql
+          bash -n infra/gcp/gcp-mcp04-db-migrate.sh
+          ! grep -Eiq 'DROP (DATABASE|SCHEMA|TABLE)|TRUNCATE|DELETE FROM|ALTER ROLE omniagent_chat_app|CREATE DATABASE' infra/postgres/migrations/009_gcp_mcp_oauth_isolated.sql
+          grep -q 'NOLOGIN' infra/postgres/migrations/009_gcp_mcp_oauth_isolated.sql
+          grep -q '^BEGIN;' infra/postgres/migrations/009_gcp_mcp_oauth_isolated.sql
+          grep -q '^COMMIT;' infra/postgres/migrations/009_gcp_mcp_oauth_isolated.sql
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/131494961796/locations/global/workloadIdentityPools/omniagent-github/providers/github
+          service_account: omniagent-ci@gen-lang-client-0593591102.iam.gserviceaccount.com
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Copy reviewed SQL and execute on existing PostgreSQL VM
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          set +x
+          HOST=janus-postgres-dev
+          PROJECT=gen-lang-client-0593591102
+          ZONE=us-central1-a
+          gcloud compute scp infra/postgres/migrations/009_gcp_mcp_oauth_isolated.sql             "$HOST:/tmp/gcp-mcp04-009.sql" --project="$PROJECT" --zone="$ZONE"             --tunnel-through-iap --quiet >/dev/null
+          gcloud compute scp infra/gcp/gcp-mcp04-db-migrate.sh             "$HOST:/tmp/gcp-mcp04-db-migrate.sh" --project="$PROJECT" --zone="$ZONE"             --tunnel-through-iap --quiet >/dev/null
+          gcloud compute ssh "$HOST" --project="$PROJECT" --zone="$ZONE"             --tunnel-through-iap --quiet             --command='sudo bash /tmp/gcp-mcp04-db-migrate.sh'
