@@ -8,7 +8,7 @@ import type { ChatDispatcher } from "./gateway_dispatch.js";
 import type { CredentialManager } from "./credential_management.js";
 import { isAllowedGeminiModel } from "./model_entitlements.js";
 import { parseUsageDays, type RouterUsageStats } from "./router_usage.js";
-import { AgentSettingsConflict, type AgentAdminSettingsStore } from "./agent_admin_settings.js";
+import { AgentSettingsConflict, validateAgentSettings, type AgentAdminSettingsStore } from "./agent_admin_settings.js";
 
 export type Principal = { issuer: string; subject: string };
 export type VerifyUser = (token: string) => Promise<Principal>;
@@ -180,8 +180,12 @@ export function makeChatServer(store: ChatStore, verifyUser: VerifyUser, verifyS
           const value=await body(request);
           if (Object.keys(value).sort().join(",")!=="expectedVersion,settings")
             throw new InvalidRequest("invalid agent settings mutation");
+          const checked=validateAgentSettings(value.settings);
+          if(typeof value.expectedVersion!=="number" ||
+             !Number.isSafeInteger(value.expectedVersion) || value.expectedVersion<0)
+            throw new InvalidRequest("invalid agent settings version");
           return send(response,200,{
-            ...await agentAdmin.settings.save(ownerId,value.expectedVersion,value.settings),
+            ...await agentAdmin.settings.save(ownerId,value.expectedVersion,checked),
             effective:{activation:"draft_only",paidRoutingEnabled:false,
               agentExecutionEnabled:false,toolsConnected:false,
               secrets:"not_disclosed",runtimeVerification:"not_verified"}
