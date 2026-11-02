@@ -38,10 +38,10 @@ class _AgentAdminPageState extends State<AgentAdminPage> {
         loading=false;
       });
     } catch (_) {
-      if(mounted)setState((){
+      if(mounted){setState((){
         error='設定無法載入：請確認帳號具有 Admin 權限、API 開關和資料庫 migration。';
         loading=false;
-      });
+      });}
     }
   }
 
@@ -69,10 +69,10 @@ class _AgentAdminPageState extends State<AgentAdminPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content:Text('設定草稿已儲存並讀回，不影響正式路由')));
     } catch (_) {
-      if(mounted)setState((){
+      if(mounted){setState((){
         saving=false;
         error='儲存失敗：可能是版本衝突、參數超界或權限不足。請重新載入核對。';
-      });
+      });}
     }
   }
 
