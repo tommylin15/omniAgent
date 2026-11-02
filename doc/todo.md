@@ -1,8 +1,27 @@
-# omniAgent 唯一有效 TODO（2026-10-14）
+# omniAgent 唯一有效 TODO（更新：2026-11-02）
 
 本文件只追蹤**現行狀態及未結工程**。歷史測試、取消的方案、舊 Revision 數量、曾經失敗的診斷請從 Git history／Actions 追溯，**不可用歷史 OPEN 覆蓋新的 runtime PASS**。以正式 GCP runtime 和對應 GitHub SHA 為準；完整產品狀態仍為 **PARTIAL**。
 
 ## 2026-11-02｜OA-AGENT / OA-GEMINI｜通用 Agent、雙 Key、Admin 控制台
+
+### 2026-11-02 來源／CI／候選／發布收據（依 exact SHA 判定）
+
+**基準 `main@18f8c2ff5572eaf6248dc452a62b85aaf6d55c07`，整體 PARTIAL**。本段只同步實際已提交的增量；以下原始工作卡尚未滿足所有驗收條件，因此不把其全部勾選為 DONE。
+
+| 卡片 | 已有可讀證據 | 仍待完成 |
+| --- | --- | --- |
+| OA-ADMIN-01 | Flutter `agent_admin_page.dart`、`chat_page.dart` 增加僅 Admin 可見設定入口；預算、模型、Agent 限額、工具 toggle、L2 審批只儲存 **draft**，Flutter widget/CI PASS | UI 目前**沒有**真正的 Secret 存在狀態、Owner/Model 授權編輯、實際帳務或 Worker 狀態；Admin 登入與手機 Runtime E2E 未驗 |
+| OA-ADMIN-02 | Chat `/v1/me.agentAdminEnabled` 與 `GET/PUT /v1/admin/agent-settings` 僅在 `AGENT_ADMIN_SETTINGS_ENABLED=true` 且 verified Owner UUID 存在 `AGENT_ADMIN_OWNER_IDS` 時可用；HTTP 非 Admin 403、匿名 401，source/CI PASS | 正式 Owner allowlist、候選授權與 401/403/200 真 OAuth 測試未做 |
+| OA-ADMIN-03 | `agent_admin_settings.ts` 的 schema/範圍驗證、CAS 版本衝突、audit 同 SQL 交易；`010_agent_admin_settings_draft.sql` migration 已提交；CI PASS | **正式資料庫 migration 未驗證執行**，Chat DB role 權限、DB 持久化實例/併發 readback、真部署與 rollback 未驗 |
+| OA-ADMIN-04 | Node/Flutter 單元測試覆蓋 Owner 權限、非法欄位、版本衝突、Key 明文拒絕、草稿與 effective 區分；Node/Flutter CI PASS | 真 Owner、SQL 併發、故障注入/負向 Runtime 尚未驗 |
+| OA-GEMINI-02 | `gemini_route_policy.ts` 是 **offline-only** 選模政策；public/private/paid 所有 gate 必須成立；`tests/gemini_route_policy.test.ts` CI PASS | **沒有**付費 Key、Gemini Paid Tier、模型可用性證據、真 Gateway 派送／計價或 Gemini Flash 呼叫；現有 Lite-only 正式政策未變 |
+| OA-AGENT-01 | `agent_loop.ts` 實作純離線、有界、read-only `decision→tool→observation→final`；超時、步數、grant/validator/結果大小負例測試 CI PASS | 尚未整合 LangGraph、Function Calling、持久 checkpoint、Chat/Worker、真 MCP Tool 或 Token/費用上限；不可稱為完整 Agent |
+
+**同一來源版驗收：** [Node + Flutter + PostgreSQL CI #41371490056](https://github.com/tommylin15/omniAgent/actions/runs/41371490056) PASS；[GHCR 映像 #41371490016](https://github.com/tommylin15/omniAgent/actions/runs/41371490016) PASS；[0%-traffic 候選 #41372318617](https://github.com/tommylin15/omniAgent/actions/runs/41372318617) PASS；[Candidate Smoke #41372517960](https://github.com/tommylin15/omniAgent/actions/runs/41372517960) PASS（guarded fixed preview 步驟 SKIPPED）。[Auto Release #41372567786](https://github.com/tommylin15/omniAgent/actions/runs/41372567786) 的 `one_shot_ghcr_traffic_promotion=PASS`，**但整體 FAIL**，原因是 Shared Codex retention `older_revision_has_live_tag`；readiness 同時記 `formal_release_gate=BLOCKED_MISSING_LIVE_APP_ACCEPTANCE`。不能以 promotion 單步 PASS 宣稱整批發布成功，也不能在沒有新的獨立 Cloud Run／資料庫 readback 時宣稱 Admin 設定已生效。
+
+**安全預設與下一步：** `AGENT_ADMIN_SETTINGS_ENABLED` 預設 OFF，Admin settings 為草稿；`GEMINI_PAID_ROUTING_ENABLED` / Agent runtime 的正式執行未接入；原有 `CHAT_DISPATCH_ENABLED` 安全 Gate 不變。下一次先跑 `010` 的正式 DB migration／角色權限／回復預案，再做指定 Admin 的 Private Candidate 與 GET/PUT 真 readback；另盤點 Shared Codex Live Tag／rollback 後才可安全清理 Release。操作指示：[docs/agent-admin-deployment-wi.md](../docs/agent-admin-deployment-wi.md)。
+
+
 
 > 使用者已核准把本對話規劃寫入唯一 TODO 並依序實作。完整規格見 [agent-loop-roadmap.md](../docs/agent-loop-roadmap.md)。本段不取代既有 R01/R05/R08 安全阻塞；正式 Chat Dispatch 仍 OFF，任何 Key、IAM、Paid Tier 與正式切流需實證。完成必依 CODE → TEST → CI → CANDIDATE → RUNTIME → E2E 判定。
 

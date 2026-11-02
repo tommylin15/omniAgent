@@ -1,5 +1,8 @@
 # omniAgent SPEC
 
+> **2026-11-02 OA-AGENT / OA-GEMINI 增量：** 目標為單一有界 Agent Loop＋Life/Janus/Google 授權 Tools＋Gemini Developer API 公開 Lite／私人 Paid-Lite／進階 Paid-Flash 路由與 Admin 控制台。詳細契約見 [Agent Loop 規格](../docs/agent-loop-roadmap.md)，單一權威狀態見 [TODO](todo.md)。已合併 Admin Draft UI/API/PG migration 010、離線 paid selector、有界 read-only core；[exact CI #41371490056](https://github.com/tommylin15/omniAgent/actions/runs/41371490056) PASS、[候選](https://github.com/tommylin15/omniAgent/actions/runs/41372318617)／[smoke](https://github.com/tommylin15/omniAgent/actions/runs/41372517960) PASS，但正式付費 API、真 Agent Worker、四來源 OAuth/E2E 仍未做。[Auto Release](https://github.com/tommylin15/omniAgent/actions/runs/41372567786) promotion 步驟 PASS、retention `older_revision_has_live_tag` FAIL，不能以 CI 推論正式設定可用。此段不修改舊 SPEC 的既有已核准 release gates。
+
+
 > **2026-10-14 status note:** Gateway-only Gemini production PASS ([#38559065522](https://github.com/tommylin15/omniAgent/actions/runs/38559065522)); independent Cloud Run/retention readback PASS ([#38498845455 attempt 3](https://github.com/tommylin15/omniAgent/actions/runs/38498845455/attempts/3)); Chat formal Dispatch OFF. Earlier dated baselines are historical. See [TODO](todo.md) for live backlog.
 
 ### 2026-10-12 OAuth acceptance override

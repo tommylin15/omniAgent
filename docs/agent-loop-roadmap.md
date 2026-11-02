@@ -2,6 +2,15 @@
 
 日期 2026-11-02。唯一 TODO：`doc/todo.md`。設計與實作分階段；此文件不代表正式生效、付費 Key 配妥或真實跨服務 E2E 通過。
 
+## 2026-11-02 實作與驗收同步（以 GitHub 為準）
+
+- **Repo source:** `main@18f8c2ff5572eaf6248dc452a62b85aaf6d55c07`。本規格的架構仍為目標；目前只完成 **Admin settings draft 第一版 + offline Gemini routing policy + offline read-only bounded Agent Loop**。
+- **已存在程式：** `apps/agent_app/lib/agent_admin_page.dart` + `chat_page.dart`（Admin-only entry）、`services/chat-api/server.ts`/ `main.ts` / `agent_admin_settings.ts`（OAuth Owner UUID gate + GET/PUT draft + CAS version + audit）、`infra/postgres/migrations/010_agent_admin_settings_draft.sql`（尚未套到正式 DB）、`services/agent-gateway/gemini_route_policy.ts`（純邏輯）、`agent_loop.ts`（純離線有界唯讀）。
+- **非已實現：** 未連接 Secret Key 配置狀態（Admin UI 僅顯示「不揭露」）、未提供 Owner/Model 權限修改 UI、未接真 Gemini Paid 模型/Google Billing、未實作 LangGraph/Function Calling/Cloud Run Agent Worker、未接 Life/Janus/Calendar/Drive 的真工具、未啟用 production Admin endpoint。數字設定是**草稿**，不是生效的預算閘門。
+- **可重跑來源：** [CI #41371490056](https://github.com/tommylin15/omniAgent/actions/runs/41371490056) Node、Flutter、PostgreSQL acceptance PASS；[GHCR #41371490016](https://github.com/tommylin15/omniAgent/actions/runs/41371490016) PASS；[0% candidate #41372318617](https://github.com/tommylin15/omniAgent/actions/runs/41372318617) PASS；[smoke #41372517960](https://github.com/tommylin15/omniAgent/actions/runs/41372517960) PASS。
+- **Release 部分結果：** [Auto Release #41372567786](https://github.com/tommylin15/omniAgent/actions/runs/41372567786) `one_shot_ghcr_traffic_promotion=PASS`；隨後 `older_revision_has_live_tag` 阻擋 Shared Codex revision 清理，使整體 Release FAIL；`formal_release_gate=BLOCKED_MISSING_LIVE_APP_ACCEPTANCE`。缺少同 SHA Admin/DB/正式環境獨立讀回時，不將 partial success 寫成 DONE。
+- **下一動作與安全邊界：** [受控 Admin 設定 WI](agent-admin-deployment-wi.md)；維持正式付費路由／Agent Worker OFF，須先檢查 DB migration、DB role/sequence 權限、真 OAuth admin/visitor 正反例與 revision tag/rollback，再進下一工程卡。
+
 ## 產品操作
 Flutter Chat 輸入自然語言 → Chat API（OAuth/Owner/Thread/Turn/SSE）→ Agent Worker（有界 plan/tool/observe/final、checkpoint/approval）→ Model Gateway（Gemini）及 MCP Host（工具執行）→ Life/Janus/Calendar/Drive。資料屬於各來源，omniAgent 不跨庫讀寫領域資料，並保留 Chat 的單 Owner Preview 與 Gateway 原有 Lite 服務。
 

@@ -1,5 +1,8 @@
 # omniAgent UI Visual Contract
 
+> **2026-11-02 管理設定頁增量（非正式 UI acceptance）：** `apps/agent_app/lib/agent_admin_page.dart` 已新增 Gemini 模型選擇草稿、Owner/global calls/tokens/monthly budget、Agent steps/tools/time/bytes、L2 approval、Life/Janus/Calendar/Drive 工具意向 toggle。只有 `/v1/me.agentAdminEnabled=true` 的 OAuth Owner 看得到入口；Admin GET/PUT 另需後端 UUID allowlist。**目前只儲存草稿、不顯示真 Key 存在狀態、不代表真模型/工具可用。** [Flutter/Node/PG CI #41371490056](https://github.com/tommylin15/omniAgent/actions/runs/41371490056) PASS；[Candidate](https://github.com/tommylin15/omniAgent/actions/runs/41372318617) + [Smoke](https://github.com/tommylin15/omniAgent/actions/runs/41372517960) PASS；真 Admin/非 Admin UI Runtime E2E、正式 DB migration 待驗。參考 [Agent 管理規格](../docs/agent-loop-roadmap.md) 和 [部署 WI](../docs/agent-admin-deployment-wi.md)。
+
+
 > UI source baseline: `main@12a94018debd11f5b389aa2fdf325339782bb9d8`; Flutter run `37625912746` PASS. Current repo also contains later omniAgent Gateway/deployment ownership cleanup validated by Node Core run `37628904846`.
 > Current implementation path: `apps/agent_app/`.
 > Contract revision: 2026-10-07.

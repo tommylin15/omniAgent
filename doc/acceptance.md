@@ -2,6 +2,19 @@
 
 **Overall: PARTIAL.** Current runtime receipts override dated checkpoints. Historic work stays available in Git history and Actions.
 
+## 2026-11-02 Agent/Admin/Gemini 新增工程驗收（單獨於既有正式產品）
+
+| Gate | Exact scope/result | Evidence / remaining |
+| --- | --- | --- |
+| OA-ADMIN Flutter + API + Node/Flutter/PG tests | **SOURCE + CI PASS, runtime not verified** | [CI #41371490056](https://github.com/tommylin15/omniAgent/actions/runs/41371490056); Admin OAuth Owner UUID allowlist、草稿 GET/PUT、版本/非法欄位/非 Admin 拒絕；`AGENT_ADMIN_SETTINGS_ENABLED` 未實際啟用驗收 |
+| OA-ADMIN PostgreSQL migration 010 | **SOURCE + CI, production migration NOT_VERIFIED** | `infra/postgres/migrations/010_agent_admin_settings_draft.sql`；正式角色權限、sequence、實際 CAS 與 audit readback 未做 |
+| OA-GEMINI paid route selector | **OFFLINE POLICY + TEST PASS, paid API OFF** | `gemini_route_policy.ts` 僅選擇政策、不能呼叫 provider；Paid Key、Tier、模型可用性、成本台帳及真 Flash E2E 無證據 |
+| OA-AGENT bounded read-only loop | **OFFLINE CORE + TEST PASS, no agent runtime** | `agent_loop.ts` 沒有 Function Calling、LangGraph、checkpoint、MCP 認證或跨服務真操作 |
+| New image/candidate/smoke | **PASS for matching source, gated execution** | [GHCR](https://github.com/tommylin15/omniAgent/actions/runs/41371490016), [0% candidate](https://github.com/tommylin15/omniAgent/actions/runs/41372318617), [smoke](https://github.com/tommylin15/omniAgent/actions/runs/41372517960); fixed preview publish SKIPPED，不能視為 Admin 功能上線 |
+| Auto Release | **PARTIAL, overall FAIL** | [Run #41372567786](https://github.com/tommylin15/omniAgent/actions/runs/41372567786): `one_shot_ghcr_traffic_promotion=PASS`; Shared Codex revision retention `older_revision_has_live_tag` BLOCKED；`formal_release_gate=BLOCKED_MISSING_LIVE_APP_ACCEPTANCE`；無獨立最新 Admin OAuth/DB runtime readback |
+
+完整卡片與阻塞參見 [TODO](todo.md)；部署前條件與撤回方案見 [Admin WI](../docs/agent-admin-deployment-wi.md)。**本批新增項目沒有一個可標示完整正式 E2E DONE。**
+
 | Gate | Result | Evidence |
 | --- | --- | --- |
 | P0-V Gateway Gemini formal activation | PASS | https://github.com/tommylin15/omniAgent/actions/runs/38559065522 |
