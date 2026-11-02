@@ -144,6 +144,8 @@ class ChatApi {
 
   Future<dynamic> get(String path) => _request('GET', path);
   Future<dynamic> delete(String path) => _request('DELETE', path);
+  Future<dynamic> put(String path, Map<String,dynamic> body) =>
+      _request('PUT', path, body);
   Future<dynamic> post(String path, Map<String, dynamic> body) =>
       _request('POST', path, body);
 
