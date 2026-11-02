@@ -30,7 +30,7 @@ class _AgentAdminPageState extends State<AgentAdminPage> {
     try {
       final body=asMap(await widget.api.get('/v1/admin/agent-settings'));
       if(body['version'] is! int)throw const FormatException('設定版本缺失');
-      if(!mounted)return;
+      if(!mounted){return;}
       setState((){
         version=body['version'] as int;
         settings=asMap(body['settings']);
@@ -59,7 +59,7 @@ class _AgentAdminPageState extends State<AgentAdminPage> {
       final raw=asMap(await widget.api.put('/v1/admin/agent-settings',{
         'expectedVersion':version,'settings':settings!,
       }));
-      if(!mounted)return;
+      if(!mounted){return;}
       setState((){
         version=raw['version'] as int;
         settings=asMap(raw['settings']);
@@ -94,7 +94,7 @@ class _AgentAdminPageState extends State<AgentAdminPage> {
   Widget modelField(String label,String key,List<String> allowed){
     final current=section('models')[key] as String? ?? allowed.first;
     return SizedBox(width:300,child:DropdownButtonFormField<String>(
-      value:allowed.contains(current)?current:allowed.first,
+      initialValue:allowed.contains(current)?current:allowed.first,
       decoration:InputDecoration(labelText:label,border:const OutlineInputBorder()),
       items:[for(final model in allowed)
         DropdownMenuItem(value:model,child:Text(model))],
@@ -139,9 +139,8 @@ class _AgentAdminPageState extends State<AgentAdminPage> {
             const Text('此頁不直接修改 API Key、Cloud Run、IAM 或正式模型。'
               '管理員設定仍必須通過部署和 runtime 驗收才可生效。'),
             const SizedBox(height:8),
-            Text('版本：$version；狀態：'+(effective['activation']??'未核實').toString()),
-            Text('付費路由：'+(effective['paidRoutingEnabled']==true?'啟用':'未啟用')+
-              '；Agent：'+(effective['agentExecutionEnabled']==true?'啟用':'未啟用')),
+            Text('版本：$version；狀態：${effective['activation']??'未核實'}'),
+            Text('付費路由：${effective['paidRoutingEnabled']==true?'啟用':'未啟用'}；Agent：${effective['agentExecutionEnabled']==true?'啟用':'未啟用'}'),
             const Text('API Key 只允許後端驗證配置狀態；不提供金鑰明文。'),
           ]))),
         panel('模型路由（尚未套用正式 Gateway）',[
