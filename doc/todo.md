@@ -2,6 +2,45 @@
 
 本文件只追蹤**現行狀態及未結工程**。歷史測試、取消的方案、舊 Revision 數量、曾經失敗的診斷請從 Git history／Actions 追溯，**不可用歷史 OPEN 覆蓋新的 runtime PASS**。以正式 GCP runtime 和對應 GitHub SHA 為準；完整產品狀態仍為 **PARTIAL**。
 
+## 2026-11-02｜OA-AGENT / OA-GEMINI｜通用 Agent、雙 Key、Admin 控制台
+
+> 使用者已核准把本對話規劃寫入唯一 TODO 並依序實作。完整規格見 [agent-loop-roadmap.md](../docs/agent-loop-roadmap.md)。本段不取代既有 R01/R05/R08 安全阻塞；正式 Chat Dispatch 仍 OFF，任何 Key、IAM、Paid Tier 與正式切流需實證。完成必依 CODE → TEST → CI → CANDIDATE → RUNTIME → E2E 判定。
+
+### P0-A｜成本與付費模型
+- [ ] OA-GEMINI-01：確認已領取 US$10 GCP credit 的 Billing／Gemini Developer API Paid Tier、prepay、兩 Key 的實際所屬 GCP project。**同一專案兩 Key 不隔離免費／付費用量；Credit 非硬性費用上限**。
+- [ ] OA-GEMINI-02：保留現有 Lite Key / Shared Gemini 服務，付費 Key 僅由 omniagent-bundle 的 gemini_paid_api_key 提供；Gateway 明確 OFF-default paid 開關、可用模型 allowlist、Key 欠缺即拒絕，不自動回退免費 Key；需真實 provider availability/readback。
+- [ ] OA-GEMINI-03：Chat 精確 Owner/Model 授權與 Flutter Lite／Flash 選項；公開 Lite、私人 Paid-Lite、複雜 Paid-Flash 政策由可信後端資料標籤判定，LLM 不可決定降級資料保護。
+- [ ] OA-GEMINI-04：依 provider 真 tokens、費率版本、Owner/專案日月用量建立預算防線；缺值 UNKNOWN、429 不無界重試，不把 US$10 credit 誤作服務層硬上限。
+- [ ] OA-GEMINI-05：單元測試 → exact SHA CI → 0% candidate → 真 Lite/Flash 兩路單次測試 → DB usage／帳務 readback → 明確批准後再正式切流。
+
+### P0-B｜單一通用 Agent Loop
+- [ ] OA-AGENT-01：TypeScript 單 Agent bounded loop（LLM Decision → Tool → Observation → Decision → Final），限 steps/tools/time/bytes/tokens/cost；評估 LangGraph.js 作持久狀態圖。先建無憑證、無流量的純邏輯核心及安全負例。
+- [ ] OA-AGENT-02：獨立 Cloud Run Agent Worker、PostgreSQL owner-scoped run/step/checkpoint/lease/tool receipt、action_id 冪等與不明寫入結果 readback。
+- [ ] OA-AGENT-03：Chat API/Flutter 整合 Agent 進度、工具事件、來源引用、停止/續跑，保留現有 OAuth/Owner/Thread/Turn/SSE。
+- [ ] OA-AGENT-04：L0 只讀、L1 摘要草稿、L2 日曆/待辦/文件修改須使用者確認及寫後讀回、L3 交易/批量刪除/部署/IAM/Secret 等限制一般 Agent 自動操作。
+
+### P0-C｜指定 Admin 才能看見和變更的控制介面（本輪新增）
+- [ ] OA-ADMIN-01：Flutter 的 Agent 控制台：模型路由、Key 配置狀態（不顯示 Key）、Owner/Model 權限、日月 token/call/cost 限額、Agent 最大步數/工具次數/timeout、工具清單、審批政策、執行開關、使用量和版本狀態。
+- [ ] OA-ADMIN-02：**服務端真 OAuth Owner UUID allowlist**，非 Admin /v1/me 不顯示入口且所有 /v1/admin/agent-* API 都拒絕；不得相信 client 自報 Admin；權限獨立於 Router 戰情室。
+- [ ] OA-ADMIN-03：Admin 設定需版本化 PostgreSQL 儲存、輸入界線/樂觀鎖、更新稽核、讀回；Secret 僅展示是否配置。先允許編輯**安全草稿**、維持部署 flag OFF，待 Worker/Cost/Gateway 真驗收才可將其當正式生效配置。
+- [ ] OA-ADMIN-04：非 Admin／未知 Owner／偽造 ID、參數越界、重複提交、Key 洩漏、併發衝突、控制台 UI 及 runtime flag fail-closed 測試。
+
+### P1｜四項工具與跨服務整合
+- [ ] OA-TOOL-01：Life 活動 API（受限 read connector；不用高權限匯入金鑰），查活動/日期/來源/有效性；待辦/購物寫入需審批。
+- [ ] OA-TOOL-02：Janus 現有 read-only MCP sources/market/private，OAuth janus.private.read 對應本人 Owner，持股/損益/分析只讀。
+- [ ] OA-TOOL-03：Google Calendar OAuth 查空檔/衝突，L2 核准後新增、穩定 action_id 防重、寫後讀回。
+- [ ] OA-TOOL-04：Google Drive 用最小 OAuth scopes、授權資源搜尋/段落/引用，不自動跨可授權資料夾或改正式規格。
+- [ ] OA-TOOL-05：真 E2E Life+Calendar→三個建議→確認→新增行程/待辦與讀回、Janus+Drive 各自負向隔離、時區及未知數據測試。
+
+### P2｜具價值的跨領域 Agent
+- [ ] OA-WORKFLOW-01：GitHub＋OmniAgentGPT Drive 規格差異及專案進度 Agent。
+- [ ] OA-WORKFLOW-02：個人週行程、Life 活動推薦、待辦協調與後續 Gmail 重要郵件候選（另行 OAuth）。
+- [ ] OA-WORKFLOW-03：Janus 週投資研究/風險摘要（唯讀）及 Life 生活週報，不重做領域模型。
+- [ ] OA-WORKFLOW-04：TaiwanActivityAgent Shadow 自主活動探索、核證、候選，正式發布仍由 Life 管理。
+- [ ] OA-WORKFLOW-05：Cloud Run Jobs/Scheduler、復原、通知、模型成本戰情室，後續才視需要新增多 Agent。
+
+**建議工程順序：Admin 安全草稿/模型路由契約（OFF）→ 有界 Loop → Model Function Calling → MCP Registry → OAuth/持久化 → 四工具 → Approval → 背景 Job/正式驗收。**
+
 ## 已完成（附 runtime 證據）
 
 - [x] **P0-V Gateway Gemini 正式啟用**：[受控發布 #38559065522](https://github.com/tommylin15/omniAgent/actions/runs/38559065522)：三種 caller 的 signed Gemini 正向／跨專案負例與正式 Gateway 路由。
