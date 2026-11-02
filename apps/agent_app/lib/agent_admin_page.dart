@@ -94,10 +94,12 @@ class _AgentAdminPageState extends State<AgentAdminPage> {
   Widget modelField(String label,String key,List<String> allowed){
     final current=section('models')[key] as String? ?? allowed.first;
     return SizedBox(width:300,child:DropdownButtonFormField<String>(
+      isExpanded:true,
       initialValue:allowed.contains(current)?current:allowed.first,
       decoration:InputDecoration(labelText:label,border:const OutlineInputBorder()),
       items:[for(final model in allowed)
-        DropdownMenuItem(value:model,child:Text(model))],
+        DropdownMenuItem(value:model,child:Text(model,
+          maxLines:1,overflow:TextOverflow.ellipsis))],
       onChanged:(model){if(model!=null)change('models',key,model);},
     ));
   }
