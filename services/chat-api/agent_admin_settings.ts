@@ -100,7 +100,10 @@ const GET_SQL="SELECT version,settings,updated_at FROM omni_chat.agent_admin_set
 const UPDATE_SQL=String.raw`
 WITH saved AS (
   INSERT INTO omni_chat.agent_admin_settings(singleton,version,settings,updated_by,updated_at)
-    SELECT 'global',1,$2::jsonb,$3::uuid,now() WHERE $1::integer=0
+    SELECT 'global',1,$2::jsonb,$3::uuid,now()
+    WHERE $1::integer=0 OR EXISTS (
+      SELECT 1 FROM omni_chat.agent_admin_settings WHERE singleton='global'
+    )
   ON CONFLICT(singleton) DO UPDATE SET
     version=omni_chat.agent_admin_settings.version+1,
     settings=excluded.settings,updated_by=excluded.updated_by,updated_at=now()
