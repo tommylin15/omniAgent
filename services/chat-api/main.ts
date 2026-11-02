@@ -11,6 +11,7 @@ import { GoogleSecretManagerVault } from "./credential_vault.js";
 import { chatDatabasePoolConfig, chatDatabaseUrl, chatDatabaseTrustAnchor } from "./database.js";
 import { parseChatDispatchBudget } from "./dispatch_budget.js";
 import { RouterUsageStats,parseUsageAdmins } from "./router_usage.js";
+import { AgentAdminSettingsStore,parseAgentAdmins } from "./agent_admin_settings.js";
 import { routerUsageBundleConnection } from "../agent-gateway/router_usage_bundle.js";
 
 const dsn = chatDatabaseUrl(process.env);
@@ -112,6 +113,11 @@ const usage=usageAdmins?{admins:usageAdmins,stats:new RouterUsageStats(
   {query:(sql,params)=>pool.query(sql,params)},
   ledgerPool?{query:(sql,params)=>ledgerPool.query(sql,params)}:undefined,usageMode)}:undefined;
 
+// Admin draft settings remain opt-in and never directly change Gateway or Agent execution.
+const agentAdmin=process.env.AGENT_ADMIN_SETTINGS_ENABLED==="true"
+  ? {admins:parseAgentAdmins(process.env.AGENT_ADMIN_OWNER_IDS??""),
+     settings:new AgentAdminSettingsStore(pool)} : undefined;
+
 const server = makeChatServer(store,
   async (token) => {
     try {
@@ -127,7 +133,7 @@ const server = makeChatServer(store,
         throw new Error("unauthorized");
       }
     } catch { throw new Error("unauthorized"); }
-  }, dispatcher, credentials, usage);
+  }, dispatcher, credentials, usage, agentAdmin);
 
 server.listen(Number(process.env.PORT ?? "8080"),"0.0.0.0");
 process.once("SIGTERM",() => server.close(() => {
