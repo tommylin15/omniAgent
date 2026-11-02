@@ -8,6 +8,7 @@ import type { ChatDispatcher } from "./gateway_dispatch.js";
 import type { CredentialManager } from "./credential_management.js";
 import { isAllowedGeminiModel } from "./model_entitlements.js";
 import { parseUsageDays, type RouterUsageStats } from "./router_usage.js";
+import { AgentSettingsConflict, type AgentAdminSettingsStore } from "./agent_admin_settings.js";
 
 export type Principal = { issuer: string; subject: string };
 export type VerifyUser = (token: string) => Promise<Principal>;
@@ -111,7 +112,9 @@ function threadInput(value: Record<string, unknown>): ThreadInput {
 export function makeChatServer(store: ChatStore, verifyUser: VerifyUser, verifyService: VerifyService,
                                dispatcher?: Pick<ChatDispatcher,"runOnce"> & Partial<Pick<ChatDispatcher,"canDispatch" | "inspectRunningCandidates" | "availableModels" | "continueCodex">>,
                                credentials?: Pick<CredentialManager,"create" | "list" | "revoke">,
-                               usage?: { stats: RouterUsageStats; admins: ReadonlySet<string> }) {
+                               usage?: { stats: RouterUsageStats; admins: ReadonlySet<string> },
+                               agentAdmin?: {settings:Pick<AgentAdminSettingsStore,"read"|"save">;
+                                 admins:ReadonlySet<string>}) {
   return createServer(async (request, response) => {
     const requestId=randomUUID();
     response.setHeader("X-OmniAgent-Request-Id",requestId);
@@ -163,6 +166,29 @@ export function makeChatServer(store: ChatStore, verifyUser: VerifyUser, verifyS
       }
       const principal = await verifyUser(token);
       const ownerId = await store.owner(principal.issuer,principal.subject);
+      if (url.pathname === "/v1/admin/agent-settings") {
+        if (!agentAdmin) return send(response,404,{error:"not_found"});
+        if (!agentAdmin.admins.has(ownerId.toLowerCase()))
+          return send(response,403,{error:"forbidden"});
+        if (request.method === "GET") return send(response,200,{
+          ...await agentAdmin.settings.read(),
+          effective:{activation:"draft_only",paidRoutingEnabled:false,
+            agentExecutionEnabled:false,toolsConnected:false,
+            secrets:"not_disclosed",runtimeVerification:"not_verified"}
+        });
+        if (request.method === "PUT") {
+          const value=await body(request);
+          if (Object.keys(value).sort().join(",")!=="expectedVersion,settings")
+            throw new InvalidRequest("invalid agent settings mutation");
+          return send(response,200,{
+            ...await agentAdmin.settings.save(ownerId,value.expectedVersion,value.settings),
+            effective:{activation:"draft_only",paidRoutingEnabled:false,
+              agentExecutionEnabled:false,toolsConnected:false,
+              secrets:"not_disclosed",runtimeVerification:"not_verified"}
+          });
+        }
+        return send(response,404,{error:"not_found"});
+      }
       if (request.method === "GET" && url.pathname === "/v1/admin/router-usage") {
         if (!usage) return send(response,404,{error:"not_found"});
         if (!usage.admins.has(ownerId.toLowerCase()))
@@ -179,7 +205,8 @@ export function makeChatServer(store: ChatStore, verifyUser: VerifyUser, verifyS
         return send(response,200,{ownerId,modelDispatchEnabled:
           (dispatcher?.availableModels?.(ownerId)?.length ?? 0) > 0,
           byokManagementEnabled:Boolean(credentials),
-          routerStatsEnabled:Boolean(usage?.admins.has(ownerId.toLowerCase()))});
+          routerStatsEnabled:Boolean(usage?.admins.has(ownerId.toLowerCase())),
+          agentAdminEnabled:Boolean(agentAdmin?.admins.has(ownerId.toLowerCase()))});
       }
       if (request.method === "GET" && url.pathname === "/v1/models") {
         const items = dispatcher?.availableModels?.(ownerId) ?? [];
@@ -338,7 +365,7 @@ export function makeChatServer(store: ChatStore, verifyUser: VerifyUser, verifyS
       }
       send(response,404,{ error:"not_found" });
     } catch (error) {
-      const status = error instanceof ChatNotFound ? 404 : error instanceof ChatConflict ? 409 :
+      const status = error instanceof ChatNotFound ? 404 : error instanceof ChatConflict || error instanceof AgentSettingsConflict ? 409 :
         error instanceof SyntaxError || error instanceof InvalidRequest ? 400 :
         error instanceof Error && ["authentication required","unauthorized"].includes(error.message) ? 401 : 503;
       const outcome=status===401?"unauthorized":status===404?"not_found":
