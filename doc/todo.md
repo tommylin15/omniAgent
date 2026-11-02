@@ -1,5 +1,7 @@
 # omniAgent 唯一有效 TODO（更新：2026-11-02）
 
+**Drive 正式同步規格：** [OmniAgent｜Agent Loop／Gemini 雙路由／Admin 規格](https://docs.google.com/document/d/1ne10yXQL46nyZ4c4PmG37jwZOabiT0RBDTIkHEOkM1I/edit?usp=drivesdk)（在授權的 OmniAgentGPT 資料夾內）。
+
 本文件只追蹤**現行狀態及未結工程**。歷史測試、取消的方案、舊 Revision 數量、曾經失敗的診斷請從 Git history／Actions 追溯，**不可用歷史 OPEN 覆蓋新的 runtime PASS**。以正式 GCP runtime 和對應 GitHub SHA 為準；完整產品狀態仍為 **PARTIAL**。
 
 ## 2026-11-02｜OA-AGENT / OA-GEMINI｜通用 Agent、雙 Key、Admin 控制台

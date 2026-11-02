@@ -18,6 +18,8 @@ Independent Chat and Agent platform: Flutter frontend, owner-scoped Chat API/Pos
 - [Auto Release #41372567786](https://github.com/tommylin15/omniAgent/actions/runs/41372567786) **整體 FAIL**：one-shot promotion step PASS，Shared Codex 舊 live tag 導致 retention BLOCKED；另缺正式 App 驗收。沒有最新 Admin OAuth／migration 實際部署與 DB 讀回，不宣稱設定 UI 正式生效。
 - 規格與下一步：[Agent Loop / Gemini / Admin](docs/agent-loop-roadmap.md)、[Admin 部署 WI](docs/agent-admin-deployment-wi.md)、[唯一 TODO](doc/todo.md)、[驗收狀態](doc/acceptance.md)。
 
+**OmniAgentGPT Drive 規格：** [Agent Loop、Gemini 雙路由與 Admin 控制台](https://docs.google.com/document/d/1ne10yXQL46nyZ4c4PmG37jwZOabiT0RBDTIkHEOkM1I/edit?usp=drivesdk)（2026-11-02；正式程式完成度仍以 GitHub/Runtime 為準）。
+
 ## Documentation
 
 The authoritative **current** status and requirements are [TODO](doc/todo.md), [Acceptance](doc/acceptance.md), [WBS](doc/wbs.md), [SPEC](doc/spec.md), [CI/CD runbook](docs/cicd-ghcr-actions-runbook.md), [Gateway integration contract](docs/shared-gemini-vertical-slice.md) and [risk audit](docs/project-risk-audit-2026-10-14.md). Historical Cloud Build and older stage checkpoints are evidence, not current release status.

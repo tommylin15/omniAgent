@@ -1,6 +1,6 @@
 # omniAgent：Agent Loop、Gemini 雙 Key、Admin 控制台架構 v0.1
 
-日期 2026-11-02。唯一 TODO：`doc/todo.md`。設計與實作分階段；此文件不代表正式生效、付費 Key 配妥或真實跨服務 E2E 通過。
+日期 2026-11-02。唯一 TODO：`doc/todo.md`。Drive 正式對照規格：[OmniAgentGPT Google Docs](https://docs.google.com/document/d/1ne10yXQL46nyZ4c4PmG37jwZOabiT0RBDTIkHEOkM1I/edit?usp=drivesdk)；如設計與程式/runtime 不符，並列差異，不以單一副本推定實際完成。設計與實作分階段；此文件不代表正式生效、付費 Key 配妥或真實跨服務 E2E 通過。
 
 ## 2026-11-02 實作與驗收同步（以 GitHub 為準）
 

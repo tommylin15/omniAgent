@@ -1,5 +1,7 @@
 # OA-ADMIN-01~04｜Agent 設定草稿 Admin 部署與驗收 WI
 
+正式 Drive 規格：[OmniAgentGPT Agent／Gemini／Admin 規格](https://docs.google.com/document/d/1ne10yXQL46nyZ4c4PmG37jwZOabiT0RBDTIkHEOkM1I/edit?usp=drivesdk)；工程依 GitHub 及 Runtime 收據。
+
 **2026-11-02｜來源 main@18f8c2f｜此頁為待執行操作指示，不是執行收據。** 只有指定 Admin 登入可見/修改草稿。Cloud Run Paid Routing 與 Agent Worker 不可因本 WI 自動啟用；保持 `CHAT_DISPATCH_ENABLED` 原有授權門檻。
 
 ## 先決條件與確認
