@@ -51,6 +51,11 @@ describe("bounded Agent Loop is isolated from production and write tools",()=>{
     }),new Map([[read.name,{...read,call:async()=>({huge:"x".repeat(2000)})}]]));
     expect(large.reason).toBe("tool_result_invalid_or_oversize");
   });
+  it("enforces hard timeout when planner ignores AbortSignal",async()=>{
+    const r=await runBoundedAgentLoop({...request(),limits:{...limits,timeoutMs:100}},
+      async()=>new Promise<never>(()=>{}),new Map());
+    expect(r).toMatchObject({status:"limit_exceeded",reason:"timeout"});
+  });
   it("stops at step budget and honors pre-cancel",async()=>{
     const unfinished=await runBoundedAgentLoop(
       {...request(),limits:{...limits,maxSteps:1}},async()=>({
