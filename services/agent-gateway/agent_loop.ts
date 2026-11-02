@@ -47,26 +47,39 @@ function isRecord(value:unknown):value is Record<string,unknown>{
   return !!value&&typeof value==="object"&&!Array.isArray(value);
 }
 
+async function boundedAwait<T>(task:()=>Promise<T>,signal:AbortSignal):Promise<T>{
+  if(signal.aborted)throw new Error("operation_aborted");
+  return new Promise<T>((resolve,reject)=>{
+    const onAbort=()=>reject(new Error("operation_aborted"));
+    signal.addEventListener("abort",onAbort,{once:true});
+    Promise.resolve().then(task).then(resolve,reject).finally(()=>
+      signal.removeEventListener("abort",onAbort));
+  });
+}
+
 export async function runBoundedAgentLoop(request:AgentLoopRequest,
   planner:AgentPlanner,registry:ReadonlyMap<string,AgentTool>):Promise<AgentLoopResult>{
   validConfig(request);
   const start=Date.now();
   const observations:AgentObservation[]=[];
   let toolCalls=0,steps=0;
-  const signal=request.signal??new AbortController().signal;
+  const deadline=AbortSignal.timeout(request.limits.timeoutMs);
+  const signal=request.signal?AbortSignal.any([request.signal,deadline]):deadline;
+  const aborted=()=>request.signal?.aborted
+    ? outcome("cancelled","signal_aborted") : outcome("limit_exceeded","timeout");
   const outcome=(status:AgentLoopResult["status"],reason?:string,text?:string):AgentLoopResult=>
     ({status,...(reason?{reason}:{}),...(text?{text}:{}),steps,toolCalls,observations});
   for(let i=0;i<request.limits.maxSteps;i++){
-    if(signal.aborted)return outcome("cancelled","signal_aborted");
+    if(signal.aborted)return aborted();
     if(Date.now()-start>=request.limits.timeoutMs)
       return outcome("limit_exceeded","timeout");
     steps++;
     let decision:AgentDecision;
     try{
-      decision=await planner({question:request.question,observations,
+      decision=await boundedAwait(()=>planner({question:request.question,observations,
         stepsRemaining:request.limits.maxSteps-i-1,
-        toolsRemaining:request.limits.maxToolCalls-toolCalls},signal);
-    }catch{return outcome("tool_error","planner_unavailable");}
+        toolsRemaining:request.limits.maxToolCalls-toolCalls},signal),signal);
+    }catch{return signal.aborted?aborted():outcome("tool_error","planner_unavailable");}
     if(!isRecord(decision))return outcome("denied","invalid_model_decision");
     if(decision.kind==="final"){
       if(typeof decision.text!=="string"||!decision.text.trim()||
@@ -86,13 +99,13 @@ export async function runBoundedAgentLoop(request:AgentLoopRequest,
       return outcome("limit_exceeded","tool_call_limit");
     toolCalls++;
     try{
-      const result=await tool.call(decision.arguments,signal);
+      const result=await boundedAwait(()=>tool.call(decision.arguments,signal),signal);
       const serialized=JSON.stringify(result);
       if(serialized===undefined||Buffer.byteLength(serialized,"utf8")>
           request.limits.maxToolOutputBytes)
         return outcome("denied","tool_result_invalid_or_oversize");
       observations.push({origin:"untrusted_tool_result",name:decision.name,result});
-    }catch{return outcome("tool_error","tool_execution_failed");}
+    }catch{return signal.aborted?aborted():outcome("tool_error","tool_execution_failed");}
   }
   return outcome("limit_exceeded","decision_step_limit");
 }
