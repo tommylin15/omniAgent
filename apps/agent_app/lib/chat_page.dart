@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'chat_api.dart';
 import 'model_catalog.dart';
 import 'router_usage_page.dart';
+import 'agent_admin_page.dart';
 import 'omni_theme.dart';
 import 'twin_beast_mascot.dart';
 
@@ -41,6 +42,7 @@ class _ChatPageState extends State<ChatPage> {
   Map<String, List<String>>? entitledModels;
   String? authenticatedOwnerId;
   bool routerStatsEnabled=false;
+  bool agentAdminEnabled=false;
 
   @override
   void initState() {
@@ -60,6 +62,7 @@ class _ChatPageState extends State<ChatPage> {
         setState(() {
           authenticatedOwnerId = value;
           routerStatsEnabled = result['routerStatsEnabled'] == true;
+          agentAdminEnabled = result['agentAdminEnabled'] == true;
         });
       }
     } catch (_) {
@@ -611,6 +614,14 @@ class _ChatPageState extends State<ChatPage> {
                   tooltip: '複製 Owner ID',
                   onPressed: copyAuthenticatedOwner,
                   icon: const Icon(Icons.badge_outlined),
+                ),
+              if (agentAdminEnabled)
+                IconButton(
+                  tooltip: 'Agent 管理設定',
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(builder: (_) =>
+                      AgentAdminPage(widget.api))),
+                  icon: const Icon(Icons.admin_panel_settings_outlined),
                 ),
               if (routerStatsEnabled)
                 IconButton(
