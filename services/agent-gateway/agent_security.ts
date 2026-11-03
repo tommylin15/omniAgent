@@ -1,7 +1,7 @@
 export type ContextEgress = {
   ownerId: string;
   threadId: string;
-  runtime: "openrouter" | "gemini" | "codex";
+  runtime: "openrouter" | "gemini" | "groq" | "codex";
   sourceIds: string[];
   containsPrivateData: boolean;
   providerDisclosed: boolean;

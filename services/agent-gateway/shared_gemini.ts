@@ -15,6 +15,7 @@ import { isAllowedGeminiModel } from "./gemini_model_policy.js";
 import { parseOwnerAuthorizationKeys, verifyOwnerAuthorization } from "./owner_authorization.js";
 import { PgModelQuotaLedger,createQuotaPool,parseQuotaLimits,ModelQuotaDenied,type ModelQuotaLedger } from "./model_quota_ledger.js";
 import { PgGatewayUsageRecorder,createUsagePool,type GatewayUsageRecorder } from "./model_usage_telemetry.js";
+import {configuredProviderLedger,runProviderExecution} from "./provider_receipts.js";
 
 const PROJECTS = ["omniagent", "market-mart", "life-assistant"] as const;
 type Project = typeof PROJECTS[number];
@@ -188,10 +189,11 @@ export function makeSharedGeminiHandler(options: Configuration = {}) {
   const usage = enabled && env.GEMINI_SHARED_USAGE_ENABLED === "true"
     ? options.usage ?? new PgGatewayUsageRecorder(createUsagePool(env)) : undefined;
   const verify = options.verify ?? verifyGeminiCaller;
-  const generate: Generate = options.generate ?? ((prompt,model,maxOutputTokens) =>
-    new GeminiProvider(env.GEMINI_API_KEY || "",model).generate(prompt,{
+  const receiptLedger=enabled?configuredProviderLedger(env):undefined;
+  const generate=(fetcher:typeof fetch,prompt:string,model:string,maxOutputTokens:number)=>options.generate
+    ?options.generate(prompt,model,maxOutputTokens):new GeminiProvider(env.GEMINI_API_KEY || "",model,fetcher).generate(prompt,{
       signal:AbortSignal.timeout(60_000),maxOutputTokens
-    }));
+    });
   let running = 0;
   return async (request: IncomingMessage, reply: ServerResponse): Promise<void> => {
     if (!enabled) return send(reply,404,{error:"not_found"});
@@ -222,7 +224,7 @@ export function makeSharedGeminiHandler(options: Configuration = {}) {
     }
     running++;
     const started = Date.now();
-    const executionId = usage ? randomUUID() : "";
+    const executionId = usage||receiptLedger ? randomUUID() : "";
     // The former 125ms fire-and-forget timeout may lose writes when Cloud Run
     // throttles CPU, but the first missing real DB receipt's root cause is
     // not yet proven. Await a bounded DB acknowledgement. Provider output
@@ -256,7 +258,13 @@ export function makeSharedGeminiHandler(options: Configuration = {}) {
       } finally { if(timeout)clearTimeout(timeout); }
     };
     try {
-      const answer = await generate(body.prompt,body.model,maxOutputTokens);
+      const answer = await runProviderExecution({project:body.project,ownerId:body.ownerId,requestId:body.requestId,
+        model:body.model,provider:"gemini",source:"shared-gemini",
+        ...(executionId?{executionId}:{})},async fetcher=>{
+        const value=await generate(fetcher,body.prompt,body.model,maxOutputTokens);
+        return {value,receipt:{actualModel:value.model,...(value.usage?{usage:{inputTokens:value.usage.promptTokens,
+          outputTokens:value.usage.totalTokens-value.usage.promptTokens,totalTokens:value.usage.totalTokens}}:{})}};
+      },{ledger:receiptLedger??null});
       assertSafeGeminiAnswer(answer,body.model);
       const usageCapture=await captureBounded("completed",answer.usage?.totalTokens ?? null);
       if(quota){

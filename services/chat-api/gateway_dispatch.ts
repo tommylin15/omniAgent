@@ -31,20 +31,21 @@ export class ChatDispatcher {
   }
 
   /** Client-visible metadata is derived only from the explicit Owner entitlements. */
-  availableModels(ownerId: string): { runtime: string; model: string }[] {
+  availableModels(ownerId: string): { runtime: string; model: string;routeProfile?:string }[] {
     if (!this.entitlements || !this.approvedOwners.some(owner =>
         owner.toLowerCase() === ownerId.toLowerCase())) return [];
     return this.entitlements.filter(entry => entry.ownerId === ownerId.toLowerCase() &&
-      entry.credentialMode === "platform").map(({runtime,model}) => ({runtime,model}))
+      entry.credentialMode === "platform").map(({runtime,model,routeProfile}) => ({runtime,model,
+        ...(routeProfile?{routeProfile}:{})}))
       .sort((a,b) => a.runtime.localeCompare(b.runtime) || a.model.localeCompare(b.model));
   }
 
-  canDispatch(ownerId: string, runtime?: string, model?: string): boolean {
+  canDispatch(ownerId: string, runtime?: string, model?: string,routeProfile="public-lite"): boolean {
     if (!this.approvedOwners.some(owner => owner.toLowerCase() === ownerId.toLowerCase())) return false;
     if (!this.entitlements) return true; // Non-production fixture compatibility only.
     return runtime !== undefined && model !== undefined &&
       (runtime !== "codex" || (Boolean(this.codex) && Boolean(this.invoke.control))) &&
-      allowsModel(this.entitlements,ownerId,runtime,model);
+      allowsModel(this.entitlements,ownerId,runtime,model,routeProfile);
   }
 
   async runOnce(target?: { ownerId: string; threadId: string; turnId: string }): Promise<DispatchOutcome> {
@@ -60,7 +61,7 @@ export class ChatDispatcher {
       ? await this.store.claimNextQueuedTurn(this.approvedOwners,target,this.entitlements)
       : await this.store.claimNextQueuedTurn(this.approvedOwners,target);
     if (!claim) return { status: "idle" };
-    if (this.entitlements && !this.canDispatch(claim.ownerId,claim.runtime,claim.model))
+    if (this.entitlements && !this.canDispatch(claim.ownerId,claim.runtime,claim.model,claim.routeProfile))
       throw new Error("model entitlement claim needs reconciliation");
     let events: TurnEvent[];
     let result: unknown;
@@ -211,7 +212,9 @@ export function makeSignedGatewayInvoker(options: {
     ? "/internal/v1/assistant/turn:start" : "/internal/v1/assistant/turn",{
     ownerId:claim.ownerId,threadId:claim.threadId,turnId:claim.turnId,
     runtime:claim.runtime,model:claim.model,
-    messages:[{role:"user",content:claim.content}]
+    messages:[{role:"user",content:claim.content}],
+    ...(claim.credentialProfileId?{credentialProfileId:claim.credentialProfileId}:{}),
+    ...(claim.routeProfile&&claim.routeProfile!=="public-lite"?{routeProfile:claim.routeProfile}:{})
   });
   invoke.control=(operation,payload)=>post("/internal/v1/assistant/"+
     (operation==="approval"?"approval":operation),payload);

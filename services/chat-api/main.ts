@@ -13,6 +13,8 @@ import { parseChatDispatchBudget } from "./dispatch_budget.js";
 import { RouterUsageStats,parseUsageAdmins } from "./router_usage.js";
 import { AgentAdminSettingsStore,parseAgentAdmins } from "./agent_admin_settings.js";
 import { routerUsageBundleConnection } from "../agent-gateway/router_usage_bundle.js";
+import {productServices} from "./product_services.js";
+import {AgentAdminAccessStore} from "./agent_admin_access.js";
 
 const dsn = chatDatabaseUrl(process.env);
 const userAudience = process.env.OMNIAGENT_GOOGLE_CLIENT_ID;
@@ -36,7 +38,7 @@ if(process.env.CHAT_DISPATCH_ENABLED==="true" &&
   throw new Error("Chat dispatch requires verified PostgreSQL server TLS");
 const dispatchBudget=process.env.CHAT_DISPATCH_ENABLED==="true"
   ? parseChatDispatchBudget(process.env.CHAT_DISPATCH_BUDGET_JSON??"") : undefined;
-const store = new ChatStore(pool,dispatchBudget);
+const store = new ChatStore(pool,dispatchBudget,process.env.CHAT_DURABLE_INTENTS_ENABLED==="true");
 let dispatcher: ChatDispatcher | undefined;
 if (process.env.CHAT_DISPATCH_ENABLED === "true") {
   // The existing single bundle is the only signing-key source. Never silently
@@ -64,7 +66,9 @@ if (process.env.CHAT_DISPATCH_ENABLED === "true") {
   // A Google identity and the legacy owner allowlist alone do not grant
   // access to every platform model. BYOK is deliberately not inferred.
   const entitlements = parseModelEntitlements(
-    process.env.CHAT_DISPATCH_ENTITLEMENTS_JSON ?? "", approvedOwners);
+    process.env.CHAT_DISPATCH_ENTITLEMENTS_JSON ?? "", approvedOwners,{
+      enabled:process.env.CHAT_GEMINI_PAID_ENABLED==="true",
+      models:(process.env.CHAT_GEMINI_PAID_MODELS??"").split(",").map(x=>x.trim()).filter(Boolean)});
   const auth = new GoogleAuth();
   dispatcher = new ChatDispatcher(store, makeSignedGatewayInvoker({
     url, audience, signingKey,
@@ -87,7 +91,7 @@ if (process.env.CHAT_BYOK_MANAGEMENT_ENABLED === "true") {
  // Gateway ledger connection MUST use a separate PostgreSQL SELECT-only role;
  // it is not the Gateway's quota writer credential.
 const usageMode=process.env.ROUTER_USAGE_GATEWAY_SOURCE ?? "quota";
-if(usageMode!=="quota" && usageMode!=="passive")
+if(usageMode!=="quota" && usageMode!=="passive" && usageMode!=="unified")
   throw new Error("router usage source mode invalid");
 const usageEnabled=process.env.ROUTER_USAGE_ENABLED==="true";
 const usageAdmins=usageEnabled
@@ -95,7 +99,7 @@ const usageAdmins=usageEnabled
 // The Chat and Gateway runtime read the same existing omniagent-bundle.
 // Select ONLY the reader PostgreSQL role for this process. The two roles
 // remain SQL-privilege separated, not Secret-payload separated.
-const usageBundle=usageEnabled && usageMode==="passive"
+const usageBundle=usageEnabled && (usageMode==="passive"||usageMode==="unified")
   ? routerUsageBundleConnection(process.env.OMNIAGENT_BUNDLE,"reader") : undefined;
 if(usageBundle && (process.env.ROUTER_USAGE_GATEWAY_DATABASE_URL ||
    process.env.ROUTER_USAGE_GATEWAY_CA_PEM ||
@@ -116,7 +120,7 @@ const usage=usageAdmins?{admins:usageAdmins,stats:new RouterUsageStats(
 // Admin draft settings remain opt-in and never directly change Gateway or Agent execution.
 const agentAdmin=process.env.AGENT_ADMIN_SETTINGS_ENABLED==="true"
   ? {admins:parseAgentAdmins(process.env.AGENT_ADMIN_OWNER_IDS??""),
-     settings:new AgentAdminSettingsStore(pool)} : undefined;
+     settings:new AgentAdminSettingsStore(pool),access:new AgentAdminAccessStore(pool)} : undefined;
 
 const server = makeChatServer(store,
   async (token) => {
@@ -133,7 +137,7 @@ const server = makeChatServer(store,
         throw new Error("unauthorized");
       }
     } catch { throw new Error("unauthorized"); }
-  }, dispatcher, credentials, usage, agentAdmin);
+  }, dispatcher, credentials, usage, agentAdmin,productServices(pool));
 
 server.listen(Number(process.env.PORT ?? "8080"),"0.0.0.0");
 process.once("SIGTERM",() => server.close(() => {

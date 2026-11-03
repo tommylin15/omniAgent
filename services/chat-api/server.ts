@@ -9,6 +9,9 @@ import type { CredentialManager } from "./credential_management.js";
 import { isAllowedGeminiModel } from "./model_entitlements.js";
 import { parseUsageDays, type RouterUsageStats } from "./router_usage.js";
 import { AgentSettingsConflict, validateAgentSettings, type AgentAdminSettingsStore } from "./agent_admin_settings.js";
+import {productRoute,type ProductServices} from "./product_routes.js";
+import {AgentAccessConflict,type AgentAdminAccessStore} from "./agent_admin_access.js";
+import {MessageIntentConflict,MessageIntentNotFound} from "./message_intents.js";
 
 export type Principal = { issuer: string; subject: string };
 export type VerifyUser = (token: string) => Promise<Principal>;
@@ -96,14 +99,20 @@ function key(request: IncomingMessage): string {
 }
 
 function threadInput(value: Record<string, unknown>): ThreadInput {
-  if (!["openrouter","gemini","codex"].includes(String(value.runtime))) throw new InvalidRequest("runtime is invalid");
-  const model = value.runtime === "openrouter" && typeof value.model === "string"
+  if (!["openrouter","gemini","groq","codex"].includes(String(value.runtime))) throw new InvalidRequest("runtime is invalid");
+  const model = ["openrouter","groq"].includes(String(value.runtime)) && typeof value.model === "string"
     && value.model.length <= 128 && /^[A-Za-z0-9][A-Za-z0-9._:-]*(?:\/[A-Za-z0-9][A-Za-z0-9._:-]*)?$/.test(value.model)
     ? value.model : id(value.model,"model");
-  if (value.runtime === "gemini" && !isAllowedGeminiModel(model))
+  const routeProfile=value.routeProfile??"public-lite";
+  if(!["public-lite","private-lite","advanced-flash"].includes(String(routeProfile))||
+    (routeProfile!=="public-lite"&&(value.runtime!=="gemini"||value.credentialProfileId!==undefined)))
+    throw new InvalidRequest("invalid model route");
+  if (value.runtime === "gemini" && routeProfile==="public-lite" && !isAllowedGeminiModel(model))
     throw new InvalidRequest("only approved Gemini Flash-Lite models are supported");
   return { runtime: value.runtime as ThreadInput["runtime"], model,
     assistantProfile: id(value.assistantProfile,"assistant profile"),
+    ...(routeProfile!=="public-lite"?{routeProfile:routeProfile as "private-lite"|"advanced-flash"}:{}),
+    ...(value.credentialProfileId===undefined?{}:{credentialProfileId:id(value.credentialProfileId,"credential profile")}),
     ...(value.threadId === undefined ? {} : { threadId: id(value.threadId,"thread id") }),
     ...(value.skillProfile === undefined ? {} : { skillProfile: id(value.skillProfile,"skill profile") }),
     ...(value.parentThreadId === undefined ? {} : { parentThreadId: id(value.parentThreadId,"parent thread id") }) };
@@ -111,10 +120,10 @@ function threadInput(value: Record<string, unknown>): ThreadInput {
 
 export function makeChatServer(store: ChatStore, verifyUser: VerifyUser, verifyService: VerifyService,
                                dispatcher?: Pick<ChatDispatcher,"runOnce"> & Partial<Pick<ChatDispatcher,"canDispatch" | "inspectRunningCandidates" | "availableModels" | "continueCodex">>,
-                               credentials?: Pick<CredentialManager,"create" | "list" | "revoke">,
+                               credentials?: Pick<CredentialManager,"create" | "list" | "revoke"> & Partial<Pick<CredentialManager,"resolveExecution"|"replace"|"reconcile"|"rotations">>,
                                usage?: { stats: RouterUsageStats; admins: ReadonlySet<string> },
                                agentAdmin?: {settings:Pick<AgentAdminSettingsStore,"read"|"save">;
-                                 admins:ReadonlySet<string>}) {
+                                 admins:ReadonlySet<string>;access?:AgentAdminAccessStore},products:ProductServices={}) {
   return createServer(async (request, response) => {
     const requestId=randomUUID();
     response.setHeader("X-OmniAgent-Request-Id",requestId);
@@ -148,8 +157,25 @@ export function makeChatServer(store: ChatStore, verifyUser: VerifyUser, verifyS
         }
         const value = await body(request);
         const ownerId = id(value.ownerId,"owner id");
+        if(request.method==="POST"&&url.pathname==="/internal/v1/chat/agent-actions:authorize"){
+          if(!products.agent)return send(response,404,{error:"not_found"});
+          if(!value.arguments||typeof value.arguments!=="object"||Array.isArray(value.arguments)||
+            !["write","readback"].includes(String(value.operation)))throw new InvalidRequest("invalid agent action");
+          const authorized=await products.agent.runs.authorizeAction({ownerId,
+            runId:id(value.runId,"run id"),actionId:id(value.actionId,"action id"),
+            toolName:id(value.toolName,"tool name"),arguments:value.arguments as Record<string,unknown>,
+            paramsDigest:String(value.paramsDigest),operation:value.operation as "write"|"readback"});
+          return send(response,authorized?200:403,{authorized});
+        }
         const threadId = id(value.threadId,"thread id");
         const turnId = id(value.turnId,"turn id");
+        if(request.method==="POST"&&url.pathname==="/internal/v1/chat/credentials:resolve"){
+          if(process.env.CHAT_BYOK_EXECUTION_ENABLED!=="true"||!credentials?.resolveExecution)
+            return send(response,404,{error:"not_found"});
+          if(!["gemini","openrouter","groq"].includes(String(value.provider)))throw new InvalidRequest("invalid provider");
+          return send(response,200,{reference:await credentials.resolveExecution(ownerId,threadId,turnId,
+            value.provider as "gemini"|"openrouter"|"groq",id(value.credentialProfileId,"credential profile"))});
+        }
         if (request.method === "POST" && url.pathname === "/internal/v1/chat/events") {
           const type = String(value.type);
           if (!TYPES.has(type)) throw new InvalidRequest("event type is invalid");
@@ -166,6 +192,23 @@ export function makeChatServer(store: ChatStore, verifyUser: VerifyUser, verifyS
       }
       const principal = await verifyUser(token);
       const ownerId = await store.owner(principal.issuer,principal.subject);
+      if(url.pathname==="/v1/admin/agent-access"){
+        if(!agentAdmin?.access)return send(response,404,{error:"not_found"});
+        if(!agentAdmin.admins.has(ownerId.toLowerCase()))return send(response,403,{error:"forbidden"});
+        if(request.method==="GET")return send(response,200,{...await agentAdmin.access.read(),activation:"draft_only"});
+        if(request.method==="PUT"){
+          const value=await body(request);
+          if(Object.keys(value).sort().join(",")!=="expectedVersion,owners")throw new InvalidRequest("invalid access draft");
+          return send(response,200,{...await agentAdmin.access.save(ownerId,value.expectedVersion,value.owners),activation:"draft_only"});
+        }
+        return send(response,404,{error:"not_found"});
+      }
+      if(url.pathname==="/v1/admin/agent-status"&&request.method==="GET"){
+        if(!agentAdmin)return send(response,404,{error:"not_found"});
+        if(!agentAdmin.admins.has(ownerId.toLowerCase()))return send(response,403,{error:"forbidden"});
+        return send(response,200,products.status?await products.status():{status:"not_configured"});
+      }
+      if(await productRoute(request,response,url,ownerId,store,products))return;
       if (url.pathname === "/v1/admin/agent-settings") {
         if (!agentAdmin) return send(response,404,{error:"not_found"});
         if (!agentAdmin.admins.has(ownerId.toLowerCase()))
@@ -209,6 +252,7 @@ export function makeChatServer(store: ChatStore, verifyUser: VerifyUser, verifyS
         return send(response,200,{ownerId,modelDispatchEnabled:
           (dispatcher?.availableModels?.(ownerId)?.length ?? 0) > 0,
           byokManagementEnabled:Boolean(credentials),
+          durableIntentsEnabled:Boolean(products.intents),
           routerStatsEnabled:Boolean(usage?.admins.has(ownerId.toLowerCase())),
           agentAdminEnabled:Boolean(agentAdmin?.admins.has(ownerId.toLowerCase()))});
       }
@@ -223,7 +267,7 @@ export function makeChatServer(store: ChatStore, verifyUser: VerifyUser, verifyS
         if (request.method === "GET") return send(response,200,{ items:await credentials.list(ownerId) });
         if (request.method === "POST") {
           const value = await body(request);
-          if (!["gemini","openrouter"].includes(String(value.provider)) ||
+          if (!["gemini","openrouter","groq"].includes(String(value.provider)) ||
               typeof value.apiKey !== "string" || value.apiKey.length < 16 ||
               value.apiKey.length > 4096 || value.apiKey.trim() !== value.apiKey ||
               /[\r\n\0]/.test(value.apiKey) ||
@@ -231,17 +275,38 @@ export function makeChatServer(store: ChatStore, verifyUser: VerifyUser, verifyS
             throw new InvalidRequest("credential input invalid");
           }
           return send(response,201,await credentials.create(ownerId,
-            value.provider as "gemini" | "openrouter",value.apiKey));
+            value.provider as "gemini" | "openrouter" | "groq",value.apiKey));
         }
         return send(response,404,{ error:"not_found" });
       }
       const credential = /^\/v1\/credentials\/([a-f0-9-]{36})$/.exec(url.pathname);
+      if(request.method==="GET"&&url.pathname==="/v1/credential-rotations"){
+        if(!credentials?.rotations)return send(response,404,{error:"not_found"});
+        return send(response,200,{items:await credentials.rotations(ownerId)});
+      }
+      const replacement=/^\/v1\/credentials\/([a-f0-9-]{36})\/replace$/.exec(url.pathname);
+      if(request.method==="POST"&&replacement){
+        if(!credentials?.replace)return send(response,404,{error:"not_found"});
+        const value=await body(request);
+        if(Object.keys(value).join(",")!=="apiKey"||typeof value.apiKey!=="string")throw new InvalidRequest("invalid replacement");
+        return send(response,200,await credentials.replace(ownerId,replacement[1],value.apiKey,key(request)));
+      }
+      const rotation=/^\/v1\/credential-rotations\/([a-f0-9-]{36})\/reconcile$/.exec(url.pathname);
+      if(request.method==="POST"&&rotation){
+        if(!credentials?.reconcile)return send(response,404,{error:"not_found"});
+        return send(response,200,await credentials.reconcile(ownerId,rotation[1]));
+      }
       if (request.method === "DELETE" && credential) {
         if (!credentials) return send(response,404,{ error:"not_found" });
         return send(response,200,await credentials.revoke(ownerId,credential[1]));
       }
       if (request.method === "POST" && url.pathname === "/v1/threads") {
-        const created=await store.createThread(ownerId,threadInput(await body(request)),key(request));
+        const input=threadInput(await body(request));
+        if(input.routeProfile&&!dispatcher?.canDispatch?.(ownerId,input.runtime,input.model,input.routeProfile))
+          return send(response,503,{error:"paid_route_unavailable"});
+        if(input.credentialProfileId&&(!credentials||process.env.CHAT_BYOK_EXECUTION_ENABLED!=="true"))
+          return send(response,503,{error:"byok_execution_unavailable"});
+        const created=await store.createThread(ownerId,input,key(request));
         auditRequest(requestId,"thread_committed");
         return send(response,201,created);
       }
@@ -262,6 +327,8 @@ export function makeChatServer(store: ChatStore, verifyUser: VerifyUser, verifyS
           runtime:parent.runtime as ThreadInput["runtime"],model:String(parent.model),
           assistantProfile:String(parent.assistant_profile),
           ...(parent.skill_profile ? { skillProfile:String(parent.skill_profile) } : {}),
+          ...(parent.credential_profile_id?{credentialProfileId:String(parent.credential_profile_id)}:{}),
+          ...(parent.route_profile&&parent.route_profile!=="public-lite"?{routeProfile:parent.route_profile as "private-lite"|"advanced-flash"}:{}),
           parentThreadId:fork[1],
           ...(value.threadId === undefined ? {} : { threadId:id(value.threadId,"thread id") })
         },key(request)));
@@ -276,7 +343,7 @@ export function makeChatServer(store: ChatStore, verifyUser: VerifyUser, verifyS
         // provider/model; deny before persisting or claiming a queued turn.
         if (!dispatcher?.canDispatch) return send(response,503,{ error:"dispatch_unavailable" });
         const selected = await store.thread(ownerId,messages[1]);
-        if (!dispatcher.canDispatch(ownerId,String(selected.runtime),String(selected.model)))
+        if (!dispatcher.canDispatch(ownerId,String(selected.runtime),String(selected.model),String(selected.route_profile??"public-lite")))
           return send(response,503,{ error:"dispatch_unavailable" });
         const result = await store.message(ownerId,messages[1],value.content,key(request));
         auditRequest(requestId,"message_committed");
@@ -369,7 +436,7 @@ export function makeChatServer(store: ChatStore, verifyUser: VerifyUser, verifyS
       }
       send(response,404,{ error:"not_found" });
     } catch (error) {
-      const status = error instanceof ChatNotFound ? 404 : error instanceof ChatConflict || error instanceof AgentSettingsConflict ? 409 :
+      const status = error instanceof ChatNotFound || error instanceof MessageIntentNotFound ? 404 : error instanceof ChatConflict || error instanceof AgentSettingsConflict || error instanceof AgentAccessConflict || error instanceof MessageIntentConflict ? 409 :
         error instanceof SyntaxError || error instanceof InvalidRequest ? 400 :
         error instanceof Error && ["authentication required","unauthorized"].includes(error.message) ? 401 : 503;
       const outcome=status===401?"unauthorized":status===404?"not_found":

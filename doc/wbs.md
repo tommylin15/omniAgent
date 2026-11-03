@@ -1,5 +1,7 @@
 # omniAgent Current WBS — 2026-10-14
 
+2026-11-03 source checkpoint：Agent／Paid Gemini／BYOK／Admin／恢復／P2 data/jobs 與對應 UI、migration、測試程式已有本輪 source 增量；build/test/CI/deploy/runtime 均 NOT_RUN。下表既有 runtime 狀態不因 source 寫入而升級。見 [交付檢查點](../docs/source-checkpoint-2026-11-03.md)。
+
 Source of current status: [TODO](todo.md), [Acceptance](acceptance.md), and live GitHub/GCP evidence. This file defines scope, not a second historical progress timeline.
 
 | Work package | State | Exit |

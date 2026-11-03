@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'chat_api.dart';
+import 'agent_access_page.dart';
 
 /// Admin settings are versioned drafts, never live Gateway instructions.
 /// Server-side OAuth/Owner authorization remains mandatory for every request.
@@ -16,6 +17,7 @@ class _AgentAdminPageState extends State<AgentAdminPage> {
   int version=0;
   Map<String,dynamic>? settings;
   Map<String,dynamic> effective={};
+  late Future<dynamic> status=widget.api.get('/v1/admin/agent-status');
 
   @override
   void initState(){super.initState();load();}
@@ -26,7 +28,7 @@ class _AgentAdminPageState extends State<AgentAdminPage> {
   }
 
   Future<void> load() async {
-    setState((){loading=true;error=null;});
+    setState((){loading=true;error=null;status=widget.api.get('/v1/admin/agent-status');});
     try {
       final body=asMap(await widget.api.get('/v1/admin/agent-settings'));
       if(body['version'] is! int)throw const FormatException('設定版本缺失');
@@ -123,6 +125,9 @@ class _AgentAdminPageState extends State<AgentAdminPage> {
   @override
   Widget build(BuildContext context)=>Scaffold(
     appBar:AppBar(title:const Text('Agent 管理設定'),actions:[
+      IconButton(tooltip:'Owner、模型與工具權限草稿',
+        onPressed:()=>Navigator.of(context).push(MaterialPageRoute<void>(builder:(_)=>AgentAccessPage(widget.api))),
+        icon:const Icon(Icons.manage_accounts_outlined)),
       IconButton(tooltip:'重新讀取伺服器設定',onPressed:saving?null:load,
         icon:const Icon(Icons.refresh)),
     ]),
@@ -133,6 +138,22 @@ class _AgentAdminPageState extends State<AgentAdminPage> {
           OutlinedButton(onPressed:load,child:const Text('重新讀取')),
         ]))):
       ListView(padding:const EdgeInsets.all(16),children:[
+        FutureBuilder<dynamic>(future:status,builder:(context,snapshot){
+          final value=snapshot.data;
+          if(value is! Map){return const Card(child:Padding(padding:EdgeInsets.all(16),
+            child:Text('服務配置狀態尚未核實')));}
+          final keys=value['secrets'] is Map?value['secrets'] as Map:{};
+          final configured=value['configured'] is Map?value['configured'] as Map:{};
+          final database=value['database'] is Map?value['database'] as Map:{};
+          String state(dynamic v)=>v==true?'已配置':v==false?'未配置':'未核實';
+          return panel('服務配置與讀取狀態',[
+            Text('Lite Key：${state(keys['legacyGemini'])}；付費 Key：${state(keys['paidGemini'])}'),
+            Text('Agent：${state(configured['agent'])}；背景工作：${state(configured['jobs'])}'),
+            Text('產物：${state(configured['artifacts'])}；封存：${state(configured['archive'])}'),
+            for(final entry in database.entries)Text('${entry.key} 資料庫：${entry.value}'),
+            const SizedBox(height:8),const Text('配置存在與資料表可讀，不代表推論、帳務或整體驗收已通過。'),
+          ]);
+        }),
         Card(child:Padding(padding:const EdgeInsets.all(16),
           child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
             Text('指定 Admin 專用 · 僅設定草稿',

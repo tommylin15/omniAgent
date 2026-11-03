@@ -15,6 +15,7 @@ export type GeminiRouteInput={
   paidTierVerified:boolean;
   providerModelVerified:boolean;
   budgetReservationVerified:boolean;
+  paidModelAllowlist?:ReadonlySet<string>;
 };
 export type GeminiRouteSelection={model:string;credentialRef:"legacy-lite"|"paid-gemini"};
 const lite=new Set(["gemini-3.5-flash-lite","gemini-3.1-flash-lite","gemini-2.5-flash-lite"]);
@@ -29,9 +30,13 @@ export function chooseGeminiRoute(input:GeminiRouteInput):GeminiRouteSelection {
   }
   if(input.profile!=="private-lite"&&input.profile!=="advanced-flash")
     throw new Error("unknown_gemini_route");
-  if(input.profile==="private-lite"&&!lite.has(input.model))
+  if(input.profile==="private-lite"&&!(input.paidModelAllowlist?
+    /^gemini-[a-z0-9.-]+-flash-lite(?:-[a-z0-9.-]+)?$/.test(input.model):lite.has(input.model)))
     throw new Error("unsupported_private_lite_model");
-  if(input.profile==="advanced-flash"&&input.model!=="gemini-3.8-flash")
+  if(input.paidModelAllowlist&&!input.paidModelAllowlist.has(input.model))
+    throw new Error("paid_model_not_configured");
+  if(input.profile==="advanced-flash"&&(!input.paidModelAllowlist||
+    !/^gemini-[a-z0-9.-]+-flash(?:-[a-z0-9.-]+)?$/.test(input.model)||input.model.includes("flash-lite")))
     throw new Error("unsupported_advanced_flash_model");
   if(!input.paidRoutingDeployed||!input.paidKeyConfigured||
     !input.paidTierVerified||!input.providerModelVerified||

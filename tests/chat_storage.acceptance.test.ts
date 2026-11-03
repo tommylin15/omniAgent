@@ -11,6 +11,9 @@ import { CredentialRegistry } from "../services/chat-api/credential_management.j
 import { CodexSessionStore, parseCodexPhase } from "../services/chat-api/codex_session_store.js";
 import { parseChatDispatchBudget } from "../services/chat-api/dispatch_budget.js";
 import { RouterUsageStats } from "../services/chat-api/router_usage.js";
+import {MessageIntentStore} from "../services/chat-api/message_intents.js";
+import {PgAgentRunStore} from "../services/chat-api/agent_runs.js";
+import {AgentAdminAccessStore} from "../services/chat-api/agent_admin_access.js";
 
 const dsn = process.env.PG_TEST_URL;
 describe.runIf(Boolean(dsn))("isolated PostgreSQL ChatStore acceptance", () => {
@@ -23,7 +26,7 @@ describe.runIf(Boolean(dsn))("isolated PostgreSQL ChatStore acceptance", () => {
     try {
       expect((await pool.query("SELECT current_database() AS name")).rows[0].name).toBe("omniagent_acceptance");
       expect((await pool.query("SELECT to_regclass('omni_chat.owners') AS present")).rows[0].present).toBeNull();
-      for (const filename of ["001_chat_ownership.sql", "002_skill_storage.sql", "003_credential_metadata.sql", "003_runtime_bindings.sql", "004_codex_live_turns.sql", "005_codex_trial_3_turn_budget.sql", "007_chat_model_dispatch_budget.sql"]) {
+      for (const filename of ["001_chat_ownership.sql", "002_skill_storage.sql", "003_credential_metadata.sql", "003_runtime_bindings.sql", "004_codex_live_turns.sql", "005_codex_trial_3_turn_budget.sql", "007_chat_model_dispatch_budget.sql","014_groq_runtime.sql","015_thread_credentials.sql","016_turn_execution_mode.sql","018_paid_chat_profile.sql"]) {
         const sql = readFileSync("infra/postgres/migrations/" + filename,"utf8");
         await pool.query(sql);
         await pool.query(sql);
@@ -651,4 +654,41 @@ describe.runIf(Boolean(dsn))("isolated PostgreSQL ChatStore acceptance", () => {
       expect(queued.rows[0].status).toBe("QUEUED");
     }finally{await Promise.all([poolA.end(),poolB.end()]);}
   },20_000);
+  it("persists cross-device intent, Agent fencing and Admin draft boundaries",async()=>{
+    const url=new URL(dsn!);
+    if(!["127.0.0.1","localhost"].includes(url.hostname)||url.pathname!=="/omniagent_acceptance")
+      throw Error("requires isolated local acceptance database");
+    const pool=new Pool({connectionString:dsn,connectionTimeoutMillis:3000});
+    try{
+      for(const file of ["010_agent_admin_settings_draft.sql","011_agent_runtime.sql","013_data_lifecycle_jobs.sql",
+        "017_credential_rotation.sql","019_agent_admin_access.sql","020_message_intents.sql"]){
+        const sql=readFileSync("infra/postgres/migrations/"+file,"utf8");await pool.query(sql);await pool.query(sql);
+      }
+      const store=new ChatStore(pool,undefined,true),owner=await store.owner("accounts.google.com","product-source-owner"),
+        other=await store.owner("accounts.google.com","product-source-other");
+      const thread="product-durable-thread",key="55555555-5555-4555-8555-555555555555";
+      await store.createThread(owner,{threadId:thread,runtime:"gemini",model:"gemini-3.5-flash-lite",assistantProfile:"default"},"product-thread-key");
+      const intents=new MessageIntentStore(pool);
+      await intents.prepare(owner,thread,key,"durable content");
+      expect((await intents.active(owner,thread))?.key).toBe(key);
+      await expect(intents.active(other,thread)).rejects.toThrow();
+      const message=await store.message(owner,thread,"durable content",key);
+      expect((await intents.active(owner,thread))?.turnId).toBe(message.turn.turn_id);
+      await expect(intents.cancel(owner,thread,key)).rejects.toThrow();
+      await pool.query("UPDATE omni_chat.turns SET status='COMPLETED' WHERE owner_id=$1 AND thread_id=$2",[owner,thread]);
+      const agentMessage=await store.message(owner,thread,"Agent source check","agent-source-key","agent");
+      const runs=new PgAgentRunStore(pool);
+      const run=await runs.create(owner,thread,String(agentMessage.turn.turn_id),"Agent source check",{
+        limits:{maxSteps:2,maxToolCalls:2,timeoutMs:10000,maxToolOutputBytes:1024},maxTokens:1000,
+        maxCostMicros:1000,maxDecisionTokens:500,maxDecisionCostMicros:500,grants:[],allowL2:false});
+      expect(await runs.get(other,run.run_id)).toBeNull();
+      expect(await store.claimNextQueuedTurn([owner],{ownerId:owner,threadId:thread,turnId:String(agentMessage.turn.turn_id)})).toBeNull();
+      const claimed=await runs.claim(owner,run.run_id);expect(claimed).not.toBeNull();
+      await runs.cancel(owner,run.run_id);
+      await expect(runs.heartbeat(claimed!)).rejects.toThrow("lease_lost");
+      const drafts=new AgentAdminAccessStore(pool),initial=await drafts.read();
+      expect((await drafts.save(owner,initial.version,[])).version).toBe(initial.version+1);
+      await expect(drafts.save(owner,initial.version,[])).rejects.toThrow("version_conflict");
+    }finally{await pool.end();}
+  },20000);
 });

@@ -20,6 +20,8 @@ const modelCatalog = <String, List<String>>{
     'gemini-3.1-flash-lite',
     'gemini-2.5-flash-lite',
   ],
+  // Paid models come only from this Owner's backend entitlement response.
+  'gemini-paid': [],
   'openrouter': [
     'openrouter/free',
     'inclusionai/ling-3.1-flash',

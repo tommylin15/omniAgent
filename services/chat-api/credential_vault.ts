@@ -1,10 +1,13 @@
 import { GoogleAuth } from "google-auth-library";
 
-export type ByokProvider = "gemini" | "openrouter";
+export type ByokProvider = "gemini" | "openrouter" | "groq";
 export type SecretVault = {
   reference(profileId: string): string;
   create(profileId: string, rawKey: string): Promise<string>;
   disable(versionName: string): Promise<void>;
+  access?(versionName:string):Promise<string>;
+  inspect?(versionName:string):Promise<"enabled"|"disabled"|"missing">;
+  discard?(versionName:string):Promise<void>;
 };
 
 // An ephemeral key may enter ONLY this boundary; DB rows, events, headers,
@@ -72,5 +75,57 @@ export class GoogleSecretManagerVault implements SecretVault {
       "/secrets/omniagent-byok-[a-f0-9]{32}/versions/1$");
     if (!pattern.test(versionName)) throw new Error("BYOK reference is invalid");
     await this.request(versionName + ":disable", "POST",{});
+  }
+
+  async access(versionName:string):Promise<string>{
+    const pattern=new RegExp("^projects/"+this.project+
+      "/secrets/omniagent-byok-[a-f0-9]{32}/versions/1$");
+    if(!pattern.test(versionName))throw Error("BYOK reference is invalid");
+    const token=await (await this.auth.getClient()).getAccessToken();
+    if(!token.token)throw Error("BYOK vault identity unavailable");
+    const response=await this.fetcher(`https://secretmanager.googleapis.com/v1/${versionName}:access`,{
+      redirect:"error",signal:AbortSignal.timeout(10000),headers:{Authorization:`Bearer ${token.token}`}});
+    if(!response.ok)throw Error("BYOK vault access unavailable");
+    const raw=await response.text();
+    if(Buffer.byteLength(raw)>8192)throw Error("BYOK vault response invalid");
+    const value=JSON.parse(raw) as {name?:unknown;payload?:{data?:unknown;dataCrc32c?:unknown}};
+    if(value.name!==versionName||typeof value.payload?.data!=="string")throw Error("BYOK vault response invalid");
+    const bytes=Buffer.from(value.payload.data,"base64");
+    if(bytes.toString("base64")!==value.payload.data)throw Error("BYOK vault response invalid");
+    let crc=0xffffffff;
+    for(const byte of bytes){crc^=byte;for(let i=0;i<8;i++)crc=(crc>>>1)^((crc&1)?0x82f63b78:0);}
+    if(String((crc^0xffffffff)>>>0)!==String(value.payload.dataCrc32c))throw Error("BYOK vault integrity failure");
+    const key=bytes.toString("utf8");
+    if(bytes.length<16||bytes.length>4096||Buffer.from(key,"utf8").compare(bytes)!==0||
+      key.trim()!==key||/[\r\n\0]/.test(key))throw Error("BYOK vault response invalid");
+    return key;
+  }
+
+  async inspect(versionName:string):Promise<"enabled"|"disabled"|"missing">{
+    const pattern=new RegExp("^projects/"+this.project+"/secrets/omniagent-byok-[a-f0-9]{32}/versions/1$");
+    if(!pattern.test(versionName))throw new Error("BYOK reference is invalid");
+    const token=await (await this.auth.getClient()).getAccessToken();
+    if(!token.token)throw new Error("BYOK vault identity unavailable");
+    const response=await this.fetcher(`https://secretmanager.googleapis.com/v1/${versionName}`,{
+      redirect:"error",signal:AbortSignal.timeout(10000),headers:{Authorization:`Bearer ${token.token}`}});
+    if(response.status===404)return "missing";
+    if(!response.ok)throw new Error("BYOK vault state unavailable");
+    const raw=await response.text();if(Buffer.byteLength(raw)>8192)throw new Error("BYOK vault state invalid");
+    const value=JSON.parse(raw) as {name?:unknown;state?:unknown};
+    if(value.name!==versionName)throw new Error("BYOK vault resource mismatch");
+    if(value.state==="ENABLED")return "enabled";
+    if(value.state==="DISABLED"||value.state==="DESTROYED")return "disabled";
+    throw new Error("BYOK vault state unavailable");
+  }
+
+  async discard(versionName:string):Promise<void>{
+    const pattern=new RegExp("^projects/"+this.project+"/secrets/omniagent-byok-[a-f0-9]{32}/versions/1$");
+    if(!pattern.test(versionName))throw new Error("BYOK reference is invalid");
+    const token=await (await this.auth.getClient()).getAccessToken();
+    if(!token.token)throw new Error("BYOK vault identity unavailable");
+    const resource=versionName.slice(0,-"/versions/1".length);
+    const response=await this.fetcher(`https://secretmanager.googleapis.com/v1/${resource}`,{
+      method:"DELETE",redirect:"error",signal:AbortSignal.timeout(10000),headers:{Authorization:`Bearer ${token.token}`}});
+    if(!response.ok&&response.status!==404)throw new Error("BYOK candidate cleanup unavailable");
   }
 }

@@ -4,6 +4,23 @@
 
 本文件只追蹤**現行狀態及未結工程**。歷史測試、取消的方案、舊 Revision 數量、曾經失敗的診斷請從 Git history／Actions 追溯，**不可用歷史 OPEN 覆蓋新的 runtime PASS**。以正式 GCP runtime 和對應 GitHub SHA 為準；完整產品狀態仍為 **PARTIAL**。
 
+## 2026-11-03｜本輪原始碼檢查點（未驗收）
+
+P0／P1／P2 本輪新增的 Agent、付費路由、Groq、BYOK、Admin、durable intents、產物／Iceberg／analytics、背景工作與 Flutter 入口已寫入原始碼；新增 migration、部署入口及測試程式。詳見 [原始碼交付檢查點](../docs/source-checkpoint-2026-11-03.md)。**尚未執行 build、測試、CI、migration、部署或 runtime/E2E；所有原始工作卡仍依原驗收退出條件保留未完成，不因 source 寫入而勾選 DONE。**
+
+使用者最新指定完成程式後回寫文件並停下；後續從 source review／GitHub 回寫狀態及整體測試階段續接。正式 resource／credential／Owner／模型／費率與原生 Codex invocation evidence 仍不得推定存在。
+
+## 2026-11-02｜本輪開發與回寫順序
+
+使用者指定：先完成本輪全部程式實作，再回寫 GitHub，之後才開始整體測試與驗收。
+
+1. 依已確認規格完成程式、呼叫端、UI、migration、部署設定及對應測試程式；本階段不執行整體測試、部署或 runtime 驗收。
+2. 在任何 commit 或 push 前執行 `/ponytail-review`，先修正 review 找到的必要問題，再統一 commit／push；此時狀態只能記錄為「實作已回寫，尚未驗收」。
+3. GitHub 回寫後，才執行整體測試與 exact-SHA CI、候選部署、runtime／DB／整合讀回；依測試結果修正的提交同樣先 review，再重驗。
+4. 缺少憑證、Billing、Owner OAuth、外部 API/MCP 契約或資源設定時，明列阻塞；不得用 fixture、草稿或預設值宣稱正式驗收完成。正式功能啟用仍須通過原有安全與成本 gate。
+
+此順序不把所有未勾選卡片視為尚無程式，也不以程式回寫取代產品 DONE 條件。P2 的資源成本、資料保存期限與儲存門檻仍須依既有架構規格確定，不能自行捏造。
+
 ## 2026-11-02｜OA-AGENT / OA-GEMINI｜通用 Agent、雙 Key、Admin 控制台
 
 ### 2026-11-02 來源／CI／候選／發布收據（依 exact SHA 判定）

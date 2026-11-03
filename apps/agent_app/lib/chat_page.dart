@@ -7,6 +7,8 @@ import 'chat_api.dart';
 import 'model_catalog.dart';
 import 'router_usage_page.dart';
 import 'agent_admin_page.dart';
+import 'product_hub_page.dart';
+import 'artifact_page.dart';
 import 'omni_theme.dart';
 import 'twin_beast_mascot.dart';
 
@@ -40,9 +42,13 @@ class _ChatPageState extends State<ChatPage> {
   int? pollingEpoch;
   bool pendingUnknown=false;
   Map<String, List<String>>? entitledModels;
+  Map<String, String> paidRouteProfiles = {};
   String? authenticatedOwnerId;
   bool routerStatsEnabled=false;
   bool agentAdminEnabled=false;
+  bool byokEnabled=false;
+  List<Map<String,dynamic>> credentialProfiles=[];
+  String? credentialProfileId;
 
   @override
   void initState() {
@@ -63,11 +69,29 @@ class _ChatPageState extends State<ChatPage> {
           authenticatedOwnerId = value;
           routerStatsEnabled = result['routerStatsEnabled'] == true;
           agentAdminEnabled = result['agentAdminEnabled'] == true;
+          byokEnabled = result['byokManagementEnabled'] == true;
         });
+        if(byokEnabled){await loadCredentialProfiles();}
       }
     } catch (_) {
       // No Owner ID without a verified OAuth-bound backend response.
     }
+  }
+
+  Future<void> loadCredentialProfiles() async {
+    try{
+      final value=await widget.api.get('/v1/credentials');
+      if(!mounted){return;}
+      setState((){
+        credentialProfiles=value is Map && value['items'] is List
+            ? [for(final row in value['items'] as List)
+                if(row is Map && row['status']=='ACTIVE' && row['profile_id'] is String)
+                  Map<String,dynamic>.from(row)] : [];
+        if(!credentialProfiles.any((p)=>p['profile_id']==credentialProfileId)){
+          credentialProfileId=null;
+        }
+      });
+    }catch(_){if(mounted){setState((){credentialProfiles=[];credentialProfileId=null;});}}
   }
 
   Future<void> copyAuthenticatedOwner() async {
@@ -80,23 +104,44 @@ class _ChatPageState extends State<ChatPage> {
   Future<void> loadOwnerModels() async {
     try {
       final raw = await widget.api.get('/v1/models');
-      if (!mounted || raw is! Map || raw['dispatchEnabled'] is! bool) return;
+      if (!mounted) return;
+      if (raw is! Map || raw['dispatchEnabled'] is! bool) {
+        throw StateError('invalid model capabilities');
+      }
       final allowed = <String, List<String>>{};
+      final profiles = <String, String>{};
+      final ambiguousPaid = <String>{};
       if (raw['dispatchEnabled'] == true && raw['items'] is List) {
         for (final entry in raw['items'] as List) {
           if (entry is! Map) continue;
           final mode = entry['runtime'];
           final name = entry['model'];
-          if (mode is String && name is String && modelCatalog.containsKey(mode) &&
-              mode != 'groq' && name.isNotEmpty &&
+          final profile = entry['routeProfile'];
+          if (mode == 'gemini' && name is String && name.isNotEmpty &&
+              (profile == 'private-lite' || profile == 'advanced-flash')) {
+            if (profiles.containsKey(name) && profiles[name] != profile) {
+              ambiguousPaid.add(name);
+            }
+            profiles[name] = profile as String;
+            allowed.putIfAbsent('gemini-paid', () => <String>[]).add(name);
+          } else if ((profile == null || profile == 'public-lite') &&
+              mode is String && mode != 'gemini-paid' && name is String && modelCatalog.containsKey(mode) &&
+              name.isNotEmpty &&
               (mode != 'gemini' || modelCatalog['gemini']!.contains(name))) {
             allowed.putIfAbsent(mode, () => <String>[]).add(name);
           }
         }
       }
+      allowed['gemini-paid']?.removeWhere(ambiguousPaid.contains);
+      for (final name in ambiguousPaid) { profiles.remove(name); }
+      allowed.removeWhere((_, names) => names.isEmpty);
+      for (final mode in allowed.keys.toList()) {
+        allowed[mode] = allowed[mode]!.toSet().toList();
+      }
       for (final entries in allowed.values) { entries.sort(); }
       setState(() {
         entitledModels = allowed;
+        paidRouteProfiles = profiles;
         if (allowed.isNotEmpty && !allowed.containsKey(runtime)) {
           runtime = allowed.keys.first;
           modelInput.text = allowed[runtime]!.first;
@@ -107,7 +152,10 @@ class _ChatPageState extends State<ChatPage> {
       });
     } catch (_) {
       // A failed capability lookup must not grant model execution.
-      if (mounted) setState(() => entitledModels = <String, List<String>>{});
+      if (mounted) setState(() {
+        entitledModels = <String, List<String>>{};
+        paidRouteProfiles = {};
+      });
     }
   }
 
@@ -116,8 +164,8 @@ class _ChatPageState extends State<ChatPage> {
     if (runtime == 'gemini' && !modelCatalog['gemini']!.contains(selected)) {
       return false;
     }
-    return entitledModels == null ||
-        (entitledModels![runtime]?.contains(selected) ?? false);
+    return (runtime != 'gemini-paid' || paidRouteProfiles.containsKey(selected)) &&
+        (entitledModels?[runtime]?.contains(selected) ?? false);
   }
   List<String> get selectableModels => entitledModels == null
       ? modelCatalog[runtime]! : entitledModels![runtime] ?? <String>[];
@@ -222,12 +270,16 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   Future<void> createThread() async {
-    if (busy || runtime == 'groq' || !modelAllowed || modelInput.text.trim().isEmpty) return;
+    if (busy || !modelAllowed || modelInput.text.trim().isEmpty) return;
     setState(() => busy = true);
     try {
       final value = await widget.api.post('/v1/threads', {
-        'runtime': runtime,
+        'runtime': runtime == 'gemini-paid' ? 'gemini' : runtime,
         'model': modelInput.text.trim(),
+        if(credentialProfileId!=null && (runtime=='gemini'||runtime=='openrouter'||runtime=='groq'))
+          'credentialProfileId':credentialProfileId,
+        if (runtime == 'gemini-paid')
+          'routeProfile': paidRouteProfiles[modelInput.text.trim()],
         'assistantProfile': 'default',
       });
       if (!mounted) return;
@@ -609,6 +661,14 @@ class _ChatPageState extends State<ChatPage> {
           appBar: AppBar(
             title: const Text('omniAgent'),
             actions: [
+              IconButton(tooltip:'Agent、工作與憑證',
+                onPressed:()=>Navigator.of(context).push(MaterialPageRoute<void>(
+                  builder:(_)=>ProductHubPage(widget.api,threadId:thread?['thread_id'] as String?)))
+                  .then((_){if(mounted&&byokEnabled){unawaited(loadCredentialProfiles());}}),
+                icon:const Icon(Icons.workspaces_outlined)),
+              IconButton(tooltip:'我的產物',
+                onPressed:()=>Navigator.of(context).push(MaterialPageRoute<void>(
+                  builder:(_)=>ArtifactPage(widget.api))),icon:const Icon(Icons.folder_outlined)),
               if (authenticatedOwnerId != null)
                 IconButton(
                   tooltip: '複製 Owner ID',
@@ -860,16 +920,19 @@ class _ChatPageState extends State<ChatPage> {
                           DropdownMenuItem(
                               value: 'gemini', child: Text('Gemini')),
                           DropdownMenuItem(
+                              value: 'gemini-paid', child: Text('Gemini 付費（Lite／Flash）')),
+                          DropdownMenuItem(
                               value: 'openrouter', child: Text('OpenRouter')),
                           DropdownMenuItem(
                               value: 'codex', child: Text('Codex')),
                           DropdownMenuItem(
-                              value: 'groq', child: Text('Groq（型號預覽）')),
+                              value: 'groq', child: Text('Groq')),
                         ],
                         onChanged: (value) {
                           if (value == null) return;
                           setState(() {
                             runtime = value;
+                            credentialProfileId=null;
                             final models = entitledModels == null
                                 ? modelCatalog[value]! : entitledModels![value] ?? <String>[];
                             modelInput.text = models.isEmpty ? '' : models.first;
@@ -877,6 +940,19 @@ class _ChatPageState extends State<ChatPage> {
                         },
                       ),
                       const SizedBox(height: 14),
+                      if(byokEnabled && (runtime=='gemini'||runtime=='openrouter'||runtime=='groq'))
+                        Padding(padding:const EdgeInsets.only(bottom:14),child:DropdownButtonFormField<String>(
+                          key:ValueKey('credential:$runtime:$credentialProfileId'),isExpanded:true,
+                          initialValue:credentialProfileId??'',
+                          decoration:const InputDecoration(labelText:'憑證來源'),
+                          items:[const DropdownMenuItem(value:'',child:Text('平台授權憑證')),
+                            for(final profile in credentialProfiles)
+                              if(profile['provider']==runtime)
+                                DropdownMenuItem(value:profile['profile_id'] as String,
+                                  child:Text('我的 ${profile['provider']} · ${profile['profile_id']}',
+                                    maxLines:1,overflow:TextOverflow.ellipsis))],
+                          onChanged:(value)=>setState(()=>credentialProfileId=value==''?null:value),
+                        )),
                       DropdownMenu<String>(
                         key: ValueKey(runtime),
                         controller: modelInput,
@@ -885,6 +961,7 @@ class _ChatPageState extends State<ChatPage> {
                         expandedInsets: EdgeInsets.zero,
                         menuHeight: 240,
                         label: const Text('模型（可搜尋或手填）'),
+                        onSelected: (_) => setState(() {}),
                         dropdownMenuEntries: [
                           for (final model in selectableModels)
                             DropdownMenuEntry(value: model, label: model),
@@ -895,15 +972,10 @@ class _ChatPageState extends State<ChatPage> {
                            padding: EdgeInsets.only(top: 8),
                            child: Text('此帳號尚未取得所選模型的執行權限；不會送出付費推論。'),
                          ),
-                       if (runtime == 'groq')
-                        const Padding(
-                          padding: EdgeInsets.only(top: 8),
-                          child: Text('Groq 尚未接通，目前僅提供型號預覽。'),
-                        ),
                       const SizedBox(height: 16),
                       FilledButton(
                         onPressed:
-                            busy || runtime == 'groq' || !modelAllowed ? null : createThread,
+                            busy || !modelAllowed ? null : createThread,
                         child: const Text('建立對話'),
                       ),
                     ],
@@ -1041,9 +1113,16 @@ class _ChatPageState extends State<ChatPage> {
             ),
           ),
         if(pendingUnknown)
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal:16,vertical:8),
-            child: Text('上次訊息仍未確認，已暫停新訊息；將使用原始 Key 自動查詢 PostgreSQL，避免重複執行。'),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal:16,vertical:8),
+            child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+              const Text('上次訊息仍未確認，已暫停新訊息；系統會讀回原回合，避免重複執行。'),
+              TextButton(onPressed:busy?null:() async{
+                try{
+                  await widget.api.cancelPreparedMessage(thread!['thread_id'].toString());await refresh();
+                }catch(_){if(mounted){_error('此意圖無法安全放棄，請繼續讀回原回合。');}}
+              },child:const Text('放棄尚未提交的意圖')),
+            ]),
           ),
         SafeArea(
           top: false,

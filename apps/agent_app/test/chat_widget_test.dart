@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:omniagent_app/auth_session.dart';
 import 'package:omniagent_app/chat_api.dart';
 import 'package:omniagent_app/chat_page.dart';
+import 'package:omniagent_app/model_catalog.dart';
 import 'package:omniagent_app/main.dart';
 
 class AuthenticatedOwnerChatApi extends FakeChatApi {
@@ -44,7 +45,12 @@ class FakeChatApi extends ChatApi {
   }
 
   @override
-  Future<dynamic> get(String path) async => {
+  Future<dynamic> get(String path) async => path == '/v1/models'
+      ? {'dispatchEnabled': true, 'items': [
+          for (final runtime in modelCatalog.entries)
+            for (final model in runtime.value)
+              {'runtime': runtime.key, 'model': model}
+        ]} : {
         'items': [
           if (withApproval)
             {
@@ -100,6 +106,21 @@ class FakeChatApi extends ChatApi {
             'payload': {'role': 'user', 'content': 'hello'}
           },
       ];
+}
+
+class PaidModelsChatApi extends FakeChatApi {
+  PaidModelsChatApi(this.paid);
+  final List<Map<String, String>> paid;
+  @override
+  Future<dynamic> get(String path) async {
+    if (path == '/v1/models') {
+      return {'dispatchEnabled': true, 'items': [
+        {'runtime': 'gemini', 'model': 'gemini-2.5-flash-lite'},
+        ...paid,
+      ]};
+    }
+    return super.get(path);
+  }
 }
 
 class DurabilityReceiptChatApi extends FakeChatApi {
@@ -315,7 +336,7 @@ void main() {
     'Codex': 'gpt-6-luna',
     'Gemini': 'gemini-3.5-flash-lite',
     'OpenRouter': 'google/gemma-4-31b-it:free',
-    'Groq（型號預覽）': 'llama-3.1-8b-instant'
+    'Groq': 'llama-3.1-8b-instant'
   }.entries) {
     testWidgets('selects ${selection.key} model', (tester) async {
       addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -333,20 +354,10 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.widgetWithText(MenuItemButton, selection.value).last);
       await tester.pumpAndSettle();
-      if (selection.key.startsWith('Groq')) {
-        expect(find.text('Groq 尚未接通，目前僅提供型號預覽。'), findsOneWidget);
-        expect(
-            tester
-                .widget<FilledButton>(find.widgetWithText(FilledButton, '建立對話'))
-                .onPressed,
-            isNull);
-        expect(api.writes, isEmpty);
-      } else {
-        await tester.tap(find.text('建立對話'));
-        await tester.pumpAndSettle();
-        expect(api.writes.first['model'], selection.value);
-        expect(api.writes.first['runtime'], selection.key.toLowerCase());
-      }
+      await tester.tap(find.text('建立對話'));
+      await tester.pumpAndSettle();
+      expect(api.writes.first['model'], selection.value);
+      expect(api.writes.first['runtime'], selection.key.toLowerCase());
     });
   }
 
@@ -516,7 +527,7 @@ void main() {
     expect(find.text('Gemini', skipOffstage: false), findsOneWidget);
     expect(find.text('OpenRouter', skipOffstage: false), findsOneWidget);
     expect(find.text('Codex', skipOffstage: false), findsOneWidget);
-    expect(find.text('Groq', skipOffstage: false), findsNothing);
+    expect(find.text('Groq', skipOffstage: false), findsOneWidget);
     await tester.tap(find.text('建立對話'));
     await tester.pumpAndSettle();
     expect(api.writes.first['path'], '/v1/threads');
@@ -595,6 +606,47 @@ void main() {
       home:ChatPage(other,key:ObjectKey(other))));
     await tester.pumpAndSettle();
     expect(find.byTooltip('複製 Owner ID'),findsNothing);
+  });
+
+  for (final paid in {
+    'private-lite': 'gemini-2.5-flash-lite',
+    'advanced-flash': 'gemini-2.5-flash',
+  }.entries) {
+    testWidgets('paid ${paid.key} preserves exact backend model profile', (tester) async {
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.binding.setSurfaceSize(const Size(1000, 900));
+      final api = PaidModelsChatApi([
+        {'runtime': 'gemini', 'model': paid.value, 'routeProfile': paid.key}
+      ]);
+      await tester.pumpWidget(MaterialApp(home: ChatPage(api)));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byType(DropdownButtonFormField<String>));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Gemini 付費（Lite／Flash）').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('建立對話'));
+      await tester.pumpAndSettle();
+      expect(api.writes.first['runtime'], 'gemini');
+      expect(api.writes.first['model'], paid.value);
+      expect(api.writes.first['routeProfile'], paid.key);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  }
+
+  testWidgets('paid model suggestions never grant execution without backend entitlement', (tester) async {
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.binding.setSurfaceSize(const Size(1000, 900));
+    final api = PaidModelsChatApi([]);
+    await tester.pumpWidget(MaterialApp(home: ChatPage(api)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(DropdownButtonFormField<String>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Gemini 付費（Lite／Flash）').last);
+    await tester.pumpAndSettle();
+    expect(modelCatalog['gemini-paid'], isEmpty);
+    final create = tester.widget<FilledButton>(find.widgetWithText(FilledButton, '建立對話'));
+    expect(create.onPressed, isNull);
+    expect(api.writes, isEmpty);
   });
 
   testWidgets('unentitled Owner sees disabled model creation', (tester) async {

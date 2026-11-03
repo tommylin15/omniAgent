@@ -19,6 +19,7 @@ class ChatApi {
   final PendingKeyStore _pendingKeyStore;
   String? _verifiedOwnerId;
   bool _storageInvalid=false;
+  bool _durableIntentsEnabled=false;
   final Map<String,String> _pendingByThread={};
   static final _ownerPattern=RegExp(
       r'^[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$');
@@ -63,6 +64,7 @@ class ChatApi {
       _storageInvalid=true;
     }
     _verifiedOwnerId=owner;
+    _durableIntentsEnabled=result is Map && result['durableIntentsEnabled']==true;
     _pendingByThread.addAll(recovered);
   }
 
@@ -164,6 +166,21 @@ class ChatApi {
     final messageThread=method=='POST'?_messagePath.firstMatch(path)?.group(1):null;
     if(messageThread!=null && key!=null){
       _rememberPending(messageThread,key);
+      if(_durableIntentsEnabled){
+        final prepare=http.Request('POST',Uri.parse('$origin/v1/threads/$messageThread/message-intents'))
+          ..headers.addAll({'Authorization':'Bearer $token','Content-Type':'application/json','Idempotency-Key':key})
+          ..body=jsonEncode({'content':body?['content']});
+        final prepared=await client.send(prepare).then(http.Response.fromStream)
+            .timeout(const Duration(seconds:30));
+        if(prepared.statusCode<200||prepared.statusCode>=300){
+          throw StateError('訊息意圖尚未確認，請讀回原紀錄後再操作');
+        }
+        final receipt=jsonDecode(utf8.decode(prepared.bodyBytes));
+        if(receipt is! Map || receipt['key']!=key ||
+            !const ['prepared','consumed'].contains(receipt['state'])){
+          throw StateError('訊息意圖讀回不符，已暫停送出');
+        }
+      }
     }
     lastRequestId = null;
     final request = http.Request(method, Uri.parse('$origin$path'))
@@ -174,7 +191,8 @@ class ChatApi {
       });
     if (wireBody != null) request.body = wireBody;
     // Timeouts or unknown HTTP errors must not silently create a new turn.
-    final response = await http.Response.fromStream(await client.send(request));
+    final response = await client.send(request).then(http.Response.fromStream)
+        .timeout(const Duration(seconds:120));
     final candidate = response.headers['x-omniagent-request-id'];
     lastRequestId = candidate != null &&
         RegExp(r'^[0-9a-fA-F-]{36}$').hasMatch(candidate)
@@ -208,6 +226,15 @@ class ChatApi {
         (decoded is! Map || decoded['turn'] is! Map ||
             decoded['turn']['turn_id'] is! String)) {
       throw StateError('訊息提交結果不明；請先重新載入事件，勿重新送出新請求');
+    }
+    final durableField = path.endsWith('/agent-runs') ? 'run_id'
+        : (path == '/v1/jobs' || path == '/v1/schedules' || path == '/v1/analytics/queries' ||
+            path == '/v1/artifacts' || path == '/v1/artifacts/text') ? 'id'
+        : RegExp(r'^/v1/credentials/[a-f0-9-]{36}/replace$').hasMatch(path)
+            ? 'operation_id' : path == '/v1/credentials' ? 'profile_id' : null;
+    if (method == 'POST' && durableField != null &&
+        (decoded is! Map || decoded[durableField] is! String)) {
+      throw StateError('提交結果尚未核實；請讀回原紀錄，勿建立第二筆');
     }
     if(messageThread!=null && key!=null){
       _forgetPending(messageThread,key);
@@ -251,10 +278,31 @@ class ChatApi {
   /// Reload recovery never sends the original prompt or another model POST.
   /// A null row is uncertain while an earlier request might still commit.
   Future<Map<String,dynamic>?> reconcileRecoveredMessage(String threadId) async{
-    final key=_pendingByThread[threadId];
+    String? key=_pendingByThread[threadId];
     final origin=_baseOverride ?? base;
-    if(key==null || origin.isEmpty || token.isEmpty)return null;
+    if(origin.isEmpty || token.isEmpty)return null;
     try{
+      if(_durableIntentsEnabled){
+        if(key!=null){
+          final previous=await get('/v1/threads/$threadId/message-intents/$key');
+          final receipt=previous is Map?previous['intent']:null;
+          if(receipt is Map&&receipt['key']==key&&receipt['state']=='cancelled'){
+            final cancelledKey=key;
+            _forgetPending(threadId,cancelledKey);
+            _unconfirmedPosts.removeWhere((_,value)=>value==cancelledKey);
+            key=null;
+          }
+        }
+        if(key==null){
+          final value=await get('/v1/threads/$threadId/message-intents');
+          final intent=value is Map?value['intent']:null;
+          if(intent is Map && intent['key'] is String && _keyPattern.hasMatch(intent['key'] as String)){
+            key=intent['key'] as String;
+            _rememberPending(threadId,key);
+          }
+        }
+      }
+      if(key==null){return null;}
       final req=http.Request('GET',
           Uri.parse('$origin/v1/threads/$threadId/turns/reconcile'))
         ..headers.addAll({'Authorization':'Bearer $token',
@@ -272,6 +320,22 @@ class ChatApi {
       _unconfirmedPosts.removeWhere((_,value)=>value==key);
       return {'turnId':turn['turnId'],'status':turn['status']};
     }catch(_){return null;}
+  }
+
+  Future<void> cancelPreparedMessage(String threadId) async{
+    if(!_durableIntentsEnabled){throw StateError('未提供安全取消意圖功能');}
+    final value=await get('/v1/threads/$threadId/message-intents');
+    final intent=value is Map?value['intent']:null;
+    if(intent is! Map || intent['state']!='prepared'||intent['key'] is! String){
+      throw StateError('此請求可能已提交，請繼續讀回回合');
+    }
+    final key=intent['key'] as String;
+    if(!_keyPattern.hasMatch(key)){throw StateError('意圖識別無法核實');}
+    final cancelled=await post('/v1/threads/$threadId/message-intents/$key/cancel',{});
+    if(cancelled is! Map||cancelled['state']!='cancelled'||cancelled['key']!=key){
+      throw StateError('取消結果尚未確認');
+    }
+    _forgetPending(threadId,key);_unconfirmedPosts.removeWhere((_,value)=>value==key);
   }
 
   Future<List<Map<String, dynamic>>> events(String threadId, int cursor) async {

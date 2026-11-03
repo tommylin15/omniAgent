@@ -10,6 +10,21 @@ const request=(grants=new Set(["life.activities.search"]))=>
   ({ownerId:owner,question:"週末活動？",grants,limits});
 
 describe("bounded Agent Loop is isolated from production and write tools",()=>{
+  it("resumes counters and observations without resetting limits",async()=>{
+    const planner=vi.fn(async()=>({kind:"final" as const,text:"done"}));
+    const result=await runBoundedAgentLoop({...request(),initialState:{steps:4,toolCalls:1,
+      observations:[{origin:"untrusted_tool_result",name:read.name,result:{events:[]}}]}},
+      planner,new Map([[read.name,read]]));
+    expect(result).toMatchObject({status:"limit_exceeded",steps:4,toolCalls:1});
+    expect(planner).not.toHaveBeenCalled();
+  });
+  it("rejects throwing validators before calling the tool",async()=>{
+    const call=vi.fn();
+    const result=await runBoundedAgentLoop(request(),async()=>({kind:"tool",name:read.name,
+      arguments:{keyword:"a"}}),new Map([[read.name,{...read,call,validate:()=>{throw new Error("bad schema");}}]]));
+    expect(result).toMatchObject({status:"denied",reason:"invalid_tool_arguments"});
+    expect(call).not.toHaveBeenCalled();
+  });
   it("performs model decision -> granted readonly tool -> observation -> final",async()=>{
     const planner=vi.fn().mockResolvedValueOnce({
       kind:"tool",name:"life.activities.search",arguments:{keyword:"音樂"}

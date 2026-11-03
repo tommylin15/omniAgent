@@ -17,6 +17,13 @@ function row(extra:Record<string,unknown>={}){
     tokens:null,...extra};
 }
 describe("router usage aggregation contract",()=>{
+  it("keeps unified provider unknown usage separate from Chat turns",async()=>{
+    const chat={query:vi.fn(async()=>({rows:[]}))};
+    const gateway={query:vi.fn(async()=>({rows:[row({provider:"groq",status:"outcome_unknown",tokens:null,costMicros:null})]}))};
+    const result=await new RouterUsageStats(chat,gateway,"unified").read(7);
+    expect(gateway.query).toHaveBeenCalledWith(expect.stringContaining("unified_provider_execution_usage"),[7]);
+    expect(result.rows).toMatchObject([{source:"provider_executions",provider:"groq",tokens:null,costMicros:null,status:"outcome_unknown"}]);
+  });
   it("limits time windows, validates admin set and rejects invalid parameters",()=>{
     expect([parseUsageDays(null),parseUsageDays("1"),parseUsageDays("30")]).toEqual([7,1,30]);
     expect(()=>parseUsageDays("90")).toThrow();

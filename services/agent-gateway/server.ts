@@ -6,9 +6,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { CodexBridge, type AgentEvent } from "./codex_bridge.js";
-import { dispatchAssistant } from "./assistant_dispatch.js";
+import { dispatchAssistant,closePaidAssistant } from "./assistant_dispatch.js";
 import { makeSharedGeminiHandler } from "./shared_gemini.js";
 import { McpHost } from "./mcp_host.js";
+import {createAgentGatewayRoutes,authenticateAgentGateway} from "./agent_routes.js";
+import {closeProviderLedger} from "./provider_receipts.js";
 
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 export type RpcMessage = { id?: number; method?: string; params?: Json; result?: Json; error?: { code?: number; message?: string } };
@@ -26,6 +28,7 @@ function loadAgentBundle(): void {
   for (const [target, source] of Object.entries({
     GEMINI_API_KEY: "gemini_api_key",
     OPENROUTER_API_KEY: "openrouter_api_key",
+    GROQ_API_KEY: "groq_api_key",
     MCP_OWNER_SIGNING_KEY: "mcp_owner_signing_key",
   })) {
     if (!process.env[target] && typeof bundle[source] === "string" && bundle[source].trim()) {
@@ -718,7 +721,8 @@ export function makeServer(mcp = new McpHost(), sessions = new OwnerSessionRegis
   turns = new CodexTurnRegistry(), dispatch = dispatchAssistant) {
   let running = false;
   const sharedGemini = makeSharedGeminiHandler();
-  return createServer(async (request: IncomingMessage, response: ServerResponse) => {
+  const agent=createAgentGatewayRoutes(mcp);
+  const server=createServer(async (request: IncomingMessage, response: ServerResponse) => {
     const url = new URL(request.url || "/", "http://localhost");
     if (request.method === "POST" && url.pathname === "/v1/gemini/execute") {
       await sharedGemini(request, response);
@@ -726,6 +730,18 @@ export function makeServer(mcp = new McpHost(), sessions = new OwnerSessionRegis
     }
     if (request.method === "GET" && url.pathname === "/health") {
       send(response, 200, { status: "ok", codexVersion: CODEX_VERSION });
+      return;
+    }
+    if(request.method==="POST"&&["/internal/v1/agent/decision","/internal/v1/agent/tool"].includes(url.pathname)){
+      if(process.env.AGENT_GATEWAY_ENABLED!=="true")return send(response,404,{error:"not_found"});
+      let body:Json;
+      try{await authenticateAgentGateway(request.headers.authorization,process.env);
+        body=await signedBody(request);}catch{return send(response,401,{error:"unauthenticated"});}
+      try{
+        const result=url.pathname.endsWith("/decision")
+          ?await agent.decision(body,AbortSignal.timeout(60000)):await agent.tool(body);
+        send(response,200,result as unknown as Json);
+      }catch{send(response,403,{error:"agent_gateway_execution_denied"});}
       return;
     }
     if (request.method === "POST" && url.pathname === "/internal/v1/poc/codex") {
@@ -843,14 +859,20 @@ export function makeServer(mcp = new McpHost(), sessions = new OwnerSessionRegis
       try {
         const body = object(await signedBody(request));
         const runtime = body.runtime;
-        if (runtime !== "openrouter" && runtime !== "gemini" && runtime !== "codex") throw new Error("runtime dispatch is unavailable");
+        if (runtime !== "openrouter" && runtime !== "gemini" && runtime !== "groq" && runtime !== "codex") throw new Error("runtime dispatch is unavailable");
         if (typeof body.ownerId !== "string" || typeof body.threadId !== "string" || typeof body.turnId !== "string" || typeof body.model !== "string" || !Array.isArray(body.messages)) throw new Error("assistant turn request is invalid");
         if (body.grounding !== undefined && typeof body.grounding !== "boolean") throw new Error("grounding is invalid");
+        if(body.credentialProfileId!==undefined&&(typeof body.credentialProfileId!=="string"||
+          !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(body.credentialProfileId)))throw Error("credential profile is invalid");
+        if(body.routeProfile!==undefined&&!["public-lite","private-lite","advanced-flash"].includes(String(body.routeProfile)))
+          throw Error("route profile is invalid");
         const continuation = body.continuation && typeof body.continuation === "object" && !Array.isArray(body.continuation) ? body.continuation as Record<string, Json> : {};
         send(response, 200, runtime === "codex"
           ? await dispatchCodexTurn(body.ownerId, body.threadId, body.model, body.messages as Array<{ role?: string; content?: string }>, continuation)
           : await dispatch({ ownerId: body.ownerId, threadId: body.threadId,
-            turnId: body.turnId, runtime, model: body.model, messages: body.messages as never[], grounding: body.grounding === true, continuation }));
+            turnId: body.turnId, runtime, model: body.model, messages: body.messages as never[], grounding: body.grounding === true,
+            ...(typeof body.credentialProfileId==="string"?{credentialProfileId:body.credentialProfileId}:{}),
+            ...(body.routeProfile?{routeProfile:body.routeProfile as "public-lite"|"private-lite"|"advanced-flash"}:{}),continuation }));
       } catch (error) {
         send(response, 400, { error: error instanceof Error ? error.message : "assistant_turn_failed" });
       }
@@ -888,6 +910,8 @@ export function makeServer(mcp = new McpHost(), sessions = new OwnerSessionRegis
     }
     send(response, 404, { error: "not_found" });
   });
+  server.once("close",()=>{void Promise.all([agent.close(),closePaidAssistant(),closeProviderLedger()]).catch(()=>undefined);});
+  return server;
 }
 
 if (process.env.NODE_ENV !== "test" && process.env.OMNIAGENT_GATEWAY_ENTRYPOINT !== "shared-codex") {

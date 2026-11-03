@@ -1,8 +1,6 @@
 /**
- * OA-AGENT-01: deterministic, bounded loop core for offline contract tests.
- * No autonomous access to model credentials or external tools.
- * TODO: LangGraph checkpoint/lease, model Function Calling adapter and Owner
- * OAuth/MCP grants before wiring this engine into Chat or Cloud Run.
+ * Deterministic bounded loop. The worker supplies durable checkpoints and
+ * guarded model/tool adapters; this core never owns credentials or grants.
  */
 export type AgentDecision =
   | {kind:"final";text:string}
@@ -20,6 +18,9 @@ export type AgentLoopLimits={
 export type AgentLoopRequest={
   ownerId:string;question:string;grants:ReadonlySet<string>;
   limits:AgentLoopLimits;signal?:AbortSignal;
+  initialState?:{steps:number;toolCalls:number;observations:AgentObservation[];pendingDecision?:AgentDecision};
+  checkpoint?:(state:{steps:number;toolCalls:number;observations:AgentObservation[];
+    phase:"decision"|"tool"|"ready"},signal:AbortSignal)=>Promise<void>;
 };
 export type AgentLoopResult={
   status:"completed"|"denied"|"limit_exceeded"|"cancelled"|"tool_error";
@@ -61,24 +62,35 @@ export async function runBoundedAgentLoop(request:AgentLoopRequest,
   planner:AgentPlanner,registry:ReadonlyMap<string,AgentTool>):Promise<AgentLoopResult>{
   validConfig(request);
   const start=Date.now();
-  const observations:AgentObservation[]=[];
-  let toolCalls=0,steps=0;
+  const observations:AgentObservation[]=[...(request.initialState?.observations??[])];
+  let toolCalls=request.initialState?.toolCalls??0,steps=request.initialState?.steps??0;
+  if(!Number.isSafeInteger(steps)||steps<0||steps>request.limits.maxSteps||
+     !Number.isSafeInteger(toolCalls)||toolCalls<0||toolCalls>request.limits.maxToolCalls||
+     (request.initialState?.pendingDecision&&steps<1))
+    throw new Error("invalid_agent_checkpoint");
   const deadline=AbortSignal.timeout(request.limits.timeoutMs);
   const signal=request.signal?AbortSignal.any([request.signal,deadline]):deadline;
   const aborted=()=>request.signal?.aborted
     ? outcome("cancelled","signal_aborted") : outcome("limit_exceeded","timeout");
   const outcome=(status:AgentLoopResult["status"],reason?:string,text?:string):AgentLoopResult=>
     ({status,...(reason?{reason}:{}),...(text?{text}:{}),steps,toolCalls,observations});
-  for(let i=0;i<request.limits.maxSteps;i++){
+  const checkpoint=async(phase:"decision"|"tool"|"ready")=>{
+    if(request.checkpoint)await boundedAwait(()=>request.checkpoint!({steps,toolCalls,
+      observations:[...observations],phase},signal),signal);
+  };
+  let pending=request.initialState?.pendingDecision;
+  for(let i=steps-(pending?1:0);i<request.limits.maxSteps;i++){
     if(signal.aborted)return aborted();
     if(Date.now()-start>=request.limits.timeoutMs)
       return outcome("limit_exceeded","timeout");
-    steps++;
+    if(!pending)steps++;
     let decision:AgentDecision;
     try{
-      decision=await boundedAwait(()=>planner({question:request.question,observations,
+      await checkpoint("decision");
+      decision=pending??await boundedAwait(()=>planner({question:request.question,observations,
         stepsRemaining:request.limits.maxSteps-i-1,
         toolsRemaining:request.limits.maxToolCalls-toolCalls},signal),signal);
+      pending=undefined;
     }catch{return signal.aborted?aborted():outcome("tool_error","planner_unavailable");}
     if(!isRecord(decision))return outcome("denied","invalid_model_decision");
     if(decision.kind==="final"){
@@ -94,17 +106,22 @@ export async function runBoundedAgentLoop(request:AgentLoopRequest,
     const tool=registry.get(decision.name);
     if(!tool||tool.name!==decision.name||tool.readOnly!==true)
       return outcome("denied","tool_unavailable_or_not_read_only");
-    if(!tool.validate(decision.arguments))return outcome("denied","invalid_tool_arguments");
+    try{
+      if(Buffer.byteLength(JSON.stringify(decision.arguments))>8192||!tool.validate(decision.arguments))
+        return outcome("denied","invalid_tool_arguments");
+    }catch{return outcome("denied","invalid_tool_arguments");}
     if(toolCalls>=request.limits.maxToolCalls)
       return outcome("limit_exceeded","tool_call_limit");
     toolCalls++;
     try{
+      await checkpoint("tool");
       const result=await boundedAwait(()=>tool.call(decision.arguments,signal),signal);
       const serialized=JSON.stringify(result);
       if(serialized===undefined||Buffer.byteLength(serialized,"utf8")>
           request.limits.maxToolOutputBytes)
         return outcome("denied","tool_result_invalid_or_oversize");
       observations.push({origin:"untrusted_tool_result",name:decision.name,result});
+      await checkpoint("ready");
     }catch{return signal.aborted?aborted():outcome("tool_error","tool_execution_failed");}
   }
   return outcome("limit_exceeded","decision_step_limit");

@@ -2,5 +2,7 @@ node_modules/
 services/agent-gateway/dist/
 services/chat-api/dist/
 services/shared-codex/dist/
+services/agent-worker/dist/
+services/job-worker/dist/
 __pycache__/
 .cicd-v2.json

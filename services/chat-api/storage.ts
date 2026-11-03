@@ -3,6 +3,7 @@ import type { Pool } from "pg";
 import { authorizeApproval } from "../agent-gateway/agent_security.js";
 import type { ModelEntitlement } from "./model_entitlements.js";
 import type { ChatDispatchBudget } from "./dispatch_budget.js";
+import {requirePreparedMessageIntent,consumeMessageIntent} from "./message_intents.js";
 
 export class ChatConflict extends Error {}
 export class ChatNotFound extends Error {}
@@ -13,16 +14,19 @@ export type DispatchClaim = {
   ownerId: string;
   threadId: string;
   turnId: string;
-  runtime: "openrouter" | "gemini" | "codex";
+  runtime: "openrouter" | "gemini" | "groq" | "codex";
   model: string;
   content: string;
+  credentialProfileId?:string;
+  routeProfile?:"public-lite"|"private-lite"|"advanced-flash";
 };
 
 export type RuntimeContext = { ownerId:string; threadId:string; turnId:string;
   turnHandle:string; nativeThreadId:string; nativeTurnId:string; cursor:number; operationId?:string };
 
-export type ThreadInput = { threadId?: string; runtime: "openrouter" | "gemini" | "codex";
-  model: string; assistantProfile: string; skillProfile?: string; parentThreadId?: string };
+export type ThreadInput = { threadId?: string; runtime: "openrouter" | "gemini" | "groq" | "codex";
+  model: string; assistantProfile: string; skillProfile?: string; parentThreadId?: string;
+  credentialProfileId?:string;routeProfile?:"public-lite"|"private-lite"|"advanced-flash" };
 export type ApprovalInput = { ownerId: string; threadId: string; turnId: string; requestId: string;
   operation: "shell" | "write_file"; paramsDigest: string; expiresAt: string };
 export type SkillContent = { prompt: string; required_tools?: string[];
@@ -44,10 +48,14 @@ function digest(value: unknown): string {
 }
 
 export class ChatStore {
-  constructor(private readonly pool: Pool, private readonly budget?: ChatDispatchBudget) {}
+  constructor(private readonly pool: Pool, private readonly budget?: ChatDispatchBudget,
+    private readonly durableIntents=false) {}
 
   async ready(): Promise<void> {
     await this.pool.query("SELECT 1");
+    await this.pool.query("SELECT credential_profile_id,route_profile FROM omni_chat.threads LIMIT 0");
+    await this.pool.query("SELECT execution_mode FROM omni_chat.turns LIMIT 0");
+    if(this.durableIntents)await this.pool.query("SELECT idempotency_key FROM omni_chat.message_intents LIMIT 0");
     // A healthy container is not dispatch-ready if budget migration 007 is
     // missing or the restricted database role cannot read the budget ledger.
     if(this.budget)
@@ -127,18 +135,27 @@ export class ChatStore {
   }
 
   async createThread(ownerId: string, input: ThreadInput, key: string): Promise<Record<string, unknown>> {
+    if(input.credentialProfileId){
+      if(!["gemini","openrouter","groq"].includes(input.runtime))throw new ChatConflict("BYOK runtime unavailable");
+      const profile=(await this.pool.query(`SELECT 1 FROM omni_chat.credential_profiles
+        WHERE owner_id=$1 AND profile_id=$2 AND provider=$3 AND status='ACTIVE'`,
+        [ownerId,input.credentialProfileId,input.runtime])).rows[0];
+      if(!profile)throw new ChatNotFound("BYOK credential unavailable");
+    }
     if (input.parentThreadId) {
       const parent = await this.thread(ownerId,input.parentThreadId);
-      if (parent.runtime !== input.runtime || parent.model !== input.model) {
+      if (parent.runtime !== input.runtime || parent.model !== input.model ||
+          (parent.credential_profile_id??null)!==(input.credentialProfileId??null)||
+          (parent.route_profile??"public-lite")!==(input.routeProfile??"public-lite")) {
         throw new ChatConflict("fork must keep parent runtime and model");
       }
     }
     const bodyDigest = digest(input);
     const threadId = input.threadId || randomUUID();
     const result = await this.pool.query(
-      `INSERT INTO omni_chat.threads(owner_id,thread_id,runtime,model,assistant_profile,skill_profile,parent_thread_id,create_key,create_digest)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (owner_id,create_key) DO NOTHING RETURNING *`,
-      [ownerId,threadId,input.runtime,input.model,input.assistantProfile,input.skillProfile ?? null,input.parentThreadId ?? null,key,bodyDigest]);
+      `INSERT INTO omni_chat.threads(owner_id,thread_id,runtime,model,assistant_profile,skill_profile,parent_thread_id,create_key,create_digest,credential_profile_id,route_profile)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) ON CONFLICT (owner_id,create_key) DO NOTHING RETURNING *`,
+      [ownerId,threadId,input.runtime,input.model,input.assistantProfile,input.skillProfile ?? null,input.parentThreadId ?? null,key,bodyDigest,input.credentialProfileId??null,input.routeProfile??"public-lite"]);
     const row = result.rows[0] ?? (await this.pool.query(
       `SELECT * FROM omni_chat.threads WHERE owner_id=$1 AND create_key=$2`, [ownerId,key])).rows[0];
     if (!row || row.create_digest !== bodyDigest) throw new ChatConflict("thread idempotency key conflicts");
@@ -178,8 +195,9 @@ export class ChatStore {
     return row;
   }
 
-  async message(ownerId: string, threadId: string, content: string, key: string): Promise<Record<string, unknown>> {
-    const bodyDigest = digest({ content });
+  async message(ownerId: string, threadId: string, content: string, key: string,
+    executionMode:"chat"|"agent"="chat"): Promise<Record<string, unknown>> {
+    const bodyDigest = digest(executionMode==="chat"?{content}:{content,executionMode});
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
@@ -196,9 +214,11 @@ export class ChatStore {
         return { thread, turn: previous, dispatch: { status: previous.status } };
       }
       const turnId = randomUUID();
+      if(this.durableIntents&&executionMode==="chat")
+        await requirePreparedMessageIntent(client,ownerId,threadId,key,content);
       const turn = (await client.query(
-        `INSERT INTO omni_chat.turns(owner_id,thread_id,turn_id,message_key,message_digest)
-         VALUES ($1,$2,$3,$4,$5) RETURNING *`, [ownerId,threadId,turnId,key,bodyDigest])).rows[0];
+        `INSERT INTO omni_chat.turns(owner_id,thread_id,turn_id,message_key,message_digest,execution_mode)
+         VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`, [ownerId,threadId,turnId,key,bodyDigest,executionMode])).rows[0];
       const seq = Number((await client.query(
         `SELECT COALESCE(MAX(seq),-1)+1 AS seq FROM omni_chat.events WHERE owner_id=$1 AND thread_id=$2`,
         [ownerId,threadId])).rows[0].seq);
@@ -207,6 +227,8 @@ export class ChatStore {
          VALUES ($1,$2,$3,$4,$5,'item_upsert',$6) RETURNING *`,
         [ownerId,threadId,turnId,randomUUID(),seq,JSON.stringify({ role: "user", content })])).rows[0];
       await client.query(`UPDATE omni_chat.threads SET updated_at=now() WHERE owner_id=$1 AND thread_id=$2`, [ownerId,threadId]);
+      if(this.durableIntents&&executionMode==="chat")
+        await consumeMessageIntent(client,ownerId,threadId,key,content,turnId);
       await client.query("COMMIT");
       return { thread, turn, event, dispatch: { status: "QUEUED" } };
     } catch (error) {
@@ -228,15 +250,16 @@ export class ChatStore {
     entitlements?: readonly ModelEntitlement[]): Promise<DispatchClaim | null> {
     if (!approvedOwners.length) throw new Error("dispatch requires an approved owner list");
     if (entitlements && !entitlements.length) throw new Error("dispatch requires model entitlements");
-    const modelRules = entitlements?.map(({ownerId,runtime,model}) => ({owner_id:ownerId,runtime,model}));
+    const modelRules = entitlements?.map(({ownerId,runtime,model,routeProfile}) => ({owner_id:ownerId,runtime,model,route_profile:routeProfile??"public-lite"}));
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
       const selected = (await client.query<{
         owner_id: string; thread_id: string; turn_id: string;
-        runtime: DispatchClaim["runtime"]; model: string; payload: unknown;
+        runtime: DispatchClaim["runtime"]; model: string; payload: unknown;credential_profile_id:string|null;
+        route_profile:NonNullable<DispatchClaim["routeProfile"]>;
       }>(`
-        SELECT t.owner_id,t.thread_id,t.turn_id,th.runtime,th.model,e.payload
+        SELECT t.owner_id,t.thread_id,t.turn_id,th.runtime,th.model,th.credential_profile_id,th.route_profile,e.payload
         FROM omni_chat.turns AS t
         JOIN omni_chat.threads AS th
           ON th.owner_id=t.owner_id AND th.thread_id=t.thread_id
@@ -246,14 +269,17 @@ export class ChatStore {
             AND event_type='item_upsert' AND payload->>'role'='user'
           ORDER BY seq LIMIT 1
         ) AS e ON TRUE
-        WHERE t.status='QUEUED' AND th.status='ACTIVE'
+        WHERE t.status='QUEUED' AND t.execution_mode='chat' AND th.status='ACTIVE'
+          AND (th.credential_profile_id IS NULL OR EXISTS (
+            SELECT 1 FROM omni_chat.credential_profiles cp WHERE cp.owner_id=t.owner_id
+              AND cp.profile_id=th.credential_profile_id AND cp.provider=th.runtime AND cp.status='ACTIVE'))
           AND t.owner_id = ANY($1::uuid[])
           AND ($2::uuid IS NULL OR (t.owner_id=$2 AND t.thread_id=$3 AND t.turn_id=$4))
           AND ($5::jsonb IS NULL OR EXISTS (
             SELECT 1 FROM jsonb_to_recordset($5::jsonb)
-              AS entitlement(owner_id uuid,runtime varchar,model varchar)
+              AS entitlement(owner_id uuid,runtime varchar,model varchar,route_profile varchar)
             WHERE entitlement.owner_id=t.owner_id AND entitlement.runtime=th.runtime
-              AND entitlement.model=th.model
+              AND entitlement.model=th.model AND entitlement.route_profile=th.route_profile
           ))
         ORDER BY t.created_at,t.owner_id,t.thread_id,t.turn_id
         LIMIT 1 FOR UPDATE OF th,t SKIP LOCKED`,
@@ -281,7 +307,7 @@ export class ChatStore {
         const active=await client.query<{count:string}>(`
           SELECT count(*)::text AS count FROM omni_chat.turns t
           JOIN omni_chat.threads th ON th.owner_id=t.owner_id AND th.thread_id=t.thread_id
-          WHERE t.status='RUNNING' AND th.runtime IN ('gemini','openrouter')`);
+          WHERE t.status='RUNNING' AND th.runtime IN ('gemini','openrouter','groq')`);
         // Crashed RUNNING claims deliberately retain concurrency reservation
         // until an audited operator reconciliation. Never infer safe retry.
         if(Number(active.rows[0].count)>=this.budget.maxConcurrent)
@@ -333,7 +359,9 @@ export class ChatStore {
       if (updated.length !== 1) throw new ChatConflict("turn claim lost");
       await client.query("COMMIT");
       return { ownerId:selected.owner_id,threadId:selected.thread_id,
-        turnId:selected.turn_id,runtime:selected.runtime,model:selected.model,content };
+        turnId:selected.turn_id,runtime:selected.runtime,model:selected.model,content,
+        ...(selected.credential_profile_id?{credentialProfileId:selected.credential_profile_id}:{}),
+        ...(selected.route_profile!=="public-lite"?{routeProfile:selected.route_profile}:{}) };
     } catch (error) {
       await client.query("ROLLBACK");
       throw error;

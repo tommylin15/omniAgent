@@ -2,7 +2,7 @@
 -- Migration requires existing omniagent_chat DB and omni_chat schema, rollback in docs/agent-loop-roadmap.md.
 BEGIN;
 DO $$ BEGIN
-  IF current_database() <> 'omniagent_chat' OR to_regnamespace('omni_chat') IS NULL THEN
+  IF current_database() NOT IN ('omniagent_chat','omniagent_acceptance') OR to_regnamespace('omni_chat') IS NULL THEN
     RAISE EXCEPTION 'wrong database/schema for omniagent admin settings';
   END IF;
 END $$;

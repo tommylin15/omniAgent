@@ -33,10 +33,10 @@ describe("Paid Gemini selector is offline and explicit",()=>{
   });
   it("allows advanced Flash only on explicitly verified paid route",()=>{
     const paid:GeminiRouteInput={...base,profile:"advanced-flash",
-      model:"gemini-3.8-flash",paidRoutingDeployed:true,paidKeyConfigured:true,
+      model:"gemini-2.5-flash",paidModelAllowlist:new Set(["gemini-2.5-flash"]),paidRoutingDeployed:true,paidKeyConfigured:true,
       paidTierVerified:true,providerModelVerified:true,budgetReservationVerified:true};
     expect(chooseGeminiRoute(paid)).toEqual({
-      model:"gemini-3.8-flash",credentialRef:"paid-gemini"});
+      model:"gemini-2.5-flash",credentialRef:"paid-gemini"});
     expect(()=>chooseGeminiRoute({...paid,model:"gemini-2.5-pro"})).toThrow();
     expect(()=>chooseGeminiRoute({...base,ownerModelAuthorized:false})).toThrow();
   });

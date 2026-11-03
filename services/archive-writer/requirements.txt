@@ -1,0 +1,5 @@
+pyiceberg[pyarrow,gcsfs,gcp-auth]==0.12.0
+pyarrow==26.0.0
+gcsfs==2026.10.1
+google-auth[requests]==2.62.0
+psycopg[binary]==3.3.6
